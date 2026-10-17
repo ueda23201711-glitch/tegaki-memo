@@ -139,7 +139,8 @@
     background: rgba(255,255,255,.14); border: 0; border-radius: 8px; color: #fff; padding: 8px 10px; font-weight: 600;
   }
   .stage { position: absolute; left: 0; right: 0; bottom: 0; overflow: hidden; background: #e9edf0; }
-  .page { position: absolute; background: #fff; box-shadow: 0 2px 10px rgba(31,42,48,.18); }
+  #zoom-tip { position: absolute; left: 50%; top: 10px; margin-left: -60px; width: 120px; text-align: center; background: rgba(31,42,48,.75); color: #fff; font-size: 13px; padding: 4px 0; border-radius: 12px; z-index: 6; pointer-events: none; }
+  .page { position: absolute; background: #fff; -webkit-transform-origin: 0 0; transform-origin: 0 0; box-shadow: 0 2px 10px rgba(31,42,48,.18); }
   .page canvas { position: absolute; top: 0; left: 0; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   /* 画像・文字（手書きの下に置く） */
   #items { position: absolute; top: 0; left: 0; right: 0; bottom: 0; overflow: hidden; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: none; }
@@ -287,6 +288,7 @@
     <span class="sep"></span>
     <button id="btn-undo" type="button">↶ 戻す</button>
     <button id="btn-redo" type="button">↷ やり直す</button>
+    <button id="btn-zoom" class="hidden" type="button">🔍 全体表示</button>
     <span class="sep"></span>
     <button id="btn-clear" type="button">手書きを全部消す</button>
     <button id="btn-delete" class="danger" type="button">メモを削除</button>
@@ -553,19 +555,38 @@
   /* ===================== 描画 ===================== */
   var cv = $('cv'), cvLive = $('cv-live'), ctx = cv.getContext('2d'), lctx = cvLive.getContext('2d');
   var scale = 1, dpr = window.devicePixelRatio || 1;
+  var DEV_DPR = window.devicePixelRatio || 1;
+  // 拡大表示：zoom は「全体表示」に対する倍率、pageX/pageY は台紙の左上（stage 内の位置）
+  var zoom = 1, ZOOM_MAX = 5, pageX = null, pageY = null, baseScale = 1;
+  // 古い iPad はキャンバスを大きくできないので、拡大時は解像度を抑える
+  var MAX_PIXELS = /OS [5-9]_\d.* like Mac OS X/.test(navigator.userAgent) ? 3000000 : 9000000;
 
+  // 台紙がはみ出しすぎないように位置を整える
+  function clampPos(x, y, w, h, SW, SH) {
+    var r = [x, y];
+    if (w <= SW) r[0] = Math.floor((SW - w) / 2); else r[0] = Math.min(8, Math.max(SW - w - 8, x));
+    if (h <= SH) r[1] = Math.floor((SH - h) / 2); else r[1] = Math.min(8, Math.max(SH - h - 8, y));
+    return r;
+  }
   function layout() {
     var stage = $('stage'), tools = $('tools');
     var top = tools.offsetTop + tools.offsetHeight;
     stage.style.top = top + 'px';
     var W = stage.clientWidth - 16, H = stage.clientHeight - 16;
     if (W < 50 || H < 50) return;
-    scale = Math.min(W / PAGE_W, H / PAGE_H);
+    baseScale = Math.min(W / PAGE_W, H / PAGE_H);
+    scale = baseScale * zoom;
     var w = Math.floor(PAGE_W * scale), h = Math.floor(PAGE_H * scale);
     var page = $('page');
     page.style.width = w + 'px'; page.style.height = h + 'px';
-    page.style.left = Math.floor((stage.clientWidth - w) / 2) + 'px';
-    page.style.top = Math.floor((stage.clientHeight - h) / 2) + 'px';
+    if (pageX === null || zoom === 1) { pageX = -1e9; pageY = -1e9; }
+    var pos = clampPos(pageX === -1e9 ? 0 : pageX, pageY === -1e9 ? 0 : pageY, w, h, stage.clientWidth, stage.clientHeight);
+    if (zoom === 1) pos = [Math.floor((stage.clientWidth - w) / 2), Math.floor((stage.clientHeight - h) / 2)];
+    pageX = pos[0]; pageY = pos[1];
+    page.style.left = pageX + 'px'; page.style.top = pageY + 'px';
+    page.style.webkitTransform = ''; page.style.transform = '';
+    dpr = Math.min(DEV_DPR, Math.sqrt(MAX_PIXELS / (w * h)));
+    $('btn-zoom').className = zoom > 1.01 ? '' : 'hidden';
     each([cv, cvLive], function (c) {
       c.style.width = w + 'px'; c.style.height = h + 'px';
       c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
@@ -627,10 +648,11 @@
     each(visible(cur.strokes), function (st) { pathStroke(ctx, st, scale); });
   }
   function makeThumb(n) {
+    var saveDpr = 0;
     try {
       var c = document.createElement('canvas'), tw = 200, th = Math.round(200 * PAGE_H / PAGE_W);
       c.width = tw; c.height = th;
-      var x = c.getContext('2d'), saveDpr = dpr;
+      var x = c.getContext('2d'); saveDpr = dpr;
       // 消しゴムが白地まで消さないよう、線だけ別に描いてから白地に重ねる
       var c2 = document.createElement('canvas'); c2.width = tw; c2.height = th;
       var x2 = c2.getContext('2d');
@@ -641,7 +663,7 @@
       drawItemsTo(x, n.items || [], tw / PAGE_W);
       x.drawImage(c2, 0, 0);
       return c.toDataURL('image/jpeg', 0.6);
-    } catch (e) { dpr = window.devicePixelRatio || 1; return ''; }
+    } catch (e) { if (saveDpr) dpr = saveDpr; return ''; }
   }
 
   /* ---- 入力 ---- */
@@ -775,6 +797,7 @@
     if (!cur.strokes) cur.strokes = [];
     if (!cur.items) cur.items = [];
     undoStack = []; redoStack = []; selectedId = null;
+    zoom = 1; pageX = null;
     $('inp-title').value = cur.title || '';
     show('scr-edit');
     layout();
@@ -967,6 +990,122 @@
     changed();
   });
   on($('btn-back'), 'click', function () { $('inp-title').blur(); closeNote(); });
+
+  /* ===================== 拡大・縮小（2本指のピンチ・移動） ===================== */
+  var gest = null;        // {ids, d0, m0, z0, x0, y0, sx, sy, one}
+  var touchPts = {};      // pointerId -> [x, y]（指だけ）
+  function stageXY(x, y) { var r = $('stage').getBoundingClientRect(); return [x - r.left, y - r.top]; }
+  function abortInputs() {
+    // 1本目の指で描き始めた線・動かし始めたものは取り消す
+    if (drawing) { drawing = null; lctx.clearRect(0, 0, cvLive.width, cvLive.height); }
+    if (dragging) { var d = dragging; dragging = null; if (d.moved) { var o = JSON.parse(d.before); cur.items = o.i || []; renderItems(); } }
+  }
+  function gestureStart(pts, one) {
+    abortInputs();
+    var a = stageXY(pts[0][0], pts[0][1]), b = pts[1] ? stageXY(pts[1][0], pts[1][1]) : a;
+    gest = { d0: Math.max(1, Math.sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]))),
+      m0: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], z0: zoom, x0: pageX, y0: pageY, one: !!one, z: zoom, x: pageX, y: pageY };
+  }
+  function gestureMove(pts) {
+    if (!gest) return;
+    var a = stageXY(pts[0][0], pts[0][1]), b = (pts[1] && !gest.one) ? stageXY(pts[1][0], pts[1][1]) : a;
+    var m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], z = gest.z0;
+    if (!gest.one) {
+      var d = Math.sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]));
+      z = Math.max(1, Math.min(ZOOM_MAX, gest.z0 * d / gest.d0));
+    }
+    // 指の真ん中の点がずれないように
+    var r = z / gest.z0;
+    var nx = m[0] - (gest.m0[0] - gest.x0) * r, ny = m[1] - (gest.m0[1] - gest.y0) * r;
+    var st = $('stage'), w = PAGE_W * baseScale * z, h = PAGE_H * baseScale * z;
+    var pos = clampPos(nx, ny, w, h, st.clientWidth, st.clientHeight);
+    gest.z = z; gest.x = pos[0]; gest.y = pos[1];
+    // 動かしている間は見た目だけ変える（描き直しは指を離してから）
+    var k = z / gest.z0, tx = pos[0] - gest.x0, ty = pos[1] - gest.y0;
+    var tf = 'translate(' + tx + 'px,' + ty + 'px) scale(' + k + ')';
+    var pg = $('page'); pg.style.webkitTransform = tf; pg.style.transform = tf;
+    showZoomTip(z);
+  }
+  function gestureEnd() {
+    if (!gest) return;
+    var g = gest; gest = null;
+    zoom = g.z < 1.05 ? 1 : g.z; pageX = g.x; pageY = g.y;
+    layout();
+    hideZoomTipSoon();
+  }
+  var tipTimer = null;
+  function showZoomTip(z) {
+    var t = $('zoom-tip');
+    if (!t) { t = document.createElement('div'); t.id = 'zoom-tip'; $('stage').appendChild(t); }
+    t.style.display = 'block'; t.textContent = Math.round(z * 100) + '%';
+    if (tipTimer) { clearTimeout(tipTimer); tipTimer = null; }
+  }
+  function hideZoomTipSoon() { if (tipTimer) clearTimeout(tipTimer); tipTimer = setTimeout(function () { var t = $('zoom-tip'); if (t) t.style.display = 'none'; }, 700); }
+  function setZoom(z, cx, cy) {
+    var st = $('stage');
+    if (cx === undefined) { cx = st.clientWidth / 2; cy = st.clientHeight / 2; }
+    var r = z / zoom;
+    pageX = cx - (cx - pageX) * r; pageY = cy - (cy - pageY) * r; zoom = z;
+    layout();
+  }
+  on($('btn-zoom'), 'click', function () { zoom = 1; pageX = null; layout(); });
+  // 1本指で台紙を動かせるとき：拡大中で、「選択」モードか「Pencilのみ」で、何もないところを触ったとき
+  function canPanOne(x, y) { return zoom > 1.01 && (tool === 'select' || penOnly) && !hitItem(x, y); }
+  function ptsList() { var a = []; for (var k in touchPts) a.push(touchPts[k]); return a; }
+  if (window.PointerEvent) {
+    on($('stage'), 'pointerdown', function (e) {
+      if (e.pointerType !== 'touch') return;
+      touchPts[e.pointerId] = [e.clientX, e.clientY];
+      var pts = ptsList();
+      if (pts.length >= 2) { e.stopPropagation(); e.preventDefault(); gestureStart(pts, false); }
+      else if (canPanOne(e.clientX, e.clientY)) { e.stopPropagation(); e.preventDefault(); gestureStart(pts, true); }
+    }, true);
+    on(window, 'pointermove', function (e) {
+      if (e.pointerType !== 'touch' || !touchPts[e.pointerId]) return;
+      touchPts[e.pointerId] = [e.clientX, e.clientY];
+      if (gest) { e.preventDefault(); gestureMove(ptsList()); }
+    }, true);
+    var ptrUp = function (e) {
+      if (!touchPts[e.pointerId]) return;
+      delete touchPts[e.pointerId];
+      if (gest) {
+        var left = ptsList();
+        if (left.length === 0) gestureEnd();
+        else if (left.length === 1 && !gest.one) { gestureEnd(); }   // 1本離したら確定（残りの指では描かない）
+      }
+    };
+    on(window, 'pointerup', ptrUp, true);
+    on(window, 'pointercancel', ptrUp, true);
+  } else {
+    var tPts = function (list) { var a = []; for (var i = 0; i < list.length && i < 2; i++) a.push([list[i].clientX, list[i].clientY]); return a; };
+    var lockAfterGesture = false;
+    on($('stage'), 'touchstart', function (e) {
+      if (e.touches.length >= 2) { e.stopPropagation(); e.preventDefault(); gestureStart(tPts(e.touches), false); }
+      else if (e.touches.length === 1 && canPanOne(e.touches[0].clientX, e.touches[0].clientY)) { e.stopPropagation(); e.preventDefault(); gestureStart(tPts(e.touches), true); }
+    }, true);
+    on(document, 'touchmove', function (e) {
+      if (gest) { e.preventDefault(); e.stopPropagation(); gestureMove(tPts(e.touches)); }
+      else if (lockAfterGesture) { e.stopPropagation(); }
+    }, true);
+    on(document, 'touchend', function (e) {
+      if (gest && (e.touches.length === 0 || !gest.one)) { gestureEnd(); lockAfterGesture = e.touches.length > 0; }
+      if (e.touches.length === 0) lockAfterGesture = false;
+    }, true);
+    on(document, 'touchcancel', function () { gestureEnd(); lockAfterGesture = false; }, true);
+  }
+  // パソコン：Ctrl＋ホイール（トラックパッドのピンチ）で拡大、ホイールで移動
+  on($('stage'), 'wheel', function (e) {
+    if (!cur) return;
+    var p = stageXY(e.clientX, e.clientY);
+    if (e.ctrlKey) {
+      e.preventDefault();
+      setZoom(Math.max(1, Math.min(ZOOM_MAX, zoom * Math.exp(-e.deltaY / 200))), p[0], p[1]);
+      showZoomTip(zoom); hideZoomTipSoon();
+    } else if (zoom > 1.01) {
+      e.preventDefault();
+      pageX -= e.deltaX; pageY -= e.deltaY; layout();
+    }
+  }, { passive: false });
 
   /* ===================== やり直し（写し） ===================== */
   function it0(o) { for (var k in o) return true; return false; }
