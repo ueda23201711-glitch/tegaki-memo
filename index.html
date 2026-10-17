@@ -141,6 +141,48 @@
   /* ---- 一覧の便利機能 ---- */
   #tool-row { margin: 0 0 10px; }
   #tool-row button { padding: 8px 12px; margin: 0 6px 4px 0; background: #fff; box-shadow: 0 1px 3px rgba(31,42,48,.15); font-size: 14px; }
+  /* ---- 英文リーダー ---- */
+  .rd-wrap { max-width: 820px; margin: 0 auto; padding: 14px; }
+  #rd-in { height: 160px; }
+  .rd-h { font-size: 14px; color: #3b4a52; margin: 16px 0 8px; }
+  .rd-hrow { background: #fff; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(31,42,48,.1); cursor: pointer; overflow: hidden; }
+  .rd-hrow b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rd-hrow span { font-size: 12px; color: #6b7a83; }
+  .rd-hrow button { float: right; padding: 5px 9px; font-size: 12px; background: #f1f4f6; color: #a3301f; margin-left: 8px; }
+  #rd-ctrl { position: -webkit-sticky; position: sticky; top: 0; z-index: 3; background: #f7f9fa; border-bottom: 1px solid #d7dee3; padding: 8px 12px; }
+  #rd-ctrl button, #rd-ctrl select { margin: 2px 6px 2px 0; }
+  #rd-ctrl select { font-size: 15px; padding: 6px; border-radius: 8px; border: 1px solid #c9d2d8; background: #fff; }
+  .rd-hint { margin: 0 0 10px; }
+  .rd-sent { background: #fff; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(31,42,48,.1); }
+  .rd-sent.now { box-shadow: 0 0 0 3px #e8b44c; background: #fffbea; }
+  .rd-say { float: left; padding: 4px 8px; margin: 0 8px 0 0; background: #f1f4f6; font-size: 15px; }
+  .rd-en { font-size: 20px; line-height: 1.7; color: #1f2a30; font-family: Georgia, "Times New Roman", serif; }
+  .rd-en .w { cursor: pointer; border-radius: 4px; }
+  .rd-en .w:active { background: #dbe8ff; }
+  .rd-en .w.idm, .idm-sample { border-bottom: 2px solid #e8830c; }
+  .rd-ja { clear: both; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #dfe5e8; color: #3b4a52; font-size: 15px; line-height: 1.6; }
+  .rd-idl { margin-top: 6px; }
+  .rd-idi { font-size: 14px; color: #5a4a2a; background: #fdf3e2; border-radius: 8px; padding: 5px 9px; margin: 4px 0 0; cursor: pointer; }
+  .rd-idi b { color: #b0600a; }
+  #word-pop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(20,28,32,.3); z-index: 75; }
+  #word-pop .pop { position: absolute; left: 0; right: 0; bottom: 0; max-width: 640px; margin: 0 auto; background: #fff; border-radius: 16px 16px 0 0; padding: 16px 18px; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); box-sizing: border-box; box-shadow: 0 -6px 24px rgba(0,0,0,.2); max-height: 70%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .pop-top b { font-size: 24px; font-family: Georgia, serif; }
+  .pop-top button { vertical-align: 4px; margin-left: 6px; padding: 5px 10px; }
+  #pop-close { float: right; }
+  #pop-sub { margin: 2px 0 6px; }
+  #pop-mean { white-space: pre-wrap; font-size: 15px; line-height: 1.6; color: #1f2a30; margin: 6px 0 10px; }
+  #pop-chips button { margin: 0 6px 6px 0; padding: 5px 11px; font-size: 14px; background: #f1f4f6; font-family: Georgia, serif; }
+  #pop-chips button.on { background: #2f4858; color: #fff; }
+  .pop-id { background: #fdf3e2; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; font-size: 14px; }
+  .pop-id b { color: #b0600a; }
+  .pop-id button { display: block; margin-top: 6px; padding: 5px 10px; font-size: 13px; }
+  #gas-dlg { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(20,28,32,.45); z-index: 80; }
+  #gas-dlg .dlg { position: absolute; left: 4%; right: 4%; top: 6%; max-width: 560px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 16px; box-sizing: border-box; max-height: 88%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  #gas-dlg h3 { margin: 0 0 8px; font-size: 17px; }
+  #gas-code { width: 100%; height: 150px; box-sizing: border-box; font: 12px Menlo, monospace; border: 1px solid #c9d2d8; border-radius: 8px; padding: 8px; }
+  #gas-url { width: 100%; box-sizing: border-box; font-size: 15px; padding: 9px; border: 1px solid #c9d2d8; border-radius: 8px; margin: 8px 0; }
+  #gas-dlg .row button { margin: 4px 6px 0 0; }
+
   /* ---- 設定・初回 ---- */
   .panel { background: #fff; border-radius: 14px; padding: 18px; margin: 14px; max-width: 560px; }
   @media (min-width: 600px) { .panel { margin: 24px auto; } }
@@ -368,6 +410,76 @@
   <div id="read-text"></div>
 </div>
 
+<!-- 英文リーダー -->
+<div id="scr-reader" class="screen hidden">
+  <div class="bar">
+    <button id="btn-rd-back" type="button">← 戻る</button>
+    <h1 style="margin-left:10px">英文リーダー</h1>
+    <button id="btn-rd-set" type="button" title="翻訳の設定">⚙︎<span class="wide"> 翻訳の設定</span></button>
+  </div>
+  <div class="body" id="rd-body">
+    <div id="rd-input" class="rd-wrap">
+      <div class="clip-send">
+        <textarea id="rd-in" placeholder="英文を貼り付けてください（Kindle などからコピーした文章）"></textarea>
+        <div class="row">
+          <button id="rd-go" class="primary" type="button">読み込む</button>
+          <button id="rd-paste" class="hidden" type="button">📋 コピーした文字を貼り付け</button>
+        </div>
+      </div>
+      <p class="note">保存した単語・熟語は <a href="/kiku-memo/" target="_blank">📚 メモ単語帳</a> で学習できます（iPad 2/3 は <a href="/kiku-memo/ipad.html" target="_blank">こちら</a>）。</p>
+      <h3 id="rd-hist-h" class="rd-h">これまでの英文</h3>
+      <div id="rd-hist"></div>
+    </div>
+    <div id="rd-view" class="hidden">
+      <div id="rd-ctrl">
+        <button id="rd-play" class="primary" type="button">▶ 再生</button>
+        <select id="rd-rate" title="速さ">
+          <option value="0.6">ゆっくり</option><option value="0.75">やや遅く</option><option value="0.9">ふつう</option><option value="1">少し速く</option><option value="1.15">速く</option>
+        </select>
+        <button id="rd-trbtn" type="button">訳を隠す</button>
+        <button id="rd-new" type="button">✎ 別の英文</button>
+        <button id="rd-retr" type="button" title="日本語訳を作り直す">↻ 訳</button>
+        <button id="rd-my" type="button">📚 メモ単語帳</button>
+        <span id="rd-status" class="note"></span>
+      </div>
+      <div class="rd-wrap">
+        <p class="note rd-hint">単語をタップすると意味と発音、<span class="idm-sample">下線</span>は熟語・定型表現です。🔊 でその文だけ読みます。</p>
+        <div id="rd-text"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="word-pop" class="hidden">
+  <div class="pop">
+    <div class="pop-top">
+      <b id="pop-head"></b> <button id="pop-say" type="button">🔊</button>
+      <button id="pop-close" type="button">閉じる</button>
+    </div>
+    <div id="pop-sub" class="note"></div>
+    <div id="pop-chips"></div>
+    <div id="pop-mean"></div>
+    <div id="pop-idiom"></div>
+    <div class="row">
+      <button id="pop-save" class="primary" type="button">＋ メモ単語帳に保存</button>
+      <span id="pop-msg" class="note"></span>
+    </div>
+  </div>
+</div>
+<div id="gas-dlg" class="hidden">
+  <div class="dlg">
+    <h3>翻訳の設定（Google Apps Script）</h3>
+    <p class="note">ご自分の Google アカウントで Google 翻訳を使います。手順は案内のとおりに。下のコードを Apps Script に貼り付けて「ウェブアプリ」として公開し、表示されたアドレスを入れてください。</p>
+    <textarea id="gas-code" readonly></textarea>
+    <div class="row"><button id="gas-copy" type="button">コードをコピー</button></div>
+    <input id="gas-url" type="url" placeholder="https://script.google.com/macros/s/…/exec" autocapitalize="off" autocorrect="off">
+    <div class="row">
+      <button id="gas-test" class="primary" type="button">テストして保存</button>
+      <button id="gas-close" type="button">閉じる</button>
+    </div>
+    <p id="gas-msg" class="note"></p>
+  </div>
+</div>
+
 <!-- 設定 -->
 <div id="scr-settings" class="screen hidden">
   <div class="bar">
@@ -584,7 +696,7 @@
     return s;
   }
   function show(id) {
-    each(['scr-setup', 'scr-list', 'scr-settings', 'scr-edit', 'scr-clip'], function (s) {
+    each(['scr-setup', 'scr-list', 'scr-settings', 'scr-edit', 'scr-clip', 'scr-reader'], function (s) {
       $(s).className = 'screen' + (s === id ? '' : ' hidden');
     });
   }
@@ -2543,7 +2655,7 @@
       var btns = document.createElement('div'); btns.className = 'clip-btns';
       var mk = function (label, fn, cls) { var b = document.createElement('button'); b.type = 'button'; b.textContent = label; if (cls) b.className = cls; on(b, 'click', function (e) { e.stopPropagation(); fn(); }); btns.appendChild(b); };
       mk('大きく読む', function () { openReading(id); });
-      if (/[A-Za-z]{3,}\s+[A-Za-z]{2,}/.test(c.t)) mk('📖 英文リーダー', function () { openInReader(c.t); });
+      if (/[A-Za-z]{3,}\s+[A-Za-z]{2,}/.test(c.t)) mk('📖 リーダー', function () { clipOpen = false; stopClipSync(); openReader(c.t); });
       mk('コピー', function () { copyText(c.t); });
       var u = firstUrl(c.t);
       if (u) mk('開く', function () { window.open(u, '_blank'); });
@@ -2674,20 +2786,627 @@
   on($('read-big'), 'click', function () { setReadSize(2); });
   on(document, 'visibilitychange', function () { if (!clipOpen) return; if (document.hidden) stopClipSync(); else startClipSync(); });
 
-  /* ===================== 英文リーダー（別のアプリ）を開く ===================== */
-  var READER_URL = '/eibun-reader/';
-  on($('btn-reader'), 'click', function () { location.href = READER_URL; });
-  // クリップの英文を英文リーダーの履歴に入れてから開く（ホーム画面のアプリどうしでも受け渡せるようにクラウド経由）
-  function openInReader(text) {
-    var id = newId(), b = {};
-    b['reader/' + id] = { title: text.replace(/\s+/g, ' ').slice(0, 60), text: text.slice(0, 20000), at: now() };
-    $('clip-msg').textContent = '英文リーダーを開いています…';
-    api('PATCH', '', b, function (err) {
-      if (err) { $('clip-msg').textContent = '開けませんでした（' + errText(err) + '）'; return; }
-      clipOpen = false; stopClipSync();
-      location.href = READER_URL + '#doc=' + id;
+  /* ===================== 英文リーダー ===================== */
+  // 保存先：memos/合言葉/reader/ID = {title, text, tr: [文ごとの訳], at}
+  //        memos/合言葉/settings/gas = 翻訳（Google Apps Script）のアドレス
+  //        memos/合言葉/memovocab = メモ単語帳（キクタンと同じ形：words = 「単語\t意味\t番号」の行）
+  var rdDocs = lsJSON('memo_reader', {});
+  var rdCur = null;                 // 開いている英文 {id, title, text, tr}
+  var rdSents = [];                 // [{text, toks:[{w, s, e}], idioms:[...]}]
+  var gasUrl = lsGet('memo_gas') || '';
+  var rdRate = Number(lsGet('memo_rd_rate') || 0.9);
+  var rdShowTr = lsGet('memo_rd_tr') !== '0';
+  var dict = {};                    // 頭文字 -> {単語: 意味}
+  var dictWait = {};
+  var phrases = null, phraseIdx = null, phraseWait = null;
+
+  /* ---- 辞書（EJDict：パブリックドメインの英和辞書） ---- */
+  function getText(url, cb) {
+    var x = new XMLHttpRequest();
+    x.open('GET', url, true);
+    x.onreadystatechange = function () { if (x.readyState === 4) cb(x.status >= 200 && x.status < 300 || (x.status === 0 && x.responseText) ? x.responseText : null); };
+    x.send();
+  }
+  function loadLetter(ch, cb) {
+    if (!/^[a-z]$/.test(ch)) { cb({}); return; }
+    if (dict[ch]) { cb(dict[ch]); return; }
+    if (dictWait[ch]) { dictWait[ch].push(cb); return; }
+    dictWait[ch] = [cb];
+    getText('vendor/ejdict/' + ch + '.txt', function (txt) {
+      var map = {};
+      if (txt) {
+        var lines = txt.split('\n');
+        for (var i = 0; i < lines.length; i++) {
+          var t = lines[i].indexOf('\t'); if (t < 1) continue;
+          var heads = lines[i].slice(0, t).split(','), m = lines[i].slice(t + 1);
+          for (var j = 0; j < heads.length; j++) {
+            var h = heads[j].replace(/^\s+|\s+$/g, '').toLowerCase();
+            if (h && !map[h]) map[h] = m;
+          }
+        }
+        dict[ch] = map;
+      }
+      var list = dictWait[ch]; delete dictWait[ch];
+      each(list, function (f) { f(map); });
     });
   }
+  function lookupRaw(w, cb) { w = w.toLowerCase(); loadLetter(w.charAt(0), function (map) { cb(map[w] || null); }); }
+  var IRREG = { am: 'be', is: 'be', are: 'be', was: 'be', were: 'be', been: 'be', being: 'be', has: 'have', had: 'have', did: 'do', does: 'do', done: 'do',
+    went: 'go', gone: 'go', made: 'make', took: 'take', taken: 'take', got: 'get', gotten: 'get', came: 'come', saw: 'see', seen: 'see', knew: 'know', known: 'know',
+    thought: 'think', told: 'tell', found: 'find', gave: 'give', given: 'give', left: 'leave', felt: 'feel', brought: 'bring', began: 'begin', begun: 'begin',
+    kept: 'keep', held: 'hold', wrote: 'write', written: 'write', stood: 'stand', heard: 'hear', meant: 'mean', met: 'meet', ran: 'run', paid: 'pay', sat: 'sit',
+    spoke: 'speak', spoken: 'speak', lay: 'lie', led: 'lead', grew: 'grow', grown: 'grow', lost: 'lose', fell: 'fall', fallen: 'fall', sent: 'send', built: 'build',
+    understood: 'understand', drew: 'draw', drawn: 'draw', broke: 'break', broken: 'break', spent: 'spend', rose: 'rise', risen: 'rise', drove: 'drive', driven: 'drive',
+    bought: 'buy', wore: 'wear', worn: 'wear', chose: 'choose', chosen: 'choose', sold: 'sell', caught: 'catch', taught: 'teach', fought: 'fight', threw: 'throw',
+    thrown: 'throw', slept: 'sleep', ate: 'eat', eaten: 'eat', forgot: 'forget', forgotten: 'forget', hid: 'hide', hidden: 'hide', flew: 'fly', flown: 'fly',
+    children: 'child', men: 'man', women: 'woman', people: 'person', feet: 'foot', teeth: 'tooth', mice: 'mouse', better: 'good', best: 'good', worse: 'bad', worst: 'bad',
+    shook: 'shake', shaken: 'shake', woke: 'wake', woken: 'wake', swam: 'swim', sang: 'sing', sung: 'sing', rang: 'ring', drank: 'drink', drunk: 'drink', struck: 'strike',
+    sought: 'seek', lent: 'lend', dealt: 'deal', fed: 'feed', fled: 'flee', bent: 'bend', bound: 'bind', dug: 'dig', hung: 'hang', laid: 'lay', shot: 'shoot', stuck: 'stick' };
+  function lemmas(w) {
+    w = w.toLowerCase().replace(/[’]/g, "'").replace(/'s$/, '').replace(/s'$/, 's');
+    var out = [w], add = function (x) { if (x && x.length > 1 && out.indexOf(x) < 0) out.push(x); };
+    if (IRREG[w]) add(IRREG[w]);
+    var m;
+    if (/ies$/.test(w)) add(w.slice(0, -3) + 'y');
+    if (/(ches|shes|sses|xes|zes|oes)$/.test(w)) add(w.slice(0, -2));
+    if (/s$/.test(w) && !/ss$/.test(w)) add(w.slice(0, -1));
+    if (/ied$/.test(w)) add(w.slice(0, -3) + 'y');
+    if (/ed$/.test(w)) { add(w.slice(0, -2)); add(w.slice(0, -1)); if ((m = w.match(/([b-df-hj-np-tv-z])\1ed$/))) add(w.slice(0, -3)); }
+    if (/ing$/.test(w)) { add(w.slice(0, -3)); add(w.slice(0, -3) + 'e'); if ((m = w.match(/([b-df-hj-np-tv-z])\1ing$/))) add(w.slice(0, -4)); if (/ying$/.test(w)) add(w.slice(0, -4) + 'ie'); }
+    if (/ier$/.test(w)) add(w.slice(0, -3) + 'y');
+    if (/iest$/.test(w)) add(w.slice(0, -4) + 'y');
+    if (/er$/.test(w)) { add(w.slice(0, -2)); add(w.slice(0, -1)); }
+    if (/est$/.test(w)) { add(w.slice(0, -3)); add(w.slice(0, -2)); }
+    if (/ly$/.test(w)) { add(w.slice(0, -2)); if (/ily$/.test(w)) add(w.slice(0, -3) + 'y'); }
+    return out;
+  }
+  // 単語を引く：そのままの形と、元の形（変化形のとき）を最大3つ。cb([{head, mean}])
+  function lookupWord(w, cb) {
+    var cands = lemmas(w), i = 0, found = [];
+    var next = function () {
+      if (i >= cands.length || found.length >= 3) { finish(); return; }
+      var c = cands[i++];
+      lookupRaw(c, function (m) { if (m) found.push({ head: c, mean: m }); next(); });
+    };
+    var finish = function () {
+      // 「runの過去形」のような説明なら、元の単語も引く
+      var ex = null;
+      each(found, function (f) { var mm = f.mean.match(/^([A-Za-z]+)の(過去形|過去分詞|過去|現在分詞|複数形|三人称単数現在|比較級|最上級|三単現)/); if (mm && !ex) ex = mm[1].toLowerCase(); });
+      var has = function (h) { for (var k = 0; k < found.length; k++) if (found[k].head === h) return true; return false; };
+      if (ex && !has(ex)) lookupRaw(ex, function (bm) { if (bm) found.push({ head: ex, mean: bm }); cb(found); });
+      else cb(found);
+    };
+    next();
+  }
+  function cleanMean(m, max) {
+    m = String(m || '').replace(/『|』/g, '').replace(/\s*\/\s*/g, ' / ');
+    var parts = m.split(' / '), out = [];
+    for (var i = 0; i < parts.length && out.length < 3; i++) { var p = parts[i].replace(/《[^》]*》/g, '').replace(/^\s+|\s+$/g, ''); if (p && p.length > 1) out.push(p); }
+    var s = out.join('、') || m;
+    return s.length > (max || 70) ? s.slice(0, max || 70) + '…' : s;
+  }
+  function prettyMean(m) {
+    // 表示用：語義ごとに改行
+    return String(m || '').replace(/『|』/g, '').split(/\s*\/\s*/).join('\n');
+  }
+
+  /* ---- 熟語・定型表現 ---- */
+  function loadPhrases(cb) {
+    if (phraseIdx) { cb(); return; }
+    if (phraseWait) { phraseWait.push(cb); return; }
+    phraseWait = [cb];
+    getText('vendor/ejdict/phrases.json', function (txt) {
+      phrases = []; phraseIdx = {};
+      try { phrases = JSON.parse(txt || '[]'); } catch (e) { phrases = []; }
+      each(phrases, function (p, i) {
+        var toks = p[0].toLowerCase().split(/\s+/);
+        var first = toks[0];
+        (phraseIdx[first] = phraseIdx[first] || []).push(i);
+      });
+      var list = phraseWait; phraseWait = null;
+      each(list, function (f) { f(); });
+    });
+  }
+  var BE = ['be', 'am', 'is', 'are', 'was', 'were', 'been', 'being', "'m", "'re", "'s"];
+  var POSS = ['my', 'your', 'his', 'her', 'its', 'our', 'their', "one's"];
+  var SELF = ['myself', 'yourself', 'himself', 'herself', 'itself', 'ourselves', 'yourselves', 'themselves', 'oneself'];
+  function tokMatch(p, t) {
+    if (p === t.l) return true;
+    if (p === 'be') return BE.indexOf(t.l) >= 0;
+    if (p === "one's") return POSS.indexOf(t.l) >= 0 || /'s$/.test(t.l);
+    if (p === 'oneself') return SELF.indexOf(t.l) >= 0;
+    if (p === 'one') return false;
+    return t.lem.indexOf(p) >= 0;
+  }
+  function isSlot(p, raw) { return p === '～' || ((p === 'a' || p === 'b') && raw === p.toUpperCase()); }
+  // 文の中から熟語を探す（長いものを優先、重ならないように）
+  function findIdioms(toks) {
+    var found = [], used = [];
+    for (var i = 0; i < toks.length; i++) {
+      var cands = [];
+      var keys = [toks[i].l].concat(toks[i].lem);
+      if (BE.indexOf(toks[i].l) >= 0) keys.push('be');
+      var seenK = {};
+      each(keys, function (k) { if (seenK[k]) return; seenK[k] = 1; each(phraseIdx[k] || [], function (pi) { cands.push(pi); }); });
+      var best = null;
+      each(cands, function (pi) {
+        var raw = phrases[pi][0].split(/\s+/), pt = phrases[pi][0].toLowerCase().split(/\s+/);
+        var j = i, k = 0, ok = true;
+        while (k < pt.length) {
+          if (isSlot(pt[k], raw[k])) {
+            // 1〜4語を飛ばして、次の語が合うところを探す
+            var nextP = pt[k + 1], moved = false;
+            if (nextP === undefined) { j += 1; k++; moved = true; break; }
+            for (var skip = 1; skip <= 4 && j + skip < toks.length; skip++) {
+              if (tokMatch(nextP, toks[j + skip])) { j += skip; k++; moved = true; break; }
+            }
+            if (!moved) { ok = false; break; }
+            continue;
+          }
+          if (j >= toks.length || !tokMatch(pt[k], toks[j])) { ok = false; break; }
+          j++; k++;
+        }
+        if (!ok) return;
+        var len = j - i;
+        if (len < 2) return;
+        var score = len * 10 + (phrases[pi][2] ? 5 : 0);
+        if (!best || score > best.score) best = { pi: pi, s: i, e: j - 1, score: score };
+      });
+      if (best) {
+        var clash = false;
+        for (var q = best.s; q <= best.e; q++) if (used[q]) clash = true;
+        if (!clash) { for (q = best.s; q <= best.e; q++) used[q] = 1; found.push(best); }
+      }
+    }
+    return found;
+  }
+
+  /* ---- 文に分ける・単語に分ける ---- */
+  var ABBR = /\b(Mr|Mrs|Ms|Mx|Dr|Prof|St|Jr|Sr|vs|etc|e\.g|i\.e|No|Nos|Inc|Ltd|Co|Corp|U\.S|U\.K|a\.m|p\.m|Sen|Rep|Gov|Gen|Lt|Col|Capt|Sgt|Adm|Pres|Supt|Rev|Hon|Mt|Ft|Ave|Blvd|Dept|Univ|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|approx|est|fig|vol|pp|p)\.$/i;
+  function splitSentences(text) {
+    text = String(text || '').replace(/\r/g, '').replace(/[ \t]+/g, ' ');
+    var out = [], paras = text.split(/\n\s*\n|\n/);
+    each(paras, function (para) {
+      para = para.replace(/^\s+|\s+$/g, '');
+      if (!para) return;
+      var start = 0;
+      for (var i = 0; i < para.length; i++) {
+        var c = para.charAt(i);
+        if (c === '.' || c === '!' || c === '?' || c === '…') {
+          var j = i + 1;
+          while (j < para.length && /["'”’)\]]/.test(para.charAt(j))) j++;
+          if (j >= para.length) break;
+          if (para.charAt(j) !== ' ') continue;
+          var head = para.slice(start, j);
+          if (c === '.' && ABBR.test(head)) continue;
+          var nx = para.charAt(j + 1);
+          if (nx && !/[A-Z0-9"“'‘(]/.test(nx)) continue;
+          out.push(head.replace(/^\s+|\s+$/g, ''));
+          start = j + 1;
+        }
+      }
+      var rest = para.slice(start).replace(/^\s+|\s+$/g, '');
+      if (rest) out.push(rest);
+    });
+    return out;
+  }
+  var WORD_RE = /[A-Za-z]+(?:['’][A-Za-z]+)*(?:-[A-Za-z]+)*/g;
+  function tokenize(s) {
+    var toks = [], m;
+    WORD_RE.lastIndex = 0;
+    while ((m = WORD_RE.exec(s))) {
+      var l = m[0].toLowerCase().replace(/’/g, "'");
+      toks.push({ w: m[0], s: m.index, e: m.index + m[0].length, l: l, lem: lemmas(l) });
+    }
+    return toks;
+  }
+
+  /* ---- 読み上げ ---- */
+  var rdSpeaking = false, rdQueue = [], rdIdx = -1;
+  function enVoice() {
+    var vs = (window.speechSynthesis && speechSynthesis.getVoices()) || [], best = null, score = -1;
+    each(vs, function (v) {
+      var l = (v.lang || '').replace('_', '-').toLowerCase();
+      if (l.indexOf('en') !== 0) return;
+      var sc = (l === 'en-us' ? 4 : l === 'en-gb' ? 3 : 1) + (/(Samantha|Alex|Ava|Allison|Susan|Zoe|Karen|Daniel|Google US English)/.test(v.name) ? 3 : 0) + (/(compact|eloquence)/i.test(v.name) ? -2 : 0) + (v.localService ? 1 : 0);
+      if (sc > score) { score = sc; best = v; }
+    });
+    return best;
+  }
+  function speak(text, onend) {
+    if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) { alert('この端末では読み上げができません。'); return; }
+    var u = new SpeechSynthesisUtterance(text);
+    u.lang = 'en-US'; u.rate = rdRate;
+    var v = enVoice(); if (v) u.voice = v;
+    var done = false;
+    var fin = function () { if (done) return; done = true; if (onend) onend(); };
+    u.onend = fin; u.onerror = fin;
+    try { speechSynthesis.resume(); } catch (e) {}
+    speechSynthesis.speak(u);
+    // iOS で終わりの合図が来ないことがあるので、長さから見積もった時間で次へ進む保険
+    if (onend) setTimeout(function () { if (!done && !speechSynthesis.speaking) fin(); }, 1500 + text.length * 120 / rdRate);
+  }
+  function stopSpeak() {
+    rdSpeaking = false; rdQueue = []; markSentence(-1);
+    try { speechSynthesis.cancel(); } catch (e) {}
+    $('rd-play').textContent = '▶ 再生';
+  }
+  function playFrom(i) {
+    if (!rdSents.length) return;
+    stopSpeak();
+    rdSpeaking = true; $('rd-play').textContent = '■ 停止';
+    var step = function (k) {
+      if (!rdSpeaking || k >= rdSents.length) { stopSpeak(); return; }
+      markSentence(k);
+      speak(rdSents[k].text, function () { if (rdSpeaking) setTimeout(function () { step(k + 1); }, 250); });
+    };
+    step(i);
+  }
+  function markSentence(k) {
+    rdIdx = k;
+    each($('rd-text').childNodes, function (el, i) { el.className = 'rd-sent' + (i === k ? ' now' : ''); });
+    if (k >= 0) { var el = $('rd-text').childNodes[k]; if (el && el.scrollIntoView) { try { el.scrollIntoView(false); } catch (e) {} } }
+  }
+
+  /* ---- 翻訳（Google Apps Script・JSONP） ---- */
+  var jsonpN = 0, gasXhrOk = lsGet('memo_gas_xhr') !== '0';
+  // まずは普通の通信（ログイン情報を送らないので、Google に複数ログインしていても動く）。だめなら JSONP
+  function gasCall(params, cb) {
+    if (!gasUrl) { cb(null, 'nourl'); return; }
+    if (!gasXhrOk) { gasJsonp(params, cb); return; }
+    var q = []; for (var k in params) q.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
+    var x = new XMLHttpRequest(), done = false;
+    try { x.open('GET', gasUrl + (gasUrl.indexOf('?') >= 0 ? '&' : '?') + q.join('&'), true); } catch (e) { gasJsonp(params, cb); return; }
+    x.timeout = 30000;
+    var fail = function () { if (done) return; done = true; gasJsonp(params, function (data, err) { if (data && !err) { gasXhrOk = false; lsSet('memo_gas_xhr', '0'); } cb(data, err); }); };
+    x.onreadystatechange = function () {
+      if (x.readyState !== 4 || done) return;
+      var data = null;
+      if (x.status === 200) { try { data = JSON.parse(x.responseText); } catch (e) {} }
+      if (!data) { fail(); return; }
+      done = true; cb(data, null);
+    };
+    x.ontimeout = fail;
+    try { x.send(); } catch (e) { fail(); }
+  }
+  function gasJsonp(params, cb) {
+    var name = '__gas' + (++jsonpN) + '_' + now(), done = false;
+    var sc = document.createElement('script');
+    var q = []; for (var k in params) q.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
+    var timer = setTimeout(function () { finish(null, 'timeout'); }, 30000);
+    var finish = function (data, err) {
+      if (done) return; done = true; clearTimeout(timer);
+      try { delete window[name]; } catch (e) { window[name] = undefined; }
+      if (sc.parentNode) sc.parentNode.removeChild(sc);
+      cb(data, err);
+    };
+    window[name] = function (data) { finish(data, null); };
+    sc.onerror = function () { finish(null, 'net'); };
+    sc.src = gasUrl + (gasUrl.indexOf('?') >= 0 ? '&' : '?') + q.join('&') + '&callback=' + name;
+    document.head.appendChild(sc);
+  }
+  // 文の配列を訳す（長いときは分けて送る）
+  function translateAll(list, cb) {
+    var out = [], i = 0;
+    var next = function () {
+      if (i >= list.length) { cb(out, null); return; }
+      var batch = [], len = 0;
+      while (i < list.length && (batch.length === 0 || len + list[i].length < 1500) && batch.length < 25) { batch.push(list[i]); len += list[i].length; i++; }
+      gasCall({ qs: JSON.stringify(batch) }, function (data, err) {
+        if (err || !data || !data.ok) { cb(out, err || (data && data.error) || 'error'); return; }
+        each(batch, function (b, k) { out.push((data.ts && data.ts[k]) || ''); });
+        next();
+      });
+    };
+    next();
+  }
+  function translateOne(text, cb) {
+    gasCall({ q: text }, function (data, err) { cb(!err && data && data.ok ? data.t : null); });
+  }
+
+  /* ---- 画面 ---- */
+  function rdSaveLocal() { lsSet('memo_reader', JSON.stringify(rdDocs)); }
+  function rdIds() { var a = []; for (var k in rdDocs) if (rdDocs[k] && rdDocs[k].text) a.push(k); a.sort(function (x, y) { return (rdDocs[y].at || 0) - (rdDocs[x].at || 0); }); return a; }
+  function renderRdHistory() {
+    var box = $('rd-hist'); box.innerHTML = '';
+    var ids = rdIds();
+    $('rd-hist-h').style.display = ids.length ? '' : 'none';
+    each(ids.slice(0, 40), function (id) {
+      var d = rdDocs[id];
+      var row = document.createElement('div'); row.className = 'rd-hrow';
+      var b = document.createElement('b'); b.textContent = d.title || d.text.slice(0, 50);
+      var sp = document.createElement('span'); sp.textContent = fmtClipTime(d.at);
+      var del = document.createElement('button'); del.type = 'button'; del.textContent = '削除'; del.className = 'danger';
+      on(del, 'click', function (e) {
+        e.stopPropagation();
+        if (!window.confirm('この英文を履歴から削除しますか？')) return;
+        delete rdDocs[id]; rdSaveLocal(); renderRdHistory();
+        var bd = {}; bd['reader/' + id] = null; api('PATCH', '', bd, function () {});
+      });
+      row.appendChild(del); row.appendChild(b); row.appendChild(sp);
+      on(row, 'click', function () { openRdDoc(id); });
+      box.appendChild(row);
+    });
+  }
+  function rdPullHistory() {
+    if (!KEY) return;
+    api('GET', '/reader', undefined, function (err, data) {
+      if (err) return;
+      rdDocs = data || {}; rdSaveLocal();
+      if (!rdCur) renderRdHistory();
+    });
+    api('GET', '/settings/gas', undefined, function (err, u) {
+      if (!err && typeof u === 'string' && u !== gasUrl) { gasUrl = u; lsSet('memo_gas', u); }
+    });
+  }
+  function openReader(text) {
+    if (!KEY) return;
+    show('scr-reader'); rdPullHistory();
+    if (text) { $('rd-in').value = text; rdLoad(); }
+    else rdShowInput();
+  }
+  function rdShowInput() {
+    stopSpeak(); rdCur = null;
+    $('rd-input').className = ''; $('rd-view').className = 'hidden';
+    $('rd-paste').className = (navigator.clipboard && navigator.clipboard.readText) ? '' : 'hidden';
+    renderRdHistory();
+  }
+  function rdLoad() {
+    var text = $('rd-in').value.replace(/^\s+|\s+$/g, '');
+    if (!text) { alert('英文を入力するか、貼り付けてください。'); return; }
+    if (text.length > 20000) text = text.slice(0, 20000);
+    // 同じ英文が履歴にあればそれを開く
+    var ids = rdIds();
+    for (var i = 0; i < ids.length; i++) if (rdDocs[ids[i]].text === text) { openRdDoc(ids[i]); return; }
+    var id = newId();
+    rdDocs[id] = { title: text.replace(/\s+/g, ' ').slice(0, 60), text: text, at: now() };
+    rdSaveLocal();
+    openRdDoc(id, true);
+  }
+  function rdStore(id) {
+    var d = rdDocs[id]; if (!d || !KEY) return;
+    var b = {}; b['reader/' + id] = d; api('PATCH', '', b, function () {});
+    // 古い履歴は50件まで
+    var ids = rdIds();
+    if (ids.length > 50) { var b2 = {}; for (var i = 50; i < ids.length; i++) { b2['reader/' + ids[i]] = null; delete rdDocs[ids[i]]; } rdSaveLocal(); api('PATCH', '', b2, function () {}); }
+  }
+  function openRdDoc(id, isNew) {
+    var d = rdDocs[id]; if (!d) return;
+    stopSpeak();
+    rdCur = { id: id, d: d };
+    $('rd-input').className = 'hidden'; $('rd-view').className = '';
+    var list = splitSentences(d.text);
+    rdSents = [];
+    each(list, function (t) { rdSents.push({ text: t, toks: tokenize(t), idioms: [] }); });
+    renderRd();
+    $('rd-body').scrollTop = 0;
+    loadPhrases(function () {
+      if (!rdCur || rdCur.id !== id) return;
+      each(rdSents, function (s) { s.idioms = findIdioms(s.toks); });
+      renderRd();
+    });
+    // 訳
+    if (d.tr && d.tr.length === rdSents.length) { if (isNew) rdStore(id); return; }
+    if (!gasUrl) { if (isNew) rdStore(id); return; }
+    $('rd-status').textContent = '日本語訳を作成中…';
+    translateAll(list, function (tr, err) {
+      if (!rdDocs[id]) return;
+      if (tr.length === list.length) { rdDocs[id].tr = tr; rdSaveLocal(); }
+      rdStore(id);
+      if (rdCur && rdCur.id === id) {
+        $('rd-status').textContent = err ? '日本語訳を作れませんでした（' + (err === 'nourl' ? '翻訳の設定がありません' : err === 'timeout' ? '時間切れ' : '翻訳の設定を確認してください') + '）' : '';
+        renderRd();
+      }
+    });
+  }
+  function renderRd() {
+    if (!rdCur) return;
+    var d = rdCur.d, box = $('rd-text'); box.innerHTML = '';
+    var allIdioms = [];
+    each(rdSents, function (s, si) {
+      var blk = document.createElement('div'); blk.className = 'rd-sent' + (si === rdIdx ? ' now' : '');
+      var pb = document.createElement('button'); pb.type = 'button'; pb.className = 'rd-say'; pb.textContent = '🔊';
+      on(pb, 'click', function () { playOne(si); });
+      blk.appendChild(pb);
+      var en = document.createElement('span'); en.className = 'rd-en';
+      // 熟語の範囲（単語の番号）
+      var idAt = {};
+      each(s.idioms, function (f, fi) { for (var q = f.s; q <= f.e; q++) idAt[q] = fi; allIdioms.push({ f: f, si: si }); });
+      var pos = 0;
+      each(s.toks, function (t, ti) {
+        if (t.s > pos) en.appendChild(document.createTextNode(s.text.slice(pos, t.s)));
+        var w = document.createElement('span'); w.className = 'w' + (idAt[ti] !== undefined ? ' idm' : '');
+        w.textContent = t.w;
+        on(w, 'click', function (e) { e.stopPropagation(); wordTap(si, ti); });
+        en.appendChild(w);
+        // 熟語の途中の空白にも下線
+        pos = t.e;
+      });
+      if (pos < s.text.length) en.appendChild(document.createTextNode(s.text.slice(pos)));
+      blk.appendChild(en);
+      if (rdShowTr) {
+        var ja = document.createElement('div'); ja.className = 'rd-ja';
+        ja.textContent = d.tr && d.tr[si] ? d.tr[si] : (gasUrl ? '' : '（右上の「⚙ 翻訳の設定」で「テストして保存」が成功すると、ここに日本語訳が出ます）');
+        if (ja.textContent) blk.appendChild(ja);
+        // 熟語：訳の下に
+        if (s.idioms.length) {
+          var il = document.createElement('div'); il.className = 'rd-idl';
+          each(s.idioms, function (f) {
+            var p = phrases[f.pi];
+            var it = document.createElement('div'); it.className = 'rd-idi';
+            var a = document.createElement('b'); a.textContent = p[0];
+            it.appendChild(a); it.appendChild(document.createTextNode('　' + (p[2] ? p[1] : cleanMean(p[1], 50))));
+            on(it, 'click', function () { phraseTap(f, si); });
+            il.appendChild(it);
+          });
+          blk.appendChild(il);
+        }
+      }
+      box.appendChild(blk);
+    });
+    $('rd-trbtn').textContent = rdShowTr ? '訳を隠す' : '訳を表示';
+    $('rd-rate').value = String(rdRate);
+  }
+  function playOne(si) {
+    stopSpeak(); markSentence(si);
+    speak(rdSents[si].text, function () { markSentence(-1); });
+  }
+
+  /* ---- 単語・熟語をタップしたとき ---- */
+  var popItem = null;   // {w, m, ex, si}
+  function wordTap(si, ti) {
+    var s = rdSents[si], t = s.toks[ti];
+    try { speechSynthesis.cancel(); } catch (e) {} rdSpeaking = false; $('rd-play').textContent = '▶ 再生';
+    speak(t.w);
+    $('pop-head').textContent = t.w;
+    $('pop-sub').textContent = '';
+    $('pop-mean').textContent = '辞書を引いています…';
+    $('pop-chips').innerHTML = '';
+    $('pop-idiom').innerHTML = '';
+    $('pop-save').disabled = true; $('pop-msg').textContent = '';
+    $('word-pop').className = '';
+    // この単語を含む熟語
+    each(s.idioms, function (f) {
+      if (ti < f.s || ti > f.e) return;
+      var p = phrases[f.pi], d = document.createElement('div'); d.className = 'pop-id';
+      var b = document.createElement('b'); b.textContent = p[0]; d.appendChild(b);
+      d.appendChild(document.createTextNode('　' + (p[2] ? p[1] : cleanMean(p[1], 60))));
+      var bt = document.createElement('button'); bt.type = 'button'; bt.textContent = 'この熟語を見る';
+      on(bt, 'click', function () { phraseTap(f, si); });
+      d.appendChild(bt);
+      $('pop-idiom').appendChild(d);
+    });
+    lookupWord(t.w, function (list) {
+      $('pop-chips').innerHTML = '';
+      if (!list.length) {
+        $('pop-mean').textContent = '辞書に見つかりませんでした。';
+        if (gasUrl) translateOne(t.w, function (j) { if (j) { $('pop-mean').textContent = '（翻訳）' + j; popItem = { w: t.w.toLowerCase(), m: j, si: si }; $('pop-save').disabled = false; } });
+        return;
+      }
+      var pick = function (k) {
+        var r = list[k];
+        $('pop-head').textContent = r.head;
+        $('pop-sub').textContent = r.head !== t.l ? t.w + ' → ' + r.head : '';
+        $('pop-mean').textContent = prettyMean(r.mean);
+        popItem = { w: r.head, m: cleanMean(r.mean, 70), si: si };
+        $('pop-save').disabled = false; $('pop-msg').textContent = '';
+        each($('pop-chips').childNodes, function (b2, i2) { b2.className = i2 === k ? 'on' : ''; });
+      };
+      if (list.length > 1) each(list, function (r, k) {
+        var b2 = document.createElement('button'); b2.type = 'button'; b2.textContent = r.head;
+        on(b2, 'click', function () { pick(k); speak(r.head); });
+        $('pop-chips').appendChild(b2);
+      });
+      // 「…の過去形」だけの説明より、元の形を先に見せる
+      // 変化形（-ed, -ing, -s など）なら元の形を先に見せる（チップでそのままの形にも切り替えられる）
+      var first = 0;
+      if (list.length > 1 && (/^[A-Za-z]+の(過去|現在分詞|複数形|三人称|比較級|最上級|三単現)/.test(list[0].mean) || (list[0].head === t.l && /(ed|ing|s)$/.test(t.l)))) first = 1;
+      pick(first);
+    });
+  }
+  function phraseTap(f, si) {
+    var p = phrases[f.pi];
+    try { speechSynthesis.cancel(); } catch (e) {}
+    var spoken = rdSents[si].text.slice(rdSents[si].toks[f.s].s, rdSents[si].toks[f.e].e);
+    speak(spoken);
+    $('pop-head').textContent = p[0];
+    $('pop-sub').textContent = '文中では「' + spoken + '」';
+    $('pop-chips').innerHTML = '';
+    $('pop-mean').textContent = p[2] ? p[1] : prettyMean(p[1]);
+    $('pop-idiom').innerHTML = '';
+    $('pop-msg').textContent = '';
+    popItem = { w: p[0], m: p[2] ? p[1] : cleanMean(p[1], 70), si: si };
+    $('pop-save').disabled = false;
+    $('word-pop').className = '';
+  }
+  on($('pop-say'), 'click', function () { if (popItem) speak(popItem.w.replace(/～/g, 'something')); else speak($('pop-head').textContent); });
+  on($('pop-close'), 'click', function () { $('word-pop').className = 'hidden'; });
+  on($('word-pop'), 'click', function (e) { if (e.target === $('word-pop')) $('word-pop').className = 'hidden'; });
+
+  /* ---- メモ単語帳に保存（キクタンと同じ形） ---- */
+  on($('pop-save'), 'click', function () {
+    if (!popItem || !KEY) return;
+    var it = popItem, sent = rdSents[it.si] ? rdSents[it.si].text : '', tr = rdCur && rdCur.d.tr ? rdCur.d.tr[it.si] : '';
+    $('pop-save').disabled = true; $('pop-msg').textContent = '保存中…';
+    api('GET', '/memovocab/words', undefined, function (err, words) {
+      if (err) { $('pop-msg').textContent = '保存できませんでした（' + errText(err) + '）'; $('pop-save').disabled = false; return; }
+      words = typeof words === 'string' ? words.replace(/\s+$/, '') : '';
+      var lines = words ? words.split('\n') : [], maxN = 0, dup = false;
+      each(lines, function (ln) {
+        var p = ln.split('\t'); var n = parseInt(p[2], 10); if (n > maxN) maxN = n;
+        if (p[0] && p[0].replace(/^\s+|\s+$/g, '').toLowerCase() === it.w.toLowerCase()) dup = true;
+      });
+      if (dup) { $('pop-msg').textContent = 'すでに メモ単語帳に入っています。'; return; }
+      var n = maxN + 1, clean = function (s) { return String(s || '').replace(/[\t\n\r]+/g, ' '); };
+      lines.push(clean(it.w) + '\t' + clean(it.m) + '\t' + n);
+      var b = { words: lines.join('\n'), updated: now() };
+      if (sent) b['tx/' + n] = { v: '例文: ' + sent + (tr ? '\n訳: ' + tr : ''), t: now() };
+      api('PATCH', '/memovocab', b, function (e2) {
+        if (e2) { $('pop-msg').textContent = '保存できませんでした（' + errText(e2) + '）'; $('pop-save').disabled = false; return; }
+        $('pop-msg').innerHTML = '';
+        $('pop-msg').appendChild(document.createTextNode('メモ単語帳に保存しました（No.' + n + '）。'));
+      });
+    });
+  });
+
+  /* ---- 操作 ---- */
+  on($('btn-reader'), 'click', function () { openReader(''); });
+  on($('btn-rd-back'), 'click', function () {
+    if (rdCur) { rdShowInput(); return; }
+    stopSpeak(); show('scr-list'); renderList();
+  });
+  on($('rd-go'), 'click', rdLoad);
+  on($('rd-paste'), 'click', function () {
+    navigator.clipboard.readText().then(function (t) { if (t) $('rd-in').value = t; }, function () { alert('貼り付けできませんでした。入力欄を長押しして「ペースト」を選んでください。'); });
+  });
+  on($('rd-my'), 'click', function () { window.open(/OS [5-9]_\d.* like Mac OS X/.test(navigator.userAgent) ? '/kiku-memo/ipad.html' : '/kiku-memo/', '_blank'); });
+  on($('rd-new'), 'click', function () { $('rd-in').value = ''; rdShowInput(); });
+  on($('rd-play'), 'click', function () { if (rdSpeaking) stopSpeak(); else playFrom(rdIdx >= 0 ? rdIdx : 0); });
+  on($('rd-rate'), 'change', function () { rdRate = Number($('rd-rate').value) || 0.9; lsSet('memo_rd_rate', String(rdRate)); });
+  on($('rd-trbtn'), 'click', function () { rdShowTr = !rdShowTr; lsSet('memo_rd_tr', rdShowTr ? '1' : '0'); renderRd(); });
+  on($('rd-retr'), 'click', function () { if (!rdCur) return; delete rdCur.d.tr; openRdDoc(rdCur.id); });
+
+  // 翻訳の設定
+  var GAS_CODE = [
+    '// 手書きメモの英文リーダー用：英語を日本語に訳す',
+    'function doGet(e) {',
+    '  var p = e.parameter, out;',
+    '  try {',
+    '    var sl = p.sl || "en", tl = p.tl || "ja";',
+    '    if (p.qs) {',
+    '      var list = JSON.parse(p.qs), ts = [];',
+    '      for (var i = 0; i < list.length && i < 30; i++) ts.push(list[i] ? LanguageApp.translate(String(list[i]).slice(0, 4000), sl, tl) : "");',
+    '      out = { ok: true, ts: ts };',
+    '    } else {',
+    '      out = { ok: true, t: p.q ? LanguageApp.translate(String(p.q).slice(0, 4000), sl, tl) : "" };',
+    '    }',
+    '  } catch (err) { out = { ok: false, error: String(err) }; }',
+    '  var json = JSON.stringify(out);',
+    '  if (p.callback && /^[A-Za-z0-9_$]+$/.test(p.callback)) {',
+    '    return ContentService.createTextOutput(p.callback + "(" + json + ")").setMimeType(ContentService.MimeType.JAVASCRIPT);',
+    '  }',
+    '  return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);',
+    '}'
+  ].join('\n');
+  on($('btn-rd-set'), 'click', function () {
+    $('gas-url').value = gasUrl; $('gas-code').value = GAS_CODE; $('gas-msg').textContent = '';
+    $('gas-dlg').className = '';
+  });
+  on($('gas-copy'), 'click', function () { copyText(GAS_CODE); $('gas-msg').textContent = 'コードをコピーしました（自動でコピーできない端末では、枠の中を長押ししてコピーしてください）。'; });
+  on($('gas-test'), 'click', function () {
+    var u = $('gas-url').value.replace(/^\s+|\s+$/g, '');
+    if (!/^https:\/\/script\.google\.com\/macros\/s\/[^\/]+\/exec/.test(u)) { $('gas-msg').textContent = '「https://script.google.com/macros/s/…/exec」の形のアドレスを入れてください。'; return; }
+    $('gas-msg').textContent = 'テスト中…';
+    var save = gasUrl; gasUrl = u;
+    gasXhrOk = true; lsDel('memo_gas_xhr');
+    translateOne('I am looking forward to seeing you.', function (t) {
+      if (!t) { gasUrl = save; $('gas-msg').textContent = 'うまくいきませんでした。公開の設定（アクセスできるユーザー：全員）とアドレスを確認してください。'; return; }
+      lsSet('memo_gas', u);
+      var b = {}; b['settings/gas'] = u; api('PATCH', '', b, function () {});
+      $('gas-msg').textContent = 'うまくいきました：「' + t + '」。ほかの端末にもこの設定が届きます。';
+    });
+  });
+  on($('gas-close'), 'click', function () { $('gas-dlg').className = 'hidden'; if (rdCur && !rdCur.d.tr && gasUrl) openRdDoc(rdCur.id); });
 
   /* ===================== 一覧・設定の操作 ===================== */
   on($('btn-add'), 'click', function () {
@@ -2951,7 +3670,7 @@
     if (hashKey && hashKey !== KEY) setTimeout(function () { applyKey(hashKey); }, 300);
   }
   if (KEY && wantClip) openClip();
-  if (wantReader) location.replace(READER_URL);
+  if (KEY && wantReader) openReader('');
 
   // オフラインでも開けるように（新しい端末のみ。iOS 9 には Service Worker が無いので何もしない）
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
