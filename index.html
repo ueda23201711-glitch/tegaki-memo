@@ -931,7 +931,7 @@
   function closeNote() {
     stopPoll();
     selectedId = null; dragging = null; $('items').innerHTML = ''; $('item-bar').className = 'hidden';
-    pg = null; $('bg').style.display = 'none'; $('bg').removeAttribute('src');
+    pg = null; $('bg').style.display = 'none'; $('bg').removeAttribute('src'); bgShownId = null;
     if (cur && curIsNew && !dirty[cur.id]) {
       // 何も書かなかった新規メモは残さない
       delete index[cur.id]; lsDel(noteKey(cur.id)); saveIndexLocal();
@@ -1713,17 +1713,23 @@
     zoom = 1; pageX = null;
     layout();
   }
+  var bgShownId = null;   // いま背景に出している画像
   function renderBg() {
     var im = $('bg');
-    im.onload = null;
-    if (!cur || !pg || !pg.bg) { im.style.display = 'none'; im.removeAttribute('src'); return; }
+    if (!cur || !pg || !pg.bg) { im.onload = null; im.style.display = 'none'; im.removeAttribute('src'); bgShownId = null; return; }
     var id = pg.bg;
-    im.style.display = 'none';
+    // 同じ画像なら何もしない（同じ画像を入れ直しても「読み込み完了」が来ないことがあり、消えたままになるため）
+    if (bgShownId === id && im.getAttribute('src')) { im.style.display = 'block'; return; }
+    im.onload = null;
+    im.style.display = 'none'; im.removeAttribute('src'); bgShownId = null;
     getImage(id, function (data) {
       if (!pg || pg.bg !== id) return;
-      if (!data) { setTimeout(function () { if (pg && pg.bg === id && !im.getAttribute('src')) renderBg(); }, 10000); return; }
-      im.onload = function () { im.style.display = 'block'; };
+      if (!data) { setTimeout(function () { if (pg && pg.bg === id && bgShownId !== id) renderBg(); }, 10000); return; }
+      bgShownId = id;
+      im.onload = function () { if (bgShownId === id) im.style.display = 'block'; };
+      im.onerror = function () { bgShownId = null; };
       im.src = data;
+      if (im.complete && im.naturalWidth) im.style.display = 'block';
       // 縮小画像・書き出し用には別の画像として持つ（表示用の要素はページごとに中身が変わるため）
       if (!imgEls[id]) { var cp = new Image(); cp.src = data; imgEls[id] = cp; }
     });
