@@ -115,6 +115,29 @@
   #move-dlg .row button { margin: 6px 6px 0 0; }
   .empty { text-align: center; color: #6b7a83; padding: 60px 20px; line-height: 1.8; }
 
+  /* ---- 共有クリップ ---- */
+  .live { margin-left: auto; font-size: 12px; opacity: .75; white-space: nowrap; }
+  .live.on { color: #b8f5c8; opacity: 1; }
+  .clip-wrap { max-width: 760px; margin: 0 auto; padding: 14px; }
+  .clip-send { background: #fff; border-radius: 12px; padding: 12px; box-shadow: 0 1px 3px rgba(31,42,48,.12); margin-bottom: 14px; }
+  .clip-send textarea { width: 100%; height: 90px; box-sizing: border-box; border: 1px solid #c9d2d8; border-radius: 9px; padding: 10px; font-size: 16px; margin-bottom: 8px; }
+  .clip-send .row button { margin-right: 6px; }
+  #clip-msg { display: inline-block; margin-top: 6px; }
+  .clip { background: #fff; border-radius: 12px; padding: 12px 14px 10px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(31,42,48,.12); }
+  .clip-head { font-size: 12px; color: #6b7a83; margin-bottom: 6px; }
+  .clip-body { font-size: 16px; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; word-break: break-all; max-height: 9.6em; overflow: hidden; cursor: pointer; }
+  .clip-body a, #read-text a { color: #2463c9; }
+  .clip-btns { margin-top: 8px; }
+  .clip-btns button { padding: 6px 10px; margin: 0 6px 4px 0; font-size: 13px; background: #f1f4f6; }
+  .clip-btns button.danger { color: #a3301f; }
+  #read-view { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #fbfaf6; z-index: 70; }
+  .read-bar { position: absolute; top: 0; left: 0; right: 0; height: 52px; padding: 8px 10px; padding-top: calc(8px + env(safe-area-inset-top, 0px)); box-sizing: border-box; background: #2f4858; color: #fff; white-space: nowrap; overflow: hidden; }
+  .read-bar button { background: rgba(255,255,255,.16); color: #fff; margin-right: 6px; padding: 7px 10px; }
+  #read-meta { font-size: 12px; opacity: .85; }
+  .read-right { float: right; }
+  #read-text { position: absolute; top: 52px; top: calc(52px + env(safe-area-inset-top, 0px)); left: 0; right: 0; bottom: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 22px 24px 60px; box-sizing: border-box; line-height: 1.75; white-space: pre-wrap; word-wrap: break-word; color: #1f2a30; -webkit-user-select: text; user-select: text; }
+  @media (min-width: 700px) { #read-text { padding-left: 10%; padding-right: 10%; } }
+
   /* ---- 設定・初回 ---- */
   .panel { background: #fff; border-radius: 14px; padding: 18px; margin: 14px; max-width: 560px; }
   @media (min-width: 600px) { .panel { margin: 24px auto; } }
@@ -264,6 +287,7 @@
     <h1>手書きメモ</h1>
     <span class="sync" id="sync-list"></span>
     <button id="btn-refresh" type="button" title="最新を読み込む">↻</button>
+    <button id="btn-clip" type="button" title="共有クリップ（端末どうしで文字や URL を送る）">📋<span class="wide"> クリップ</span></button>
     <button id="btn-settings" type="button" title="設定"><span class="nar">⚙︎</span><span class="wide">設定</span></button>
     <button id="btn-photo" type="button" title="写真からメモを作る">📷<span class="wide"> 写真</span></button>
     <button id="btn-pdf" class="hidden" type="button" title="PDF からメモを作る">📄<span class="wide"> PDF</span></button>
@@ -303,6 +327,39 @@
       <button id="move-cancel" type="button">やめる</button>
     </div>
   </div>
+</div>
+
+<!-- 共有クリップ -->
+<div id="scr-clip" class="screen hidden">
+  <div class="bar">
+    <button id="btn-clip-back" type="button">← 一覧</button>
+    <h1 style="margin-left:10px">共有クリップ</h1>
+    <span id="clip-live" class="live">○ 接続中…</span>
+  </div>
+  <div class="body">
+    <div class="clip-wrap">
+      <div class="clip-send">
+        <textarea id="clip-in" placeholder="ほかの端末に送りたい文字や URL を入力（または貼り付け）"></textarea>
+        <div class="row">
+          <button id="clip-send" class="primary" type="button">送る</button>
+          <button id="clip-paste" class="hidden" type="button">📋 コピーした文字を貼り付け</button>
+          <span id="clip-msg" class="note"></span>
+        </div>
+      </div>
+      <div id="clip-list"></div>
+      <div class="empty hidden" id="clip-empty">まだ何もありません。<br>ほかの端末でこの画面を開いて文字や URL を送ると、ここにすぐ表示されます。</div>
+    </div>
+  </div>
+</div>
+<div id="read-view" class="hidden">
+  <div class="read-bar">
+    <button id="read-close" type="button">← 閉じる</button>
+    <span id="read-meta"></span>
+    <span class="read-right">
+      <button id="read-small" type="button">A−</button><button id="read-big" type="button">A＋</button><button id="read-copy" type="button">コピー</button>
+    </span>
+  </div>
+  <div id="read-text"></div>
 </div>
 
 <!-- 設定 -->
@@ -521,7 +578,7 @@
     return s;
   }
   function show(id) {
-    each(['scr-setup', 'scr-list', 'scr-settings', 'scr-edit'], function (s) {
+    each(['scr-setup', 'scr-list', 'scr-settings', 'scr-edit', 'scr-clip'], function (s) {
       $(s).className = 'screen' + (s === id ? '' : ' hidden');
     });
   }
@@ -2426,6 +2483,190 @@
     step();
   });
 
+  /* ===================== 共有クリップ（端末どうしで文字・URL を受け渡す） ===================== */
+  // memos/合言葉/clips/ID = {t: 文字, at: 時刻, d: 送った端末}
+  var CLIP_MAX = 100;
+  var clips = lsJSON('memo_clips', {});
+  var clipES = null, clipPoll = null, clipOpen = false, readingId = null, readSize = Number(lsGet('memo_read_size') || 22);
+  function deviceName() {
+    var u = navigator.userAgent;
+    if (/iPad/.test(u) || (/Macintosh/.test(u) && navigator.maxTouchPoints > 1)) return 'iPad';
+    if (/iPhone/.test(u)) return 'iPhone';
+    if (/Android/.test(u)) return 'Android';
+    return 'パソコン';
+  }
+  function saveClips() { lsSet('memo_clips', JSON.stringify(clips)); }
+  function clipIds() {
+    var a = []; for (var k in clips) if (clips[k] && typeof clips[k].t === 'string') a.push(k);
+    a.sort(function (x, y) { return (clips[y].at || 0) - (clips[x].at || 0); });
+    return a;
+  }
+  var URL_RE = /(https?:\/\/[^\s<>"'「」（）]+)/g;
+  function fmtClipTime(t) {
+    if (!t) return '';
+    var d = new Date(t), n = new Date();
+    var hm = (d.getHours() < 10 ? '0' : '') + d.getHours() + ':' + (d.getMinutes() < 10 ? '0' : '') + d.getMinutes();
+    if (d.toDateString() === n.toDateString()) return '今日 ' + hm;
+    return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm;
+  }
+  // 文字を安全に入れつつ、URL はリンクにする
+  function fillLinked(el, text) {
+    el.innerHTML = '';
+    var last = 0, m;
+    URL_RE.lastIndex = 0;
+    while ((m = URL_RE.exec(text))) {
+      if (m.index > last) el.appendChild(document.createTextNode(text.slice(last, m.index)));
+      var a = document.createElement('a'); a.href = m[1]; a.target = '_blank'; a.rel = 'noopener'; a.textContent = m[1];
+      el.appendChild(a);
+      last = m.index + m[1].length;
+    }
+    if (last < text.length) el.appendChild(document.createTextNode(text.slice(last)));
+  }
+  function firstUrl(text) { URL_RE.lastIndex = 0; var m = URL_RE.exec(text); return m ? m[1] : null; }
+  function renderClips() {
+    var box = $('clip-list'); box.innerHTML = '';
+    var ids = clipIds();
+    $('clip-empty').className = 'empty' + (ids.length ? ' hidden' : '');
+    each(ids, function (id) {
+      var c = clips[id];
+      var row = document.createElement('div'); row.className = 'clip';
+      var head = document.createElement('div'); head.className = 'clip-head';
+      head.textContent = fmtClipTime(c.at) + (c.d ? '・' + c.d + 'から' : '');
+      var body = document.createElement('div'); body.className = 'clip-body';
+      fillLinked(body, c.t.length > 600 ? c.t.slice(0, 600) + '…' : c.t);
+      var btns = document.createElement('div'); btns.className = 'clip-btns';
+      var mk = function (label, fn, cls) { var b = document.createElement('button'); b.type = 'button'; b.textContent = label; if (cls) b.className = cls; on(b, 'click', function (e) { e.stopPropagation(); fn(); }); btns.appendChild(b); };
+      mk('大きく読む', function () { openReading(id); });
+      mk('コピー', function () { copyText(c.t); });
+      var u = firstUrl(c.t);
+      if (u) mk('開く', function () { window.open(u, '_blank'); });
+      mk('削除', function () { delClip(id); }, 'danger');
+      row.appendChild(head); row.appendChild(body); row.appendChild(btns);
+      on(body, 'click', function (e) { if (e.target.tagName !== 'A') openReading(id); });
+      box.appendChild(row);
+    });
+  }
+  function copyText(t) {
+    var done = function (ok) { $('clip-msg').textContent = ok ? 'コピーしました。' : 'この端末では自動でコピーできません。「大きく読む」で文字を長押ししてコピーしてください。'; };
+    if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t).then(function () { done(true); }, function () { done(fallbackCopy(t)); }); return; }
+    done(fallbackCopy(t));
+  }
+  function fallbackCopy(t) {
+    try {
+      var ta = document.createElement('textarea'); ta.value = t; ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed'; ta.style.top = '-1000px'; document.body.appendChild(ta);
+      ta.select(); try { ta.setSelectionRange(0, t.length); } catch (e) {}
+      var ok = document.execCommand && document.execCommand('copy');
+      document.body.removeChild(ta);
+      return !!ok;
+    } catch (e) { return false; }
+  }
+  function sendClip(text) {
+    text = String(text || '').replace(/^\s+|\s+$/g, '');
+    if (!text) return;
+    if (text.length > 50000) text = text.slice(0, 50000);
+    if (!KEY) return;
+    $('clip-msg').textContent = '送信中…';
+    rawApi('POST', '/memos/' + KEY + '/clips', { t: text, at: { '.sv': 'timestamp' }, d: deviceName() }, function (err, res) {
+      if (err) { $('clip-msg').textContent = '送れませんでした（' + errText(err) + '）。通信状態を確認してください。'; return; }
+      $('clip-msg').textContent = '送りました。';
+      $('clip-in').value = '';
+      if (res && res.name && !clips[res.name]) { clips[res.name] = { t: text, at: now(), d: deviceName() }; saveClips(); renderClips(); }
+      pruneClips();
+    });
+  }
+  function pruneClips() {
+    var ids = clipIds();
+    if (ids.length <= CLIP_MAX) return;
+    var b = {};
+    for (var i = CLIP_MAX; i < ids.length; i++) { b['clips/' + ids[i]] = null; delete clips[ids[i]]; }
+    saveClips();
+    api('PATCH', '', b, function () {});
+  }
+  function delClip(id) {
+    delete clips[id]; saveClips(); renderClips();
+    if (readingId === id) closeReading();
+    var b = {}; b['clips/' + id] = null;
+    api('PATCH', '', b, function () {});
+  }
+  // 新しく届いたものを受け取る（Firebase のストリーム。だめなら定期的に読み込む）
+  function applyClipEvent(path, data) {
+    if (path === '/') { clips = data || {}; }
+    else {
+      var parts = path.replace(/^\//, '').split('/');
+      if (parts.length === 1) { if (data === null) delete clips[parts[0]]; else clips[parts[0]] = data; }
+      else if (clips[parts[0]]) { if (data === null) delete clips[parts[0]][parts[1]]; else clips[parts[0]][parts[1]] = data; }
+    }
+    saveClips();
+    if (clipOpen) renderClips();
+    if (readingId && !clips[readingId]) closeReading();
+  }
+  function startClipSync() {
+    stopClipSync();
+    if (!KEY) return;
+    var url = DB_URL + '/memos/' + KEY + '/clips.json';
+    if (window.EventSource) {
+      try {
+        clipES = new EventSource(url);
+        var h = function (e) { try { var m = JSON.parse(e.data); applyClipEvent(m.path, m.data); $('clip-live').textContent = '● 受信中'; $('clip-live').className = 'live on'; } catch (er) {} };
+        clipES.addEventListener('put', h);
+        clipES.addEventListener('patch', function (e) {
+          try { var m = JSON.parse(e.data); for (var k in m.data) applyClipEvent((m.path === '/' ? '' : m.path) + '/' + k, m.data[k]); } catch (er) {}
+        });
+        clipES.onerror = function () { $('clip-live').textContent = '○ 再接続中…'; $('clip-live').className = 'live'; };
+        return;
+      } catch (e) { clipES = null; }
+    }
+    var pull = function () {
+      rawApi('GET', '/memos/' + KEY + '/clips', undefined, function (err, data) {
+        if (err) { $('clip-live').textContent = '○ オフライン'; $('clip-live').className = 'live'; return; }
+        applyClipEvent('/', data); $('clip-live').textContent = '● 受信中'; $('clip-live').className = 'live on';
+      });
+    };
+    pull(); clipPoll = setInterval(pull, 8000);
+  }
+  function stopClipSync() {
+    if (clipES) { try { clipES.close(); } catch (e) {} clipES = null; }
+    if (clipPoll) { clearInterval(clipPoll); clipPoll = null; }
+  }
+  function openClip() {
+    if (!KEY) return;
+    clipOpen = true; $('clip-msg').textContent = '';
+    show('scr-clip'); renderClips(); startClipSync();
+    $('clip-paste').className = (navigator.clipboard && navigator.clipboard.readText) ? '' : 'hidden';
+  }
+  function closeClip() { clipOpen = false; stopClipSync(); closeReading(); show('scr-list'); renderList(); }
+  // 大きく読む
+  function openReading(id) {
+    var c = clips[id]; if (!c) return;
+    readingId = id;
+    fillLinked($('read-text'), c.t);
+    $('read-text').style.fontSize = readSize + 'px';
+    $('read-meta').textContent = fmtClipTime(c.at) + (c.d ? '・' + c.d + 'から' : '');
+    $('read-view').className = '';
+    $('read-text').scrollTop = 0;
+  }
+  function closeReading() { readingId = null; $('read-view').className = 'hidden'; }
+  function setReadSize(d) {
+    readSize = Math.max(14, Math.min(48, readSize + d)); lsSet('memo_read_size', String(readSize));
+    $('read-text').style.fontSize = readSize + 'px';
+  }
+  on($('btn-clip'), 'click', openClip);
+  on($('btn-clip-back'), 'click', closeClip);
+  on($('clip-send'), 'click', function () { sendClip($('clip-in').value); });
+  on($('clip-paste'), 'click', function () {
+    navigator.clipboard.readText().then(function (t) {
+      if (!t) { $('clip-msg').textContent = 'コピーした文字がありません。'; return; }
+      $('clip-in').value = t;
+      $('clip-msg').textContent = '貼り付けました。「送る」を押すとほかの端末に届きます。';
+    }, function () { $('clip-msg').textContent = '貼り付けできませんでした。入力欄を長押しして「ペースト」を選んでください。'; });
+  });
+  on($('read-close'), 'click', closeReading);
+  on($('read-copy'), 'click', function () { if (readingId && clips[readingId]) copyText(clips[readingId].t); });
+  on($('read-small'), 'click', function () { setReadSize(-2); });
+  on($('read-big'), 'click', function () { setReadSize(2); });
+  on(document, 'visibilitychange', function () { if (!clipOpen) return; if (document.hidden) stopClipSync(); else startClipSync(); });
+
   /* ===================== 一覧・設定の操作 ===================== */
   on($('btn-add'), 'click', function () {
     var id = newId(), t = now();
@@ -2679,6 +2920,7 @@
   // 一覧を開いている間も時々確認
   setInterval(function () { if (KEY && !cur && $('scr-list').className.indexOf('hidden') < 0) refreshIndex(); }, 30000);
 
+  var wantClip = /#clip/.test(location.hash);
   var hashKey = keyFromHash();
   if (!KEY) { if (hashKey) useKey(hashKey); else show('scr-setup'); }
   else {
@@ -2686,6 +2928,7 @@
     uploadImages();
     if (hashKey && hashKey !== KEY) setTimeout(function () { applyKey(hashKey); }, 300);
   }
+  if (KEY && wantClip) openClip();
 
   // オフラインでも開けるように（新しい端末のみ。iOS 9 には Service Worker が無いので何もしない）
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
