@@ -93,6 +93,11 @@
   .fb-btns button { padding: 6px 10px; margin: 2px 0 2px 6px; font-size: 13px; background: #fff; box-shadow: 0 1px 3px rgba(31,42,48,.15); }
   @media (max-width: 520px) { .fb-btns { float: none; display: block; } .fb-btns button { margin: 2px 6px 2px 0; } }
   .folder .thumb { background: #f4f1e6; }
+  .fgrid { position: absolute; top: 6%; left: 6%; right: 6%; bottom: 6%; }
+  .fcell { float: left; width: 50%; height: 50%; padding: 4px; box-sizing: border-box; }
+  .fmini { width: 100%; height: 100%; background: #fff; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 3px rgba(31,42,48,.18); }
+  .thumb .fmini img { position: static; display: block; width: 100%; height: 100%; }
+  .ftag { position: absolute; right: 8px; bottom: 6px; font-size: 26px; line-height: 1; }
   .ficon { position: absolute; top: 50%; left: 0; right: 0; margin-top: -40px; text-align: center; font-size: 64px; line-height: 80px; }
   .grid.selecting .card:not(.folder) .card-in { position: relative; }
   .grid.selecting .folder .card-in { opacity: .45; }
@@ -282,6 +287,7 @@
   <!-- まとめて操作 -->
   <div id="sel-bar" class="hidden">
     <span id="sel-count"></span>
+    <button id="sel-rename" type="button">✎ 名前</button>
     <button id="sel-move" type="button">📁 移動</button>
     <button id="sel-del" class="danger" type="button">削除</button>
     <button id="sel-cancel" type="button">やめる</button>
@@ -689,7 +695,9 @@
         } else if ((data[id].fm || 0) > (index[id].fm || 0)) {
           // ほかの端末でフォルダを移したもの
           if (data[id].f) index[id].f = data[id].f; else delete index[id].f;
+          if (data[id].title) index[id].title = data[id].title;
           index[id].fm = data[id].fm;
+          lsDel(noteKey(id));
         }
       }
       // 他の端末で削除されたもの
@@ -2290,6 +2298,7 @@
     $('sel-count').textContent = n + '件 選択中';
     $('sel-move').disabled = $('sel-del').disabled = !n;
     $('sel-move').style.opacity = $('sel-del').style.opacity = n ? 1 : 0.4;
+    $('sel-rename').disabled = n !== 1; $('sel-rename').style.opacity = n === 1 ? 1 : 0.4;
     $('grid').className = 'grid' + (selMode ? ' selecting' : '');
   }
   function exitSelect() { selMode = false; selected = {}; }
@@ -2297,8 +2306,21 @@
     var card = document.createElement('div'); card.className = 'card folder';
     var inner = document.createElement('div'); inner.className = 'card-in';
     var th = document.createElement('div'); th.className = 'thumb';
-    var ic = document.createElement('div'); ic.className = 'ficon'; ic.textContent = '📁';
-    th.appendChild(ic);
+    var inside = [];
+    for (var id in index) if (dirty[id] !== 'del' && folderOf(index[id]) === fid) inside.push(id);
+    inside.sort(function (a, b) { return (index[b].updated || 0) - (index[a].updated || 0); });
+    if (!inside.length) { var ic = document.createElement('div'); ic.className = 'ficon'; ic.textContent = '📁'; th.appendChild(ic); }
+    else {
+      var gr = document.createElement('div'); gr.className = 'fgrid';
+      for (var q = 0; q < 4; q++) {
+        var cell = document.createElement('div'); cell.className = 'fcell';
+        var nid = inside[q];
+        if (nid) { var c2 = document.createElement('div'); c2.className = 'fmini'; if (index[nid].thumb) { var im2 = document.createElement('img'); im2.src = index[nid].thumb; im2.alt = ''; c2.appendChild(im2); } cell.appendChild(c2); }
+        gr.appendChild(cell);
+      }
+      th.appendChild(gr);
+      var tag = document.createElement('div'); tag.className = 'ftag'; tag.textContent = '📁'; th.appendChild(tag);
+    }
     var meta = document.createElement('div'); meta.className = 'meta';
     var b = document.createElement('b'); b.textContent = folders[fid].n || '（名前なし）';
     var sp = document.createElement('span'); sp.textContent = countIn(fid) + '件のメモ';
@@ -2331,6 +2353,23 @@
   });
   on($('fb-select'), 'click', function () { if (selMode) exitSelect(); else { selMode = true; selected = {}; } renderList(); });
   on($('sel-cancel'), 'click', function () { exitSelect(); renderList(); });
+
+  // メモの名前を変える（1件だけ選んだとき）
+  on($('sel-rename'), 'click', function () {
+    var id = null; for (var k in selected) id = k;
+    if (!id || !index[id]) return;
+    var name = window.prompt('メモの名前', index[id].title || '');
+    if (name === null) return;
+    name = name.replace(/^\s+|\s+$/g, '').slice(0, 80);
+    if (!name || name === index[id].title) return;
+    var b = {}, t = now();
+    b['index/' + id + '/title'] = name; b['index/' + id + '/fm'] = t;
+    b['notes/' + id + '/title'] = name;
+    var local = lsJSON(noteKey(id), null);
+    if (local) { local.title = name; cacheNote(local); }
+    metaPatch(b);
+    exitSelect(); renderList();
+  });
 
   // まとめて移動
   on($('sel-move'), 'click', function () {
