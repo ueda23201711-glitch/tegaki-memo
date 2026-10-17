@@ -125,6 +125,7 @@
   #bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; -webkit-user-select: none; user-select: none; }
   #page-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 50px; text-align: center; white-space: nowrap; overflow: hidden; z-index: 4; }
   #page-bar button { margin: 8px 3px 0; padding: 7px 11px; background: #fff; box-shadow: 0 1px 4px rgba(31,42,48,.2); font-size: 14px; }
+  @media (max-width: 480px) { #page-bar .wide { display: none; } #page-bar button { margin: 8px 2px 0; padding: 7px 9px; } #pb-num { min-width: 46px; } }
   #pb-num { display: inline-block; min-width: 58px; font-size: 14px; color: #3b4a52; vertical-align: middle; margin-top: 8px; }
   #photo-dlg { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(20,28,32,.45); z-index: 80; }
   #photo-dlg .dlg { position: absolute; left: 6%; right: 6%; top: 28%; max-width: 420px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 18px; box-sizing: border-box; box-shadow: 0 8px 30px rgba(0,0,0,.3); }
@@ -327,7 +328,7 @@
     </div>
     <div id="page-bar">
       <button id="pb-prev" type="button">◀</button><span id="pb-num">1 / 1</span><button id="pb-next" type="button">▶</button>
-      <button id="pb-add" type="button">＋ページ</button><button id="pb-photo" type="button">📷</button><button id="pb-del" type="button">🗑</button><button id="pb-pdf" type="button">📤 PDF</button>
+      <button id="pb-add" type="button">＋<span class="wide">ページ</span></button><button id="pb-photo" type="button">📷</button><button id="pb-rot" type="button" title="このページを右に90度回す">⟳</button><button id="pb-del" type="button">🗑</button><button id="pb-pdf" type="button">📤<span class="wide"> PDF</span></button>
     </div>
   </div>
   <input type="file" id="file-img" accept="image/*" style="display:none">
@@ -1890,6 +1891,74 @@
     changed(); scheduleFlush(0);
     goPage(pageIdx + 1);
   }
+
+  /* ===================== ページを右に90度回す ===================== */
+  function rotateImageData(im) {
+    var w = im.naturalWidth || im.width, h = im.naturalHeight || im.height;
+    var c = document.createElement('canvas'); c.width = h; c.height = w;
+    var x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, h, w);
+    x.setTransform(0, 1, -1, 0, h, 0);    // 時計回りに90度
+    x.drawImage(im, 0, 0, w, h);
+    var data = c.toDataURL('image/jpeg', 0.9);
+    c.width = c.height = 1;
+    return data;
+  }
+  on($('pb-rot'), 'click', function () {
+    if (!cur || !pg) return;
+    abortInputs();
+    var target = pg, h = target.h || A4_H, f = PAGE_W / h, newH = Math.round(PAGE_W * PAGE_W / h);
+    var ids = pageImageIds(target), map = {}, i = 0, failed = false;
+    busy('ページを回転中…');
+    var next = function () {
+      if (i < ids.length) {
+        var id = ids[i++];
+        loadImg(id, function (im) {
+          if (!im) { failed = true; next(); return; }
+          try { var nid = newId(); var data = rotateImageData(im); storeImage(nid, data); imgPending[nid] = 1; var ni = new Image(); ni.src = data; imgEls[nid] = ni; map[id] = nid; }
+          catch (e) { failed = true; }
+          setTimeout(next, 0);
+        });
+        return;
+      }
+      busy(null);
+      if (failed) { for (var k in map) forgetImage(map[k]); alert('画像を読み込めなかったため、回転できませんでした。通信状態を確認して、もう一度お試しください。'); return; }
+      savePending();
+      // 手書き：(x, y) → (h − y, x)、横幅を 1000 にそろえる
+      each(target.strokes, function (st) {
+        if (!st.p) return;
+        for (var j = 0; j + 1 < st.p.length; j += 2) {
+          var px = st.p[j], py = st.p[j + 1];
+          st.p[j] = Math.round((h - py) * f); st.p[j + 1] = Math.round(px * f);
+        }
+        if (st.w) st.w = Math.round(st.w * f * 10) / 10;
+      });
+      each(target.items, function (it) {
+        if (it.k === 'img') {
+          var ih = it.h || 0;
+          var nx = (h - (it.y + ih)) * f, ny = it.x * f;
+          it.x = Math.round(nx); it.y = Math.round(ny);
+          var nw = ih * f, nh = it.w * f; it.w = Math.round(nw); it.h = Math.round(nh);
+          if (map[it.src]) it.src = map[it.src];
+        } else {
+          // 文字は立てたまま、位置だけ回す
+          var th = it.h || 60, cx = it.x + it.w / 2, cy = it.y + th / 2;
+          var ncx = (h - cy) * f, ncy = cx * f;
+          it.w = Math.round(Math.min(PAGE_W * 0.95, it.w * f)); it.s = Math.max(12, Math.round(Number(it.s || 40) * f));
+          it.x = Math.round(Math.max(0, Math.min(PAGE_W - it.w, ncx - it.w / 2)));
+          it.y = Math.round(Math.max(0, ncy - th * f / 2));
+        }
+      });
+      var dels = {};
+      each(ids, function (id) { dels['img/' + id] = null; forgetImage(id); });
+      if (target.bg && map[target.bg]) target.bg = map[target.bg];
+      target.h = newH;
+      if (KEY && it0(dels)) setTimeout(function () { api('PATCH', '', dels, function () {}); }, 4000);
+      var k2 = pageIdx; pageIdx = -1;
+      bindPage(k2); zoom = 1; pageX = null; layout();
+      changed(); scheduleFlush(0);
+    };
+    next();
+  });
 
   /* ===================== PDF に書き出す（画像の PDF） ===================== */
   var EXPORT_W = 1240;   // 横の画素数（A4 でおよそ 150dpi）
