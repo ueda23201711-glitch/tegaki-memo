@@ -426,6 +426,7 @@
           <button id="rd-paste" class="hidden" type="button">📋 コピーした文字を貼り付け</button>
         </div>
       </div>
+      <p class="note">保存した単語・熟語は <a href="/kiku-my/" target="_blank">📚 My単語帳</a> で学習できます（iPad 2/3 は <a href="/kiku-my/ipad.html" target="_blank">こちら</a>）。</p>
       <h3 id="rd-hist-h" class="rd-h">これまでの英文</h3>
       <div id="rd-hist"></div>
     </div>
@@ -438,6 +439,7 @@
         <button id="rd-trbtn" type="button">訳を隠す</button>
         <button id="rd-new" type="button">✎ 別の英文</button>
         <button id="rd-retr" type="button" title="日本語訳を作り直す">↻ 訳</button>
+        <button id="rd-my" type="button">📚 My単語帳</button>
         <span id="rd-status" class="note"></span>
       </div>
       <div class="rd-wrap">
@@ -3323,7 +3325,8 @@
       if (sent) b['tx/' + n] = { v: '例文: ' + sent + (tr ? '\n訳: ' + tr : ''), t: now() };
       api('PATCH', '/myvocab', b, function (e2) {
         if (e2) { $('pop-msg').textContent = '保存できませんでした（' + errText(e2) + '）'; $('pop-save').disabled = false; return; }
-        $('pop-msg').textContent = 'My単語帳に保存しました（No.' + n + '）。';
+        $('pop-msg').innerHTML = '';
+        $('pop-msg').appendChild(document.createTextNode('My単語帳に保存しました（No.' + n + '）。'));
       });
     });
   });
@@ -3338,6 +3341,7 @@
   on($('rd-paste'), 'click', function () {
     navigator.clipboard.readText().then(function (t) { if (t) $('rd-in').value = t; }, function () { alert('貼り付けできませんでした。入力欄を長押しして「ペースト」を選んでください。'); });
   });
+  on($('rd-my'), 'click', function () { window.open(/OS [5-9]_\d.* like Mac OS X/.test(navigator.userAgent) ? '/kiku-my/ipad.html' : '/kiku-my/', '_blank'); });
   on($('rd-new'), 'click', function () { $('rd-in').value = ''; rdShowInput(); });
   on($('rd-play'), 'click', function () { if (rdSpeaking) stopSpeak(); else playFrom(rdIdx >= 0 ? rdIdx : 0); });
   on($('rd-rate'), 'change', function () { rdRate = Number($('rd-rate').value) || 0.9; lsSet('memo_rd_rate', String(rdRate)); });
