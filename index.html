@@ -126,6 +126,10 @@
   #page-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 50px; text-align: center; white-space: nowrap; overflow: hidden; z-index: 4; }
   #page-bar button { margin: 8px 3px 0; padding: 7px 11px; background: #fff; box-shadow: 0 1px 4px rgba(31,42,48,.2); font-size: 14px; }
   #pb-num { display: inline-block; min-width: 58px; font-size: 14px; color: #3b4a52; vertical-align: middle; margin-top: 8px; }
+  #photo-dlg { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(20,28,32,.45); z-index: 80; }
+  #photo-dlg .dlg { position: absolute; left: 6%; right: 6%; top: 28%; max-width: 420px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 18px; box-sizing: border-box; box-shadow: 0 8px 30px rgba(0,0,0,.3); }
+  #photo-dlg h3 { margin: 0 0 8px; font-size: 17px; }
+  #photo-dlg .row button { margin: 6px 6px 0 0; }
   #busy, #export-dlg { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(20,28,32,.45); z-index: 80; }
   #busy .dlg, #export-dlg .dlg { position: absolute; left: 6%; right: 6%; top: 30%; max-width: 420px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 18px; box-sizing: border-box; box-shadow: 0 8px 30px rgba(0,0,0,.3); }
   #busy .dlg { text-align: center; font-size: 15px; }
@@ -219,6 +223,7 @@
     <span class="sync" id="sync-list"></span>
     <button id="btn-refresh" type="button" title="最新を読み込む">↻</button>
     <button id="btn-settings" type="button">設定</button>
+    <button id="btn-photo" type="button">📷 写真</button>
     <button id="btn-pdf" class="hidden" type="button">📄 PDF</button>
     <button id="btn-add" type="button">＋ 新規</button>
   </div>
@@ -322,15 +327,29 @@
     </div>
     <div id="page-bar">
       <button id="pb-prev" type="button">◀</button><span id="pb-num">1 / 1</span><button id="pb-next" type="button">▶</button>
-      <button id="pb-add" type="button">＋ページ</button><button id="pb-del" type="button">🗑</button><button id="pb-pdf" type="button">📤 PDF</button>
+      <button id="pb-add" type="button">＋ページ</button><button id="pb-photo" type="button">📷</button><button id="pb-del" type="button">🗑</button><button id="pb-pdf" type="button">📤 PDF</button>
     </div>
   </div>
   <input type="file" id="file-img" accept="image/*" style="display:none">
   <input type="file" id="file-pdf" accept="application/pdf,.pdf" style="display:none">
+  <input type="file" id="file-photo" accept="image/*" style="display:none">
 </div>
 
 <!-- 処理中 -->
 <div id="busy" class="hidden"><div class="dlg"><div class="spin"></div><span id="busy-text"></span></div></div>
+
+<!-- 写真をページにする -->
+<div id="photo-dlg" class="hidden">
+  <div class="dlg">
+    <h3>写真をページにします</h3>
+    <p class="note">紙の印刷物を撮ったときは「書類向けに補正」がおすすめです（紙の地を白く、文字をくっきりさせます）。</p>
+    <div class="row">
+      <button id="ph-doc" class="primary" type="button">書類向けに補正</button>
+      <button id="ph-raw" type="button">そのまま</button>
+      <button id="ph-cancel" type="button">やめる</button>
+    </div>
+  </div>
+</div>
 
 <!-- PDF の書き出し -->
 <div id="export-dlg" class="hidden">
@@ -1218,16 +1237,82 @@
     });
   }
   // 写真・スクショを縮小して JPEG に（長い辺 1600 まで）
-  function shrinkImage(dataUrl, cb) {
+  // iOS 13.3 以前は、写真の向きの情報（EXIF）を見ずに描くので、自分で回す
+  var NEED_EXIF_ROTATE = (function () {
+    var m = navigator.userAgent.match(/OS (\d+)_(\d+)[_\d]* like Mac OS X/);
+    return !!(m && (Number(m[1]) < 13 || (Number(m[1]) === 13 && Number(m[2]) < 4)));
+  })();
+  function exifOrientation(buf) {
+    try {
+      var v = new DataView(buf);
+      if (v.getUint16(0) !== 0xFFD8) return 1;
+      var off = 2;
+      while (off + 4 < v.byteLength) {
+        var mk = v.getUint16(off);
+        if (mk === 0xFFE1) {
+          var st = off + 4;
+          if (v.getUint32(st) !== 0x45786966) return 1;
+          var t = st + 6, le = v.getUint16(t) === 0x4949;
+          var ifd = t + v.getUint32(t + 4, le), n = v.getUint16(ifd, le);
+          for (var i = 0; i < n; i++) {
+            var e = ifd + 2 + i * 12;
+            if (v.getUint16(e, le) === 0x0112) return v.getUint16(e + 8, le);
+          }
+          return 1;
+        }
+        if ((mk & 0xFF00) !== 0xFF00) return 1;
+        off += 2 + v.getUint16(off + 2);
+      }
+    } catch (er) {}
+    return 1;
+  }
+  function readOrientation(file, cb) {
+    if (!NEED_EXIF_ROTATE || !file.slice || !window.DataView) { cb(1); return; }
+    var fr = new FileReader();
+    fr.onload = function () { cb(exifOrientation(fr.result)); };
+    fr.onerror = function () { cb(1); };
+    fr.readAsArrayBuffer(file.slice(0, 131072));
+  }
+  // 書類向けの補正：紙の地を白く、文字をくっきり（明るさの幅を広げる）
+  function enhanceDoc(c) {
+    var x = c.getContext('2d'), d = x.getImageData(0, 0, c.width, c.height), a = d.data, n = a.length;
+    var stepS = Math.max(4, Math.floor(n / 4 / 60000) * 4);
+    var luts = [];
+    // 色ごとに「紙の地」を白に合わせる（黄ばみ・照明の色も取れる）
+    for (var ch = 0; ch < 3; ch++) {
+      var hist = [], i, k, cnt = 0;
+      for (k = 0; k < 256; k++) hist.push(0);
+      for (i = ch; i < n; i += stepS) { hist[a[i]]++; cnt++; }
+      var lo = 0, hi = 255, acc = 0;
+      for (k = 0; k < 256; k++) { acc += hist[k]; if (acc > cnt * 0.02) { lo = k; break; } }
+      acc = 0;
+      for (k = 255; k >= 0; k--) { acc += hist[k]; if (acc > cnt * 0.25) { hi = k; break; } }   // 紙の地は明るい側に多い
+      if (hi - lo < 40) return;
+      var lut = [];
+      for (k = 0; k < 256; k++) { var t2 = (k - lo) / (hi - lo); t2 = t2 < 0 ? 0 : t2 > 1 ? 1 : t2; lut.push(Math.round(255 * Math.pow(t2, 1.15))); }
+      luts.push(lut);
+    }
+    var L0 = luts[0], L1 = luts[1], L2 = luts[2];
+    for (var j = 0; j < n; j += 4) { a[j] = L0[a[j]]; a[j + 1] = L1[a[j + 1]]; a[j + 2] = L2[a[j + 2]]; }
+    x.putImageData(d, 0, 0);
+  }
+  function shrinkImage(dataUrl, cb, orient, opts) {
     var im = new Image();
+    orient = orient || 1; opts = opts || {};
     im.onload = function () {
       var w = im.naturalWidth || im.width, h = im.naturalHeight || im.height;
       if (!w || !h) { cb(null); return; }
       var make = function (maxSide, q) {
         var r = Math.min(1, maxSide / Math.max(w, h));
-        var c = document.createElement('canvas'); c.width = Math.round(w * r); c.height = Math.round(h * r);
+        var sw = Math.round(w * r), sh = Math.round(h * r), turn = orient >= 5 && orient <= 8;
+        var c = document.createElement('canvas'); c.width = turn ? sh : sw; c.height = turn ? sw : sh;
         var x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
-        x.drawImage(im, 0, 0, c.width, c.height);
+        var T = { 2: [-1, 0, 0, 1, sw, 0], 3: [-1, 0, 0, -1, sw, sh], 4: [1, 0, 0, -1, 0, sh], 5: [0, 1, 1, 0, 0, 0],
+          6: [0, 1, -1, 0, sh, 0], 7: [0, -1, -1, 0, sh, sw], 8: [0, -1, 1, 0, 0, sw] }[orient];
+        if (T) x.setTransform(T[0], T[1], T[2], T[3], T[4], T[5]);
+        x.drawImage(im, 0, 0, sw, sh);
+        x.setTransform(1, 0, 0, 1, 0, 0);
+        if (opts.doc) { try { enhanceDoc(c); } catch (er) {} }
         return { data: c.toDataURL('image/jpeg', q), w: c.width, h: c.height };
       };
       var out = make(1600, 0.82);
@@ -1242,9 +1327,11 @@
     if (!file) return;
     if (file.type && !/^image\//.test(file.type)) { alert('画像のファイルを選んでください。'); return; }
     setSync('画像を読み込み中…');
-    var fr = new FileReader();
-    fr.onload = function () { shrinkImage(fr.result, function (out) { if (out) addImageItem(out); else alert('画像を読み込めませんでした。（HEIC などの形式は読めないことがあります）'); }); };
-    fr.readAsDataURL(file);
+    readOrientation(file, function (orient) {
+      var fr = new FileReader();
+      fr.onload = function () { shrinkImage(fr.result, function (out) { if (out) addImageItem(out); else alert('画像を読み込めませんでした。（HEIC などの形式は読めないことがあります）'); }, orient); };
+      fr.readAsDataURL(file);
+    });
   }
 
   /* ===================== 画像・文字（メモに貼るもの） ===================== */
@@ -1747,6 +1834,63 @@
     setTimeout(function () { if (cur && cur.id === id) changed(); scheduleFlush(0); }, 300);
   }
 
+  /* ===================== 写真（紙の撮影など）をページにする ===================== */
+  var photoFile = null, photoTarget = 'new';   // 'new'：新しいメモ / 'page'：今のメモの次のページ
+  on($('btn-photo'), 'click', function () { photoTarget = 'new'; $('file-photo').value = ''; $('file-photo').click(); });
+  on($('pb-photo'), 'click', function () { if (!cur) return; photoTarget = 'page'; $('file-photo').value = ''; $('file-photo').click(); });
+  on($('file-photo'), 'change', function () {
+    var f = $('file-photo').files && $('file-photo').files[0];
+    if (!f) return;
+    if (f.type && !/^image\//.test(f.type)) { alert('画像のファイルを選んでください。'); return; }
+    photoFile = f; $('photo-dlg').className = '';
+  });
+  on($('ph-cancel'), 'click', function () { $('photo-dlg').className = 'hidden'; photoFile = null; });
+  on($('ph-doc'), 'click', function () { usePhoto(true); });
+  on($('ph-raw'), 'click', function () { usePhoto(false); });
+  function usePhoto(doc) {
+    var f = photoFile; photoFile = null;
+    $('photo-dlg').className = 'hidden';
+    if (!f) return;
+    busy('写真を読み込み中…');
+    readOrientation(f, function (orient) {
+      var fr = new FileReader();
+      fr.onload = function () {
+        // 処理中の表示を先に出してから重い処理をする
+        setTimeout(function () {
+          shrinkImage(fr.result, function (out) {
+            busy(null);
+            if (!out) { alert('写真を読み込めませんでした。（HEIC などの形式は読めないことがあります）'); return; }
+            var h = Math.round(PAGE_W * out.h / out.w);
+            if (photoTarget === 'page' && cur) addBgPage(out.data, h);
+            else newBgNote(out.data, h, fmtDate(now()) + ' 写真');
+          }, orient, { doc: doc });
+        }, 30);
+      };
+      fr.onerror = function () { busy(null); alert('写真を読み込めませんでした。'); };
+      fr.readAsDataURL(f);
+    });
+  }
+  function bgImage(data) {
+    var id = newId();
+    storeImage(id, data); imgPending[id] = 1; savePending();
+    var im = new Image(); im.src = data; imgEls[id] = im;
+    return id;
+  }
+  function newBgNote(data, h, title) {
+    var id = newId(), t = now(), bg = bgImage(data);
+    var n = { id: id, title: title, strokes: [], items: [], bg: bg, h: h, created: t, updated: t };
+    index[id] = { title: n.title, updated: t, thumb: '' };
+    cacheNote(n);
+    openNote(id, false);
+    setTimeout(function () { if (cur && cur.id === id) changed(); scheduleFlush(0); }, 300);
+  }
+  function addBgPage(data, h) {
+    if (!cur.more) cur.more = [];
+    cur.more.splice(pageIdx, 0, normPage({ h: h, bg: bgImage(data) }));
+    changed(); scheduleFlush(0);
+    goPage(pageIdx + 1);
+  }
+
   /* ===================== PDF に書き出す（画像の PDF） ===================== */
   var EXPORT_W = 1240;   // 横の画素数（A4 でおよそ 150dpi）
   function loadImg(id, cb) {
@@ -2140,7 +2284,7 @@
   }
 
   // テスト用
-  window.__memo = { state: function () { return { key: KEY, index: index, dirty: dirty, cur: cur, pageIdx: pageIdx, pg: pg, selectedId: selectedId, undo: undoStack.length, redo: redoStack.length, pending: imgPending, penOnly: penOnly }; } };
+  window.__memo = { shrink: shrinkImage, exif: exifOrientation, state: function () { return { key: KEY, index: index, dirty: dirty, cur: cur, pageIdx: pageIdx, pg: pg, selectedId: selectedId, undo: undoStack.length, redo: redoStack.length, pending: imgPending, penOnly: penOnly }; } };
 })();
 </script>
 </body>
