@@ -5,3 +5,5 @@
 - iPad 2/3（iOS 9）から最新の iPhone・Android・パソコンまで動くよう、古い書き方（ES5）で書いています。
 - 同期は Firebase Realtime Database（REST）。合言葉ごとに `memos/<合言葉>` に保存します。
 - 以前は `kiku990/memo/` にありました（そちらは自動でここへ移ります）。
+- PDF の読み込み（各ページを画像にしてメモの背景に）には pdf.js 3.11.174 legacy build（Apache-2.0, `vendor/pdfjs/`）を使っています。読み込みは新しい端末のみ。
+- PDF の書き出しは、各ページを JPEG にして貼った PDF を自前で組み立てています（古い端末でも動きます）。

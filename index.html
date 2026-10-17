@@ -121,6 +121,20 @@
   .tools button { padding: 7px 10px; margin: 2px 4px 2px 0; background: #e6ebee; vertical-align: middle; }
   .tools button.on { background: #2f4858; color: #fff; }
   .tools .sep { display: inline-block; width: 1px; height: 24px; background: #d0d8dd; margin: 0 6px 0 2px; vertical-align: middle; }
+  /* ページ */
+  #bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; -webkit-user-select: none; user-select: none; }
+  #page-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 50px; text-align: center; white-space: nowrap; overflow: hidden; z-index: 4; }
+  #page-bar button { margin: 8px 3px 0; padding: 7px 11px; background: #fff; box-shadow: 0 1px 4px rgba(31,42,48,.2); font-size: 14px; }
+  #pb-num { display: inline-block; min-width: 58px; font-size: 14px; color: #3b4a52; vertical-align: middle; margin-top: 8px; }
+  #busy, #export-dlg { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(20,28,32,.45); z-index: 80; }
+  #busy .dlg, #export-dlg .dlg { position: absolute; left: 6%; right: 6%; top: 30%; max-width: 420px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 18px; box-sizing: border-box; box-shadow: 0 8px 30px rgba(0,0,0,.3); }
+  #busy .dlg { text-align: center; font-size: 15px; }
+  #export-dlg h3 { margin: 0 0 8px; font-size: 17px; }
+  #export-dlg p { margin: 0 0 8px; word-wrap: break-word; }
+  #export-dlg .row button { margin: 4px 6px 0 0; }
+  .spin { width: 26px; height: 26px; margin: 0 auto 10px; border: 3px solid #d7dee3; border-top-color: #2f4858; border-radius: 50%; -webkit-animation: spin 0.9s linear infinite; animation: spin 0.9s linear infinite; }
+  @-webkit-keyframes spin { to { -webkit-transform: rotate(360deg); } }
+  @keyframes spin { to { transform: rotate(360deg); } }
   /* 色を選ぶ画面 */
   #color-pop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(20,28,32,.45); z-index: 70; }
   #color-pop .dlg { position: absolute; left: 4%; right: 4%; top: 8%; max-width: 440px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 14px 16px; box-sizing: border-box; box-shadow: 0 8px 30px rgba(0,0,0,.3); }
@@ -205,6 +219,7 @@
     <span class="sync" id="sync-list"></span>
     <button id="btn-refresh" type="button" title="最新を読み込む">↻</button>
     <button id="btn-settings" type="button">設定</button>
+    <button id="btn-pdf" class="hidden" type="button">📄 PDF</button>
     <button id="btn-add" type="button">＋ 新規</button>
   </div>
   <div class="body">
@@ -295,6 +310,7 @@
   </div>
   <div class="stage" id="stage">
     <div class="page" id="page">
+      <img id="bg" alt="" style="display:none">
       <div id="items"></div>
       <canvas id="cv"></canvas>
       <canvas id="cv-live"></canvas>
@@ -304,8 +320,31 @@
         <button id="ib-del" class="danger" type="button">削除</button>
       </div>
     </div>
+    <div id="page-bar">
+      <button id="pb-prev" type="button">◀</button><span id="pb-num">1 / 1</span><button id="pb-next" type="button">▶</button>
+      <button id="pb-add" type="button">＋ページ</button><button id="pb-del" type="button">🗑</button><button id="pb-pdf" type="button">📤 PDF</button>
+    </div>
   </div>
   <input type="file" id="file-img" accept="image/*" style="display:none">
+  <input type="file" id="file-pdf" accept="application/pdf,.pdf" style="display:none">
+</div>
+
+<!-- 処理中 -->
+<div id="busy" class="hidden"><div class="dlg"><div class="spin"></div><span id="busy-text"></span></div></div>
+
+<!-- PDF の書き出し -->
+<div id="export-dlg" class="hidden">
+  <div class="dlg">
+    <h3>PDF ができました</h3>
+    <p id="ex-name"></p>
+    <p id="ex-hint" class="note"></p>
+    <p id="ex-warn" class="note"></p>
+    <div class="row">
+      <button id="ex-share" class="primary" type="button">共有（GoodNotes など）</button>
+      <button id="ex-save" type="button">保存</button>
+      <button id="ex-close" type="button">閉じる</button>
+    </div>
+  </div>
 </div>
 
 <!-- 色を選ぶ -->
@@ -569,10 +608,12 @@
     return r;
   }
   function layout() {
+    $('btn-zoom').className = zoom > 1.01 ? '' : 'hidden';   // ツールバーの高さが変わるので先に
     var stage = $('stage'), tools = $('tools');
     var top = tools.offsetTop + tools.offsetHeight;
     stage.style.top = top + 'px';
-    var W = stage.clientWidth - 16, H = stage.clientHeight - 16;
+    var SH = stage.clientHeight - BAR_H;
+    var W = stage.clientWidth - 16, H = SH - 16;
     if (W < 50 || H < 50) return;
     baseScale = Math.min(W / PAGE_W, H / PAGE_H);
     scale = baseScale * zoom;
@@ -580,13 +621,12 @@
     var page = $('page');
     page.style.width = w + 'px'; page.style.height = h + 'px';
     if (pageX === null || zoom === 1) { pageX = -1e9; pageY = -1e9; }
-    var pos = clampPos(pageX === -1e9 ? 0 : pageX, pageY === -1e9 ? 0 : pageY, w, h, stage.clientWidth, stage.clientHeight);
-    if (zoom === 1) pos = [Math.floor((stage.clientWidth - w) / 2), Math.floor((stage.clientHeight - h) / 2)];
+    var pos = clampPos(pageX === -1e9 ? 0 : pageX, pageY === -1e9 ? 0 : pageY, w, h, stage.clientWidth, SH);
+    if (zoom === 1) pos = [Math.floor((stage.clientWidth - w) / 2), Math.floor((SH - h) / 2)];
     pageX = pos[0]; pageY = pos[1];
     page.style.left = pageX + 'px'; page.style.top = pageY + 'px';
     page.style.webkitTransform = ''; page.style.transform = '';
     dpr = Math.min(DEV_DPR, Math.sqrt(MAX_PIXELS / (w * h)));
-    $('btn-zoom').className = zoom > 1.01 ? '' : 'hidden';
     each([cv, cvLive], function (c) {
       c.style.width = w + 'px'; c.style.height = h + 'px';
       c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
@@ -645,23 +685,29 @@
     ctx.clearRect(0, 0, cv.width, cv.height);
     lctx.clearRect(0, 0, cvLive.width, cvLive.height);
     if (!cur) return;
-    each(visible(cur.strokes), function (st) { pathStroke(ctx, st, scale); });
+    each(visible(pg.strokes), function (st) { pathStroke(ctx, st, scale); });
   }
   function makeThumb(n) {
     var saveDpr = 0;
     try {
-      var c = document.createElement('canvas'), tw = 200, th = Math.round(200 * PAGE_H / PAGE_W);
+      var c = document.createElement('canvas'), tw = 200, th = Math.round(200 * A4_H / PAGE_W);
       c.width = tw; c.height = th;
       var x = c.getContext('2d'); saveDpr = dpr;
+      var h0 = n.h || A4_H, k = Math.min(tw / PAGE_W, th / h0);
+      var pw = Math.round(PAGE_W * k), ph = Math.round(h0 * k), ox = Math.round((tw - pw) / 2);
       // 消しゴムが白地まで消さないよう、線だけ別に描いてから白地に重ねる
-      var c2 = document.createElement('canvas'); c2.width = tw; c2.height = th;
+      var c2 = document.createElement('canvas'); c2.width = pw; c2.height = ph;
       var x2 = c2.getContext('2d');
       dpr = 1;
-      each(visible(n.strokes), function (st) { pathStroke(x2, st, tw / PAGE_W); });
+      each(visible(n.strokes), function (st) { pathStroke(x2, st, k); });
       dpr = saveDpr;
-      x.fillStyle = '#fff'; x.fillRect(0, 0, tw, th);
-      drawItemsTo(x, n.items || [], tw / PAGE_W);
+      x.fillStyle = '#f3f5f6'; x.fillRect(0, 0, tw, th);
+      x.fillStyle = '#fff'; x.fillRect(ox, 0, pw, ph);
+      x.save(); x.translate(ox, 0);
+      if (n.bg && imgEls[n.bg] && imgEls[n.bg].complete) { try { x.drawImage(imgEls[n.bg], 0, 0, pw, ph); } catch (e2) {} }
+      drawItemsTo(x, n.items || [], k);
       x.drawImage(c2, 0, 0);
+      x.restore();
       return c.toDataURL('image/jpeg', 0.6);
     } catch (e) { if (saveDpr) dpr = saveDpr; return ''; }
   }
@@ -718,7 +764,7 @@
     var st = drawing.st; drawing = null;
     lctx.clearRect(0, 0, cvLive.width, cvLive.height);
     pushHistory();
-    cur.strokes.push(st);
+    pg.strokes.push(st);
     if (st.t === 'eraser') redraw(); else pathStroke(ctx, st, scale);
     changed();
   }
@@ -794,9 +840,8 @@
     curIsNew = !!isNew;
     var local = lsJSON(noteKey(id), null);
     cur = local || { id: id, title: (index[id] && index[id].title) || '', strokes: [], updated: 0, created: now() };
-    if (!cur.strokes) cur.strokes = [];
-    if (!cur.items) cur.items = [];
-    undoStack = []; redoStack = []; selectedId = null;
+    normNote(cur);
+    bindPage(0);
     zoom = 1; pageX = null;
     $('inp-title').value = cur.title || '';
     show('scr-edit');
@@ -806,20 +851,22 @@
     startPoll();
   }
   function pullCurrent(force) {
-    if (!cur || dirty[cur.id] || drawing || dragging) return;
+    if (!cur || dirty[cur.id] || drawing || dragging || gest) return;
     var id = cur.id;
     var get = function () {
       api('GET', '/notes/' + id, undefined, function (err, n) {
         if (err) { setSync('オフライン（' + errText(err) + '）', true); return; }
         if (!cur || cur.id !== id || dirty[id] || drawing) return;
         if (!n) return;
-        if (!n.strokes) n.strokes = [];
-        if (!n.items) n.items = [];
-        if (dragging) return;
+        normNote(n);
+        if (dragging || gest) return;
         if ((n.updated || 0) > (cur.updated || 0) || force) {
-          n.id = id; cur = n; undoStack = []; redoStack = []; selectedId = null;
+          n.id = id; cur = n;
+          var keepPage = pageIdx, sameH = pagesOf(n)[Math.min(keepPage, pagesOf(n).length - 1)].h === PAGE_H;
+          bindPage(keepPage);
           $('inp-title').value = cur.title || '';
-          cacheNote(cur); redraw(); renderItems(); updateUndoButtons();
+          cacheNote(cur);
+          if (sameH) { redraw(); renderItems(); } else layout();
         }
         setSync('最新');
       });
@@ -839,6 +886,7 @@
   function closeNote() {
     stopPoll();
     selectedId = null; dragging = null; $('items').innerHTML = ''; $('item-bar').className = 'hidden';
+    pg = null; $('bg').style.display = 'none'; $('bg').removeAttribute('src');
     if (cur && curIsNew && !dirty[cur.id]) {
       // 何も書かなかった新規メモは残さない
       delete index[cur.id]; lsDel(noteKey(cur.id)); saveIndexLocal();
@@ -966,10 +1014,10 @@
     undoStack.push(snapshot()); restore(redoStack.pop());
   });
   on($('btn-clear'), 'click', function () {
-    if (!cur || !visible(cur.strokes).length) return;
+    if (!cur || !visible(pg.strokes).length) return;
     if (!window.confirm('このメモの手書きを全部消しますか？（画像と文字は残ります。「戻す」で元に戻せます）')) return;
     pushHistory();
-    cur.strokes = [];
+    pg.strokes = [];
     redraw(); changed();
   });
   on($('btn-delete'), 'click', function () {
@@ -977,11 +1025,11 @@
     if (!window.confirm('このメモを削除しますか？ほかの端末からも消えます。')) return;
     var id = cur.id;
     var dels = {};
-    each(cur.items || [], function (it) { if (it.k === 'img' && it.src) { dels['img/' + it.src] = null; forgetImage(it.src); } });
+    each(pagesOf(cur), function (p) { each(pageImageIds(p), function (im) { dels['img/' + im] = null; forgetImage(im); }); });
     if (KEY && it0(dels)) api('PATCH', '', dels, function () {});
     delete index[id]; lsDel(noteKey(id)); dirty[id] = 'del';
     saveIndexLocal(); saveDirtyLocal();
-    cur = null; stopPoll();
+    cur = null; pg = null; stopPoll();
     show('scr-list'); renderList(); scheduleFlush(0);
   });
   on($('inp-title'), 'change', function () {
@@ -998,7 +1046,7 @@
   function abortInputs() {
     // 1本目の指で描き始めた線・動かし始めたものは取り消す
     if (drawing) { drawing = null; lctx.clearRect(0, 0, cvLive.width, cvLive.height); }
-    if (dragging) { var d = dragging; dragging = null; if (d.moved) { var o = JSON.parse(d.before); cur.items = o.i || []; renderItems(); } }
+    if (dragging) { var d = dragging; dragging = null; if (d.moved) { var o = JSON.parse(d.before); pg.items = o.i || []; renderItems(); } }
   }
   function gestureStart(pts, one) {
     abortInputs();
@@ -1018,7 +1066,7 @@
     var r = z / gest.z0;
     var nx = m[0] - (gest.m0[0] - gest.x0) * r, ny = m[1] - (gest.m0[1] - gest.y0) * r;
     var st = $('stage'), w = PAGE_W * baseScale * z, h = PAGE_H * baseScale * z;
-    var pos = clampPos(nx, ny, w, h, st.clientWidth, st.clientHeight);
+    var pos = clampPos(nx, ny, w, h, st.clientWidth, st.clientHeight - BAR_H);
     gest.z = z; gest.x = pos[0]; gest.y = pos[1];
     // 動かしている間は見た目だけ変える（描き直しは指を離してから）
     var k = z / gest.z0, tx = pos[0] - gest.x0, ty = pos[1] - gest.y0;
@@ -1050,11 +1098,12 @@
   }
   on($('btn-zoom'), 'click', function () { zoom = 1; pageX = null; layout(); });
   // 1本指で台紙を動かせるとき：拡大中で、「選択」モードか「Pencilのみ」で、何もないところを触ったとき
+  function inBar(t) { while (t) { if (t.id === 'page-bar') return true; t = t.parentNode; } return false; }
   function canPanOne(x, y) { return zoom > 1.01 && (tool === 'select' || penOnly) && !hitItem(x, y); }
   function ptsList() { var a = []; for (var k in touchPts) a.push(touchPts[k]); return a; }
   if (window.PointerEvent) {
     on($('stage'), 'pointerdown', function (e) {
-      if (e.pointerType !== 'touch') return;
+      if (e.pointerType !== 'touch' || inBar(e.target)) return;
       touchPts[e.pointerId] = [e.clientX, e.clientY];
       var pts = ptsList();
       if (pts.length >= 2) { e.stopPropagation(); e.preventDefault(); gestureStart(pts, false); }
@@ -1080,6 +1129,7 @@
     var tPts = function (list) { var a = []; for (var i = 0; i < list.length && i < 2; i++) a.push([list[i].clientX, list[i].clientY]); return a; };
     var lockAfterGesture = false;
     on($('stage'), 'touchstart', function (e) {
+      if (inBar(e.target)) return;
       if (e.touches.length >= 2) { e.stopPropagation(); e.preventDefault(); gestureStart(tPts(e.touches), false); }
       else if (e.touches.length === 1 && canPanOne(e.touches[0].clientX, e.touches[0].clientY)) { e.stopPropagation(); e.preventDefault(); gestureStart(tPts(e.touches), true); }
     }, true);
@@ -1109,7 +1159,7 @@
 
   /* ===================== やり直し（写し） ===================== */
   function it0(o) { for (var k in o) return true; return false; }
-  function snapshot() { return JSON.stringify({ s: cur.strokes, i: cur.items || [] }); }
+  function snapshot() { return JSON.stringify({ s: pg.strokes, i: pg.items || [] }); }
   function pushHistory() {
     if (!cur) return;
     undoStack.push(snapshot());
@@ -1118,7 +1168,7 @@
   }
   function restore(js) {
     var o = JSON.parse(js);
-    cur.strokes = o.s || []; cur.items = o.i || [];
+    pg.strokes = o.s || []; pg.items = o.i || [];
     selectedId = null;
     redraw(); renderItems(); changed();
   }
@@ -1131,8 +1181,10 @@
   var imgRetry = {};                                  // 見つからなかった回数
   function imgKey(id) { return 'memo_img_' + id; }
   function savePending() { lsSet('memo_img_pending', JSON.stringify(imgPending)); }
-  function storeImage(id, data) {
+  var LS_IMG_MAX = 150000;   // これより大きい画像（PDF のページなど）は、送ったあと端末には残さない
+  function storeImage(id, data, fromCloud) {
     imgCache[id] = data;
+    if (fromCloud && data.length > LS_IMG_MAX) return;
     lsSet(imgKey(id), data);   // 入らなければ（容量不足）メモリにだけ持つ
   }
   function forgetImage(id) { delete imgCache[id]; delete imgEls[id]; lsDel(imgKey(id)); delete imgPending[id]; savePending(); }
@@ -1148,6 +1200,7 @@
       uploading = false;
       if (err) { setTimeout(uploadImages, 15000); return; }
       delete imgPending[id]; savePending();
+      if (data.length > LS_IMG_MAX) lsDel(imgKey(id));
       uploadImages();
     });
   }
@@ -1160,7 +1213,7 @@
     api('GET', '/img/' + id, undefined, function (err, data) {
       var list = imgWaiting[id]; delete imgWaiting[id];
       var ok = !err && typeof data === 'string';
-      if (ok) storeImage(id, data);
+      if (ok) storeImage(id, data, true);
       each(list, function (f) { f(ok ? data : null); });
     });
   }
@@ -1206,9 +1259,9 @@
   var TCOLORS = ['#1f2a30', '#d23b2a', '#2463c9', '#2d6a4f', '#e8830c', '#7b3fa0'];
   function fontCss(f) { for (var i = 0; i < FONTS.length; i++) if (FONTS[i][0] === f) return FONTS[i][2]; return FONTS[0][2]; }
   var selectedId = null;
-  function findItem(id) { var a = (cur && cur.items) || []; for (var i = 0; i < a.length; i++) if (a[i].id === id) return a[i]; return null; }
-  function sortedItems() { return ((cur && cur.items) || []).slice(0).sort(function (a, b) { return (a.z || 0) - (b.z || 0); }); }
-  function topZ() { var z = 0; each((cur && cur.items) || [], function (it) { if ((it.z || 0) > z) z = it.z; }); return z; }
+  function findItem(id) { var a = (cur && pg && pg.items) || []; for (var i = 0; i < a.length; i++) if (a[i].id === id) return a[i]; return null; }
+  function sortedItems() { return ((cur && pg && pg.items) || []).slice(0).sort(function (a, b) { return (a.z || 0) - (b.z || 0); }); }
+  function topZ() { var z = 0; each((cur && pg && pg.items) || [], function (it) { if ((it.z || 0) > z) z = it.z; }); return z; }
 
   function renderItems() {
     var box = $('items');
@@ -1282,7 +1335,9 @@
   }
   function setTool(t) { tool = t; syncToolButtons(); applySelectMode(); }
   function syncPencilButton() {
+    var was = $('btn-pencil').className;
     $('btn-pencil').className = penSeen ? (penOnly ? 'on' : '') : 'hidden';
+    if (cur && (was === 'hidden') !== ($('btn-pencil').className === 'hidden')) layout();   // ボタンが増えてツールバーが伸びたとき
   }
   on($('btn-pencil'), 'click', function () { penOnly = !penOnly; syncPencilButton(); });
 
@@ -1293,7 +1348,7 @@
     storeImage(id, img.data); imgPending[id] = 1; savePending();
     pushHistory();
     var it = { id: id, k: 'img', src: id, x: Math.round((PAGE_W - w) / 2), y: Math.round((PAGE_H - h) / 3), w: Math.round(w), h: Math.round(h), z: topZ() + 1 };
-    cur.items.push(it);
+    pg.items.push(it);
     setTool('select');
     selectedId = it.id; renderItems(); changed();
     scheduleFlush(0);
@@ -1379,7 +1434,7 @@
     lsSet('memo_text_style', JSON.stringify(style));
     closeTextDialog();
     var it = dlgItemId ? findItem(dlgItemId) : null;
-    if (!text) { if (it) { pushHistory(); cur.items.splice(cur.items.indexOf(it), 1); selectedId = null; renderItems(); changed(); } return; }
+    if (!text) { if (it) { pushHistory(); pg.items.splice(pg.items.indexOf(it), 1); selectedId = null; renderItems(); changed(); } return; }
     pushHistory();
     if (it) {
       // 大きさの欄を変えたときだけ変更（つまみで変えた大きさは保つ）
@@ -1387,7 +1442,7 @@
       it.tx = text; it.c = style.c; it.f = style.f;
     } else {
       it = { id: newId(), k: 'txt', tx: text, c: style.c, f: style.f, s: Number(style.s), x: Math.round(PAGE_W * 0.1), y: Math.round(PAGE_H * 0.3), w: Math.round(PAGE_W * 0.8), z: topZ() + 1 };
-      cur.items.push(it);
+      pg.items.push(it);
       setTool('select');
     }
     selectedId = it.id; renderItems(); changed();
@@ -1399,7 +1454,7 @@
   on($('ib-del'), 'click', function (e) {
     e.stopPropagation();
     var it = findItem(selectedId); if (!it) return;
-    pushHistory(); cur.items.splice(cur.items.indexOf(it), 1); selectedId = null; renderItems(); changed();
+    pushHistory(); pg.items.splice(pg.items.indexOf(it), 1); selectedId = null; renderItems(); changed();
   });
 
   /* ---- 動かす・大きさを変える ---- */
@@ -1495,12 +1550,328 @@
           x.fillStyle = it.c || '#1f2a30';
           x.font = fs + 'px ' + fontCss(it.f);
           x.textBaseline = 'top';
-          var lines = String(it.tx || '').split('\n');
-          for (var i = 0; i < lines.length; i++) x.fillText(lines[i], it.x * s, it.y * s + i * fs * 1.3, it.w * s);
+          var raw = String(it.tx || '').split('\n'), lines = [], maxW = it.w * s;
+          each(raw, function (ln) {
+            var curL = '';
+            for (var ci = 0; ci < ln.length; ci++) {
+              var t2 = curL + ln.charAt(ci);
+              if (curL && x.measureText(t2).width > maxW) { lines.push(curL); curL = ln.charAt(ci); } else curL = t2;
+            }
+            lines.push(curL);
+          });
+          for (var i = 0; i < lines.length; i++) x.fillText(lines[i], it.x * s, it.y * s + i * fs * 1.3);
         }
       } catch (e) {}
     });
   }
+
+  /* ===================== ページ（1つのメモに複数ページ） ===================== */
+  // 1ページ目はメモ本体（strokes / items / bg / h）、2ページ目以降は more[] に同じ形で入れる
+  var A4_H = 1414, BAR_H = 50;
+  var pg = null, pageIdx = 0;
+  function pagesOf(n) { return [n].concat(n.more || []); }
+  function pageCount() { return cur ? 1 + (cur.more ? cur.more.length : 0) : 1; }
+  function normPage(p) { if (!p.strokes) p.strokes = []; if (!p.items) p.items = []; if (!p.h) p.h = A4_H; return p; }
+  function normNote(n) {
+    if (!n.strokes) n.strokes = [];
+    if (!n.items) n.items = [];
+    var m = n.more;
+    if (m && !(m instanceof Array)) {      // 保存先で配列が番号付きの入れ物に変わることがある
+      var keys = []; for (var k in m) keys.push(Number(k));
+      keys.sort(function (a, b) { return a - b; });
+      var arr = []; each(keys, function (k2) { arr.push(m[k2]); }); m = arr;
+    }
+    if (m) { var out = []; each(m, function (p) { out.push(normPage(p || {})); }); n.more = out.length ? out : undefined; }
+    if (!n.more) delete n.more;
+  }
+  function bindPage(k) {
+    var list = pagesOf(cur);
+    if (k >= list.length) k = list.length - 1;
+    if (k < 0) k = 0;
+    pageIdx = k; pg = list[k];
+    PAGE_H = pg.h || A4_H;
+    selectedId = null; undoStack = []; redoStack = [];
+    renderBg(); updatePageBar(); updateUndoButtons();
+  }
+  function goPage(k) {
+    if (!cur || k < 0 || k >= pageCount() || k === pageIdx) return;
+    abortInputs();
+    bindPage(k);
+    zoom = 1; pageX = null;
+    layout();
+  }
+  function renderBg() {
+    var im = $('bg');
+    im.onload = null;
+    if (!cur || !pg || !pg.bg) { im.style.display = 'none'; im.removeAttribute('src'); return; }
+    var id = pg.bg;
+    im.style.display = 'none';
+    getImage(id, function (data) {
+      if (!pg || pg.bg !== id) return;
+      if (!data) { setTimeout(function () { if (pg && pg.bg === id && !im.getAttribute('src')) renderBg(); }, 10000); return; }
+      im.onload = function () { im.style.display = 'block'; };
+      im.src = data;
+      // 縮小画像・書き出し用には別の画像として持つ（表示用の要素はページごとに中身が変わるため）
+      if (!imgEls[id]) { var cp = new Image(); cp.src = data; imgEls[id] = cp; }
+    });
+  }
+  function updatePageBar() {
+    var n = pageCount();
+    $('pb-num').textContent = (pageIdx + 1) + ' / ' + n;
+    $('pb-prev').disabled = pageIdx <= 0; $('pb-next').disabled = pageIdx >= n - 1;
+    $('pb-del').disabled = n <= 1;
+    each([$('pb-prev'), $('pb-next'), $('pb-del')], function (b) { b.style.opacity = b.disabled ? 0.35 : 1; });
+  }
+  function pageImageIds(p) {
+    var ids = [];
+    if (p.bg) ids.push(p.bg);
+    each(p.items || [], function (it) { if (it.k === 'img' && it.src) ids.push(it.src); });
+    return ids;
+  }
+  on($('pb-prev'), 'click', function () { goPage(pageIdx - 1); });
+  on($('pb-next'), 'click', function () { goPage(pageIdx + 1); });
+  on($('pb-add'), 'click', function () {
+    if (!cur) return;
+    if (!cur.more) cur.more = [];
+    cur.more.splice(pageIdx, 0, normPage({ h: A4_H }));   // 今のページの次に白紙を足す
+    changed();
+    goPage(pageIdx + 1);
+  });
+  on($('pb-del'), 'click', function () {
+    if (!cur || pageCount() <= 1) return;
+    if (!window.confirm((pageIdx + 1) + 'ページ目を削除しますか？（元に戻せません）')) return;
+    abortInputs();
+    var dels = {};
+    each(pageImageIds(pg), function (id) { dels['img/' + id] = null; forgetImage(id); });
+    if (KEY && it0(dels)) api('PATCH', '', dels, function () {});
+    if (pageIdx === 0) {
+      var p1 = cur.more.shift();
+      cur.strokes = p1.strokes; cur.items = p1.items; cur.h = p1.h;
+      if (p1.bg) cur.bg = p1.bg; else delete cur.bg;
+    } else cur.more.splice(pageIdx - 1, 1);
+    if (cur.more && !cur.more.length) delete cur.more;
+    var k = Math.min(pageIdx, pageCount() - 1);
+    pageIdx = -1; bindPage(k); zoom = 1; pageX = null; layout();
+    changed();
+  });
+
+  /* ===================== 進み具合の表示 ===================== */
+  function busy(text) {
+    var b = $('busy');
+    if (text === null) { b.className = 'hidden'; return; }
+    $('busy-text').textContent = text; b.className = '';
+  }
+  function loadScript(src, cb) {
+    var s2 = document.createElement('script'); s2.src = src;
+    s2.onload = function () { cb(null); }; s2.onerror = function () { cb(new Error('load')); };
+    document.head.appendChild(s2);
+  }
+
+  /* ===================== PDF を読み込む（新しい端末のみ） ===================== */
+  var PDF_MAX_PAGES = 30;
+  var oldIOS = /OS [5-9]_\d.* like Mac OS X|OS 1[0]_\d.* like Mac OS X/.test(navigator.userAgent);
+  if (!oldIOS) $('btn-pdf').className = '';
+  on($('btn-pdf'), 'click', function () { $('file-pdf').value = ''; $('file-pdf').click(); });
+  on($('file-pdf'), 'change', function () {
+    var f = $('file-pdf').files && $('file-pdf').files[0];
+    if (f) importPdf(f);
+  });
+  function withPdfjs(cb) {
+    if (window.pdfjsLib) { cb(window.pdfjsLib); return; }
+    loadScript('vendor/pdfjs/pdf.min.js', function (err) {
+      var lib = window.pdfjsLib || window['pdfjs-dist/build/pdf'];
+      if (err || !lib) { cb(null); return; }
+      lib.GlobalWorkerOptions.workerSrc = 'vendor/pdfjs/pdf.worker.min.js';
+      window.pdfjsLib = lib; cb(lib);
+    });
+  }
+  function importPdf(file) {
+    busy('PDF を読み込み中…');
+    withPdfjs(function (lib) {
+      if (!lib) { busy(null); alert('PDF を読む部品を読み込めませんでした。通信状態を確認してください。'); return; }
+      var fr = new FileReader();
+      fr.onload = function () {
+        lib.getDocument({ data: new Uint8Array(fr.result), cMapUrl: 'vendor/pdfjs/cmaps/', cMapPacked: true, standardFontDataUrl: 'vendor/pdfjs/standard_fonts/' }).promise.then(function (doc) {
+          var total = doc.numPages;
+          if (total > PDF_MAX_PAGES) {
+            if (!window.confirm('この PDF は ' + total + ' ページあります。最初の ' + PDF_MAX_PAGES + ' ページだけ読み込みますか？')) { busy(null); return; }
+            total = PDF_MAX_PAGES;
+          }
+          var pages = [];
+          var next = function (i) {
+            if (i > total) { finishPdf(file, pages); return; }
+            busy('PDF を読み込み中… ' + i + ' / ' + total);
+            doc.getPage(i).then(function (page) {
+              var vp1 = page.getViewport({ scale: 1 });
+              var sc = Math.min(1600 / vp1.width, 2400 / vp1.height);
+              var vp = page.getViewport({ scale: sc });
+              var c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+              var x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+              page.render({ canvasContext: x, viewport: vp }).promise.then(function () {
+                var data = c.toDataURL('image/jpeg', 0.82);
+                if (data.length > 700000) data = c.toDataURL('image/jpeg', 0.68);
+                pages.push({ data: data, h: Math.round(PAGE_W * c.height / c.width) });
+                c.width = c.height = 1;   // メモリを返す
+                next(i + 1);
+              }, function () { busy(null); alert(i + 'ページ目を表示できませんでした。'); });
+            }, function () { busy(null); alert(i + 'ページ目を読み込めませんでした。'); });
+          };
+          next(1);
+        }, function (e) {
+          busy(null);
+          alert(e && e.name === 'PasswordException' ? 'パスワード付きの PDF は読み込めません。' : 'PDF を読み込めませんでした。');
+        });
+      };
+      fr.onerror = function () { busy(null); alert('ファイルを読み込めませんでした。'); };
+      fr.readAsArrayBuffer(file);
+    });
+  }
+  function finishPdf(file, pages) {
+    var id = newId(), t = now();
+    var mk = function (p) {
+      var imgId = newId();
+      storeImage(imgId, p.data); imgPending[imgId] = 1;
+      var im = new Image(); im.src = p.data; imgEls[imgId] = im;   // 一覧の縮小画像用
+      return { bg: imgId, h: p.h, strokes: [], items: [] };
+    };
+    var first = mk(pages[0]);
+    var title = String(file.name || 'PDF').replace(/\.pdf$/i, '') || fmtDate(t);
+    var n = { id: id, title: title, strokes: [], items: [], bg: first.bg, h: first.h, created: t, updated: t };
+    if (pages.length > 1) { n.more = []; for (var i = 1; i < pages.length; i++) n.more.push(mk(pages[i])); }
+    savePending();
+    index[id] = { title: n.title, updated: t, thumb: '' };
+    cacheNote(n);
+    busy(null);
+    openNote(id, false);
+    // 読み込んだだけでも保存する
+    setTimeout(function () { if (cur && cur.id === id) changed(); scheduleFlush(0); }, 300);
+  }
+
+  /* ===================== PDF に書き出す（画像の PDF） ===================== */
+  var EXPORT_W = 1240;   // 横の画素数（A4 でおよそ 150dpi）
+  function loadImg(id, cb) {
+    if (imgEls[id] && imgEls[id].complete && imgEls[id].naturalWidth) { cb(imgEls[id]); return; }
+    getImage(id, function (data) {
+      if (!data) { cb(null); return; }
+      var im = new Image();
+      im.onload = function () { imgEls[id] = im; cb(im); };
+      im.onerror = function () { cb(null); };
+      im.src = data;
+    });
+  }
+  function renderPageJpeg(p, cb) {
+    var ids = pageImageIds(p), missing = 0, i2 = 0;
+    var go = function () {
+      if (i2 < ids.length) { var id = ids[i2++]; loadImg(id, function (im) { if (!im) missing++; go(); }); return; }
+      var h = p.h || A4_H, W = EXPORT_W, H = Math.round(W * h / PAGE_W), s = W / PAGE_W;
+      var c = document.createElement('canvas'); c.width = W; c.height = H;
+      var x = c.getContext('2d');
+      x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
+      if (p.bg && imgEls[p.bg]) x.drawImage(imgEls[p.bg], 0, 0, W, H);
+      drawItemsTo(x, p.items || [], s);
+      var c2 = document.createElement('canvas'); c2.width = W; c2.height = H;
+      var x2 = c2.getContext('2d'), saveDpr = dpr;
+      dpr = 1;
+      try { each(visible(p.strokes), function (st) { pathStroke(x2, st, s); }); } catch (e) {}
+      dpr = saveDpr;
+      x.drawImage(c2, 0, 0);
+      var data = c.toDataURL('image/jpeg', 0.85);
+      c.width = c.height = 1; c2.width = c2.height = 1;
+      cb({ jpeg: data, w: W, h: H, ph: h, missing: missing });
+    };
+    go();
+  }
+  function b64Bytes(dataUrl) {
+    var b = atob(dataUrl.split(',')[1]), a = new Uint8Array(b.length);
+    for (var i = 0; i < b.length; i++) a[i] = b.charCodeAt(i);
+    return a;
+  }
+  // JPEG を1ページに1枚ずつ貼った PDF を作る
+  function buildPdf(pages) {
+    var parts = [], pos = 0, offs = [];
+    var add = function (x) {
+      if (typeof x === 'string') { var a = new Uint8Array(x.length); for (var i = 0; i < x.length; i++) a[i] = x.charCodeAt(i) & 255; x = a; }
+      parts.push(x); pos += x.length;
+    };
+    var begin = function (n) { offs[n] = pos; add(n + ' 0 obj\n'); };
+    var end = function () { add('\nendobj\n'); };
+    add('%PDF-1.4\n%âãÏÓ\n');
+    var kids = [];
+    for (var i = 0; i < pages.length; i++) kids.push((3 + i * 3) + ' 0 R');
+    begin(1); add('<< /Type /Catalog /Pages 2 0 R >>'); end();
+    begin(2); add('<< /Type /Pages /Kids [' + kids.join(' ') + '] /Count ' + pages.length + ' >>'); end();
+    for (var j = 0; j < pages.length; j++) {
+      var p = pages[j], no = 3 + j * 3, pw = 595.28, ph = (595.28 * p.ph / PAGE_W);
+      var W = pw.toFixed(2), H = ph.toFixed(2);
+      var content = 'q ' + W + ' 0 0 ' + H + ' 0 0 cm /Im0 Do Q';
+      var img = b64Bytes(p.jpeg);
+      begin(no); add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + W + ' ' + H + '] /Resources << /XObject << /Im0 ' + (no + 2) + ' 0 R >> >> /Contents ' + (no + 1) + ' 0 R >>'); end();
+      begin(no + 1); add('<< /Length ' + content.length + ' >>\nstream\n' + content + '\nendstream'); end();
+      begin(no + 2); add('<< /Type /XObject /Subtype /Image /Width ' + p.w + ' /Height ' + p.h + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + img.length + ' >>\nstream\n');
+      add(img); add('\nendstream'); end();
+    }
+    var count = 3 + pages.length * 3, xref = pos;
+    var pad = function (n) { var s2 = String(n); while (s2.length < 10) s2 = '0' + s2; return s2; };
+    var t = 'xref\n0 ' + count + '\n0000000000 65535 f \n';
+    for (var k = 1; k < count; k++) t += pad(offs[k]) + ' 00000 n \n';
+    t += 'trailer\n<< /Size ' + count + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF\n';
+    add(t);
+    var out = new Uint8Array(pos), o = 0;
+    each(parts, function (a) { out.set(a, o); o += a.length; });
+    return out;
+  }
+  var exportBlob = null, exportName = '', exportUrl = null;
+  on($('pb-pdf'), 'click', function () {
+    if (!cur) return;
+    abortInputs();
+    var list = pagesOf(cur), out = [], missing = 0;
+    var step = function (i) {
+      if (i >= list.length) {
+        busy('PDF を作成中…');
+        setTimeout(function () {
+          try {
+            var bytes = buildPdf(out);
+            exportBlob = new Blob([bytes], { type: 'application/pdf' });
+          } catch (e) { busy(null); alert('PDF を作れませんでした。'); return; }
+          exportName = (String(cur.title || 'メモ').replace(/[\\\/:*?"<>|]/g, '_') || 'メモ') + '.pdf';
+          busy(null);
+          openExportDialog(missing);
+        }, 30);
+        return;
+      }
+      busy('PDF を作成中… ' + (i + 1) + ' / ' + list.length);
+      renderPageJpeg(list[i], function (r) { missing += r.missing; out.push(r); setTimeout(function () { step(i + 1); }, 0); });
+    };
+    step(0);
+  });
+  function openExportDialog(missing) {
+    var file = null;
+    try { file = new File([exportBlob], exportName, { type: 'application/pdf' }); } catch (e) {}
+    var canShare = !!(file && navigator.canShare && navigator.share && navigator.canShare({ files: [file] }));
+    $('ex-share').className = canShare ? 'primary' : 'hidden';
+    $('ex-name').textContent = exportName + '（' + Math.max(1, Math.round(exportBlob.size / 1024)) + 'KB・' + pageCount() + 'ページ）';
+    $('ex-warn').textContent = missing ? '※ まだ読み込めていない画像が ' + missing + ' 枚あります（灰色の四角になっています）。' : '';
+    $('ex-hint').textContent = canShare
+      ? '「共有」から GoodNotes を選ぶと、そのまま取り込めます。「ファイル」に保存することもできます。'
+      : '「保存」を押すと PDF をダウンロードします。';
+    if (exportUrl) { try { URL.revokeObjectURL(exportUrl); } catch (e) {} }
+    exportUrl = null;
+    $('export-dlg').className = '';
+  }
+  on($('ex-share'), 'click', function () {
+    var file = new File([exportBlob], exportName, { type: 'application/pdf' });
+    navigator.share({ files: [file], title: exportName }).then(function () { $('export-dlg').className = 'hidden'; }, function () {});
+  });
+  on($('ex-save'), 'click', function () {
+    try {
+      if (window.navigator.msSaveOrOpenBlob) { window.navigator.msSaveOrOpenBlob(exportBlob, exportName); return; }
+      exportUrl = (window.URL || window.webkitURL).createObjectURL(exportBlob);
+      var a = document.createElement('a');
+      if ('download' in a) { a.href = exportUrl; a.download = exportName; document.body.appendChild(a); a.click(); document.body.removeChild(a); }
+      else window.open(exportUrl, '_blank');   // 古い端末：新しいタブで開く
+    } catch (e) { alert('保存できませんでした。'); }
+  });
+  on($('ex-close'), 'click', function () { $('export-dlg').className = 'hidden'; });
 
   /* ===================== 一覧・設定の操作 ===================== */
   on($('btn-add'), 'click', function () {
@@ -1769,7 +2140,7 @@
   }
 
   // テスト用
-  window.__memo = { state: function () { return { key: KEY, index: index, dirty: dirty, cur: cur, selectedId: selectedId, undo: undoStack.length, redo: redoStack.length, pending: imgPending, penOnly: penOnly }; } };
+  window.__memo = { state: function () { return { key: KEY, index: index, dirty: dirty, cur: cur, pageIdx: pageIdx, pg: pg, selectedId: selectedId, undo: undoStack.length, redo: redoStack.length, pending: imgPending, penOnly: penOnly }; } };
 })();
 </script>
 </body>
