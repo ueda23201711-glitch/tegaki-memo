@@ -2962,7 +2962,7 @@
   }
 
   /* ---- 文に分ける・単語に分ける ---- */
-  var ABBR = /\b(Mr|Mrs|Ms|Dr|Prof|St|Jr|Sr|vs|etc|e\.g|i\.e|No|Inc|Ltd|Co|U\.S|a\.m|p\.m)\.$/i;
+  var ABBR = /\b(Mr|Mrs|Ms|Mx|Dr|Prof|St|Jr|Sr|vs|etc|e\.g|i\.e|No|Nos|Inc|Ltd|Co|Corp|U\.S|U\.K|a\.m|p\.m|Sen|Rep|Gov|Gen|Lt|Col|Capt|Sgt|Adm|Pres|Supt|Rev|Hon|Mt|Ft|Ave|Blvd|Dept|Univ|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|approx|est|fig|vol|pp|p)\.$/i;
   function splitSentences(text) {
     text = String(text || '').replace(/\r/g, '').replace(/[ \t]+/g, ' ');
     var out = [], paras = text.split(/\n\s*\n|\n/);
@@ -3226,7 +3226,7 @@
       blk.appendChild(en);
       if (rdShowTr) {
         var ja = document.createElement('div'); ja.className = 'rd-ja';
-        ja.textContent = d.tr && d.tr[si] ? d.tr[si] : (gasUrl ? '' : '（翻訳の設定をすると、ここに日本語訳が出ます）');
+        ja.textContent = d.tr && d.tr[si] ? d.tr[si] : (gasUrl ? '' : '（右上の「⚙ 翻訳の設定」で「テストして保存」が成功すると、ここに日本語訳が出ます）');
         if (ja.textContent) blk.appendChild(ja);
         // 熟語：訳の下に
         if (s.idioms.length) {
