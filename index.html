@@ -136,6 +136,10 @@
   #page-bar button { margin: 8px 3px 0; padding: 7px 11px; background: #fff; box-shadow: 0 1px 4px rgba(31,42,48,.2); font-size: 14px; }
   @media (max-width: 480px) { #page-bar .wide { display: none; } #page-bar button { margin: 8px 2px 0; padding: 7px 9px; } #pb-num { min-width: 46px; } }
   #pb-num { display: inline-block; min-width: 58px; font-size: 14px; color: #3b4a52; vertical-align: middle; margin-top: 8px; }
+  #more-dlg { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(20,28,32,.3); z-index: 80; }
+  #more-dlg .dlg { position: absolute; left: 6%; right: 6%; bottom: 70px; max-width: 420px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 16px 18px; box-sizing: border-box; box-shadow: 0 8px 30px rgba(0,0,0,.3); }
+  #more-dlg h3 { margin: 0 0 6px; font-size: 16px; }
+  #more-dlg .row button { margin: 6px 6px 0 0; }
   #photo-dlg { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(20,28,32,.45); z-index: 80; }
   #photo-dlg .dlg { position: absolute; left: 6%; right: 6%; top: 28%; max-width: 420px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 18px; box-sizing: border-box; box-shadow: 0 8px 30px rgba(0,0,0,.3); }
   #photo-dlg h3 { margin: 0 0 8px; font-size: 17px; }
@@ -342,7 +346,7 @@
   </div>
   <input type="file" id="file-img" accept="image/*" style="display:none">
   <input type="file" id="file-pdf" accept="application/pdf,.pdf" style="display:none">
-  <input type="file" id="file-photo" accept="image/*" style="display:none">
+  <input type="file" id="file-photo" accept="image/*" multiple style="display:none">
 </div>
 
 <!-- 処理中 -->
@@ -357,6 +361,18 @@
       <button id="ph-doc" class="primary" type="button">書類向けに補正</button>
       <button id="ph-raw" type="button">そのまま</button>
       <button id="ph-cancel" type="button">やめる</button>
+    </div>
+  </div>
+</div>
+
+<!-- 続けて撮る -->
+<div id="more-dlg" class="hidden">
+  <div class="dlg">
+    <h3 id="more-title">ページを追加しました</h3>
+    <p class="note">続けて次のページを撮ると、同じメモの次のページになります。</p>
+    <div class="row">
+      <button id="more-yes" class="primary" type="button">📷 続けて撮る</button>
+      <button id="more-no" type="button">終わる</button>
     </div>
   </div>
 </div>
@@ -1845,40 +1861,63 @@
   }
 
   /* ===================== 写真（紙の撮影など）をページにする ===================== */
-  var photoFile = null, photoTarget = 'new';   // 'new'：新しいメモ / 'page'：今のメモの次のページ
-  on($('btn-photo'), 'click', function () { photoTarget = 'new'; $('file-photo').value = ''; $('file-photo').click(); });
-  on($('pb-photo'), 'click', function () { if (!cur) return; photoTarget = 'page'; $('file-photo').value = ''; $('file-photo').click(); });
+  var photoFiles = [], photoTarget = 'new';   // 'new'：新しいメモ / 'page'：今のメモの次のページ
+  var photoDoc = null;                         // 続けて撮るときは、最初に選んだ補正をそのまま使う
+  var openPhotoPicker = function (target, keepDoc) {
+    photoTarget = target; if (!keepDoc) photoDoc = null;
+    $('file-photo').value = ''; $('file-photo').click();
+  };
+  on($('btn-photo'), 'click', function () { openPhotoPicker('new'); });
+  on($('pb-photo'), 'click', function () { if (cur) openPhotoPicker('page'); });
   on($('file-photo'), 'change', function () {
-    var f = $('file-photo').files && $('file-photo').files[0];
-    if (!f) return;
-    if (f.type && !/^image\//.test(f.type)) { alert('画像のファイルを選んでください。'); return; }
-    photoFile = f; $('photo-dlg').className = '';
+    var fl = $('file-photo').files || [], list = [];
+    for (var i = 0; i < fl.length; i++) if (!fl[i].type || /^image\//.test(fl[i].type)) list.push(fl[i]);
+    if (!list.length) { if (fl.length) alert('画像のファイルを選んでください。'); return; }
+    photoFiles = list;
+    if (photoDoc !== null) { usePhotos(photoDoc); return; }
+    $('photo-dlg').className = '';
   });
-  on($('ph-cancel'), 'click', function () { $('photo-dlg').className = 'hidden'; photoFile = null; });
-  on($('ph-doc'), 'click', function () { usePhoto(true); });
-  on($('ph-raw'), 'click', function () { usePhoto(false); });
-  function usePhoto(doc) {
-    var f = photoFile; photoFile = null;
+  on($('ph-cancel'), 'click', function () { $('photo-dlg').className = 'hidden'; photoFiles = []; });
+  on($('ph-doc'), 'click', function () { usePhotos(true); });
+  on($('ph-raw'), 'click', function () { usePhotos(false); });
+  on($('more-yes'), 'click', function () { $('more-dlg').className = 'hidden'; if (cur) openPhotoPicker('page', true); });
+  on($('more-no'), 'click', function () { $('more-dlg').className = 'hidden'; photoDoc = null; });
+  // 選んだ写真（何枚でも）を順にページにする
+  function usePhotos(doc) {
+    var files = photoFiles; photoFiles = [];
     $('photo-dlg').className = 'hidden';
-    if (!f) return;
-    busy('写真を読み込み中…');
-    readOrientation(f, function (orient) {
-      var fr = new FileReader();
-      fr.onload = function () {
-        // 処理中の表示を先に出してから重い処理をする
-        setTimeout(function () {
-          shrinkImage(fr.result, function (out) {
-            busy(null);
-            if (!out) { alert('写真を読み込めませんでした。（HEIC などの形式は読めないことがあります）'); return; }
-            var h = Math.round(PAGE_W * out.h / out.w);
-            if (photoTarget === 'page' && cur) addBgPage(out.data, h);
-            else newBgNote(out.data, h, fmtDate(now()) + ' 写真');
-          }, orient, { doc: doc });
-        }, 30);
-      };
-      fr.onerror = function () { busy(null); alert('写真を読み込めませんでした。'); };
-      fr.readAsDataURL(f);
-    });
+    if (!files.length) return;
+    photoDoc = doc;
+    var i = 0, added = 0;
+    var next = function () {
+      if (i >= files.length) {
+        busy(null);
+        if (added && cur) { $('more-title').textContent = added + 'ページ追加しました（全' + pageCount() + 'ページ）'; $('more-dlg').className = ''; }
+        return;
+      }
+      var f = files[i++];
+      busy('写真を読み込み中…' + (files.length > 1 ? ' ' + i + ' / ' + files.length : ''));
+      readOrientation(f, function (orient) {
+        var fr = new FileReader();
+        fr.onload = function () {
+          // 処理中の表示を先に出してから重い処理をする
+          setTimeout(function () {
+            shrinkImage(fr.result, function (out) {
+              if (!out) { alert(i + '枚目の写真を読み込めませんでした。（HEIC などの形式は読めないことがあります）'); next(); return; }
+              var h = Math.round(PAGE_W * out.h / out.w);
+              if (photoTarget === 'page' && cur) addBgPage(out.data, h);
+              else { newBgNote(out.data, h, fmtDate(now()) + ' 写真'); photoTarget = 'page'; }
+              added++;
+              fr = null;
+              setTimeout(next, 50);
+            }, orient, { doc: doc });
+          }, 30);
+        };
+        fr.onerror = function () { alert('写真を読み込めませんでした。'); next(); };
+        fr.readAsDataURL(f);
+      });
+    };
+    next();
   }
   function bgImage(data) {
     var id = newId();
