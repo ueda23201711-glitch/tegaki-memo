@@ -85,6 +85,29 @@
   .meta { padding: 8px 10px 10px; }
   .meta b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .meta span { font-size: 12px; color: #6b7a83; }
+  /* フォルダ・選択 */
+  #folder-bar { margin: 0 0 8px; overflow: hidden; }
+  #fb-path { display: inline-block; font-size: 14px; color: #3b4a52; margin: 8px 0; font-weight: 600; }
+  #fb-path a { color: #2463c9; text-decoration: none; font-weight: 400; }
+  .fb-btns { float: right; }
+  .fb-btns button { padding: 6px 10px; margin: 2px 0 2px 6px; font-size: 13px; background: #fff; box-shadow: 0 1px 3px rgba(31,42,48,.15); }
+  @media (max-width: 520px) { .fb-btns { float: none; display: block; } .fb-btns button { margin: 2px 6px 2px 0; } }
+  .folder .thumb { background: #f4f1e6; }
+  .ficon { position: absolute; top: 50%; left: 0; right: 0; margin-top: -40px; text-align: center; font-size: 64px; line-height: 80px; }
+  .grid.selecting .card:not(.folder) .card-in { position: relative; }
+  .grid.selecting .folder .card-in { opacity: .45; }
+  .grid.selecting { margin-bottom: 70px; }
+  .chk { position: absolute; top: 8px; left: 8px; width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,.95); border: 2px solid #8a969e; box-sizing: border-box; text-align: center; line-height: 26px; font-size: 17px; color: #fff; z-index: 2; }
+  .card.sel .chk { background: #2463c9; border-color: #2463c9; }
+  .card.sel .card-in { box-shadow: 0 0 0 3px #2463c9; }
+  #sel-bar { position: fixed; left: 0; right: 0; bottom: 0; background: #fff; border-top: 1px solid #d7dee3; padding: 10px 12px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); z-index: 30; text-align: right; box-shadow: 0 -2px 10px rgba(31,42,48,.1); }
+  #sel-count { float: left; margin-top: 8px; font-size: 14px; color: #3b4a52; }
+  #sel-bar button { margin-left: 6px; }
+  #move-dlg { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(20,28,32,.45); z-index: 80; }
+  #move-dlg .dlg { position: absolute; left: 6%; right: 6%; top: 12%; max-width: 420px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 18px; box-sizing: border-box; box-shadow: 0 8px 30px rgba(0,0,0,.3); max-height: 76%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  #move-dlg h3 { margin: 0 0 10px; font-size: 17px; }
+  #move-list button { display: block; width: 100%; text-align: left; margin: 0 0 6px; background: #f1f4f6; }
+  #move-dlg .row button { margin: 6px 6px 0 0; }
   .empty { text-align: center; color: #6b7a83; padding: 60px 20px; line-height: 1.8; }
 
   /* ---- 設定・初回 ---- */
@@ -241,10 +264,37 @@
     <button id="btn-pdf" class="hidden" type="button" title="PDF からメモを作る">📄<span class="wide"> PDF</span></button>
     <button id="btn-add" type="button" title="新しいメモ">＋<span class="wide"> 新規</span></button>
   </div>
-  <div class="body">
+  <div class="body" id="list-body">
     <div class="list">
+      <div id="folder-bar">
+        <span id="fb-path"></span>
+        <span class="fb-btns">
+          <button id="fb-new" type="button">＋ フォルダ</button>
+          <button id="fb-rename" class="hidden" type="button">名前を変える</button>
+          <button id="fb-delete" class="hidden" type="button">フォルダを削除</button>
+          <button id="fb-select" type="button">☑ 選択</button>
+        </span>
+      </div>
       <div class="grid" id="grid"></div>
       <div class="empty hidden" id="empty">メモはまだありません。<br>右上の「＋ 新規」から書き始めましょう。</div>
+    </div>
+  </div>
+  <!-- まとめて操作 -->
+  <div id="sel-bar" class="hidden">
+    <span id="sel-count"></span>
+    <button id="sel-move" type="button">📁 移動</button>
+    <button id="sel-del" class="danger" type="button">削除</button>
+    <button id="sel-cancel" type="button">やめる</button>
+  </div>
+</div>
+
+<div id="move-dlg" class="hidden">
+  <div class="dlg">
+    <h3>どこに移動しますか？</h3>
+    <div id="move-list"></div>
+    <div class="row">
+      <button id="move-new" type="button">＋ 新しいフォルダを作って移動</button>
+      <button id="move-cancel" type="button">やめる</button>
     </div>
   </div>
 </div>
@@ -591,16 +641,23 @@
 
   /* ===================== 一覧 ===================== */
   function renderList() {
+    if (curFolder && !folders[curFolder]) setCurFolder(null);
     var ids = [];
-    for (var id in index) if (dirty[id] !== 'del') ids.push(id);
+    for (var id in index) if (dirty[id] !== 'del' && folderOf(index[id]) === curFolder) ids.push(id);
     ids.sort(function (a, b) { return (index[b].updated || 0) - (index[a].updated || 0); });
+    for (var sk in selected) if (!index[sk]) delete selected[sk];
     var g = $('grid');
     g.innerHTML = '';
-    $('empty').className = 'empty' + (ids.length ? ' hidden' : '');
+    var fids = curFolder ? [] : sortedFolders();
+    $('empty').className = 'empty' + (ids.length || fids.length ? ' hidden' : '');
+    $('empty').innerHTML = curFolder ? 'このフォルダにはメモがありません。<br>「☑ 選択」で選んだメモを「📁 移動」で入れられます。' : 'メモはまだありません。<br>右上の「＋ 新規」から書き始めましょう。';
+    renderFolderBar();
+    each(fids, function (fid) { g.appendChild(folderCard(fid)); });
     each(ids, function (id) {
       var it = index[id];
-      var card = document.createElement('div'); card.className = 'card';
+      var card = document.createElement('div'); card.className = 'card' + (selected[id] ? ' sel' : '');
       var inner = document.createElement('div'); inner.className = 'card-in';
+      if (selMode) { var ck = document.createElement('div'); ck.className = 'chk'; ck.textContent = '✓'; inner.appendChild(ck); }
       var th = document.createElement('div'); th.className = 'thumb';
       if (it.thumb) { var img = document.createElement('img'); img.src = it.thumb; img.alt = ''; th.appendChild(img); }
       var meta = document.createElement('div'); meta.className = 'meta';
@@ -608,7 +665,10 @@
       var sp = document.createElement('span'); sp.textContent = fmtDate(it.updated || 0) + (dirty[id] ? ' ・未送信' : '');
       meta.appendChild(b); meta.appendChild(sp);
       inner.appendChild(th); inner.appendChild(meta); card.appendChild(inner);
-      on(inner, 'click', function () { openNote(id); });
+      on(inner, 'click', function () {
+        if (selMode) { if (selected[id]) delete selected[id]; else selected[id] = 1; card.className = 'card' + (selected[id] ? ' sel' : ''); renderFolderBar(); return; }
+        openNote(id);
+      });
       g.appendChild(card);
     });
   }
@@ -626,12 +686,18 @@
         if (!index[id] || (data[id].updated || 0) > (index[id].updated || 0)) {
           index[id] = data[id];
           lsDel(noteKey(id)); // 本文は開いたときに取り直す
+        } else if ((data[id].fm || 0) > (index[id].fm || 0)) {
+          // ほかの端末でフォルダを移したもの
+          if (data[id].f) index[id].f = data[id].f; else delete index[id].f;
+          index[id].fm = data[id].fm;
         }
       }
       // 他の端末で削除されたもの
       for (id in index) { if (!data[id] && !dirty[id]) { delete index[id]; lsDel(noteKey(id)); } }
+      each(metaQ, applyMeta);     // 送っていないフォルダの変更は手元のものを優先
       saveIndexLocal();
-      if (!$('scr-list').className.match(/hidden/)) renderList();
+      flushMeta();
+      refreshFolders(function () { if (!$('scr-list').className.match(/hidden/)) renderList(); });
       if (dirtyCount()) scheduleFlush(0); else setSync('最新');
     });
   }
@@ -873,7 +939,9 @@
   function changed() {
     if (!cur) return;
     cur.updated = now();
+    var old = index[cur.id] || {};
     index[cur.id] = { title: cur.title, updated: cur.updated, thumb: makeThumb(cur) };
+    if (old.f) { index[cur.id].f = old.f; index[cur.id].fm = old.fm || 0; }
     dirty[cur.id] = true; curIsNew = false;
     saveIndexLocal(); saveDirtyLocal(); cacheNote(cur);
     setSync('保存待ち');
@@ -1858,7 +1926,7 @@
     var n = { id: id, title: title, strokes: [], items: [], bg: first.bg, h: first.h, created: t, updated: t };
     if (pages.length > 1) { n.more = []; for (var i = 1; i < pages.length; i++) n.more.push(mk(pages[i])); }
     savePending();
-    index[id] = { title: n.title, updated: t, thumb: '' };
+    index[id] = newIndexEntry(n, t);
     cacheNote(n);
     busy(null);
     openNote(id, false);
@@ -1934,7 +2002,7 @@
   function newBgNote(data, h, title) {
     var id = newId(), t = now(), bg = bgImage(data);
     var n = { id: id, title: title, strokes: [], items: [], bg: bg, h: h, created: t, updated: t };
-    index[id] = { title: n.title, updated: t, thumb: '' };
+    index[id] = newIndexEntry(n, t);
     cacheNote(n);
     openNote(id, false);
     setTimeout(function () { if (cur && cur.id === id) changed(); scheduleFlush(0); }, 300);
@@ -2140,11 +2208,190 @@
   });
   on($('ex-close'), 'click', function () { $('export-dlg').className = 'hidden'; });
 
+  /* ===================== フォルダ・まとめて操作 ===================== */
+  // フォルダの一覧は memos/合言葉/folders/ID = {n: 名前, t: 作った時刻}
+  // メモがどのフォルダにあるかは index/メモID/f（fm はフォルダを変えた時刻）
+  var folders = lsJSON('memo_folders', {});
+  var curFolder = lsGet('memo_cur_folder') || null;
+  var metaQ = lsJSON('memo_meta_q', []);          // まだ送っていないフォルダ関係の変更
+  var selMode = false, selected = {};
+  function saveFolders() { lsSet('memo_folders', JSON.stringify(folders)); }
+  function setCurFolder(f) { curFolder = f || null; if (curFolder) lsSet('memo_cur_folder', curFolder); else lsDel('memo_cur_folder'); }
+  // 手元に反映する（送る前・取り込んだあとに使う）
+  function applyMeta(body) {
+    for (var path in body) {
+      var v = body[path], parts = path.split('/');
+      if (parts[0] === 'index' && index[parts[1]]) {
+        if (v === null) delete index[parts[1]][parts[2]]; else index[parts[1]][parts[2]] = v;
+      } else if (parts[0] === 'folders') {
+        if (parts.length === 2) { if (v === null) delete folders[parts[1]]; else folders[parts[1]] = v; }
+        else if (folders[parts[1]]) folders[parts[1]][parts[2]] = v;
+      }
+    }
+  }
+  function metaPatch(body) {
+    applyMeta(body);
+    saveIndexLocal(); saveFolders();
+    metaQ.push(body); lsSet('memo_meta_q', JSON.stringify(metaQ));
+    flushMeta();
+  }
+  var metaSending = false;
+  function flushMeta() {
+    if (metaSending || !KEY || !metaQ.length) return;
+    var n = metaQ.length, body = {};
+    for (var i = 0; i < n; i++) for (var k in metaQ[i]) body[k] = metaQ[i][k];
+    metaSending = true;
+    api('PATCH', '', body, function (err) {
+      metaSending = false;
+      if (err) { setTimeout(flushMeta, 15000); return; }
+      metaQ.splice(0, n); lsSet('memo_meta_q', JSON.stringify(metaQ));
+      flushMeta();
+    });
+  }
+  function refreshFolders(done) {
+    api('GET', '/folders', undefined, function (err, data) {
+      if (!err) {
+        folders = data || {};
+        each(metaQ, applyMeta);     // 送っていない変更は手元のものを優先
+        saveFolders();
+        if (curFolder && !folders[curFolder]) setCurFolder(null);
+      }
+      if (done) done();
+    });
+  }
+  function folderOf(it) { return it && it.f && folders[it.f] ? it.f : null; }
+  function newIndexEntry(n, t) {
+    var e = { title: n.title, updated: t, thumb: '' };
+    if (curFolder && folders[curFolder]) { e.f = curFolder; e.fm = t; }
+    return e;
+  }
+  function sortedFolders() {
+    var a = []; for (var k in folders) a.push(k);
+    a.sort(function (x, y) { return String(folders[x].n || '').localeCompare(String(folders[y].n || ''), 'ja'); });
+    return a;
+  }
+  function countIn(fid) { var c = 0; for (var id in index) if (dirty[id] !== 'del' && folderOf(index[id]) === fid) c++; return c; }
+
+  function renderFolderBar() {
+    var inF = curFolder && folders[curFolder];
+    $('fb-path').innerHTML = '';
+    if (inF) {
+      var back = document.createElement('a'); back.textContent = 'すべてのメモ'; back.href = 'javascript:void 0';
+      on(back, 'click', function () { setCurFolder(null); exitSelect(); renderList(); });
+      $('fb-path').appendChild(back);
+      $('fb-path').appendChild(document.createTextNode(' › 📁 ' + folders[curFolder].n));
+    } else $('fb-path').appendChild(document.createTextNode('すべてのメモ'));
+    $('fb-new').className = inF ? 'hidden' : '';
+    $('fb-rename').className = inF ? '' : 'hidden';
+    $('fb-delete').className = inF ? '' : 'hidden';
+    $('fb-select').textContent = selMode ? 'やめる' : '☑ 選択';
+    $('sel-bar').className = selMode ? '' : 'hidden';
+    var n = 0; for (var k in selected) n++;
+    $('sel-count').textContent = n + '件 選択中';
+    $('sel-move').disabled = $('sel-del').disabled = !n;
+    $('sel-move').style.opacity = $('sel-del').style.opacity = n ? 1 : 0.4;
+    $('grid').className = 'grid' + (selMode ? ' selecting' : '');
+  }
+  function exitSelect() { selMode = false; selected = {}; }
+  function folderCard(fid) {
+    var card = document.createElement('div'); card.className = 'card folder';
+    var inner = document.createElement('div'); inner.className = 'card-in';
+    var th = document.createElement('div'); th.className = 'thumb';
+    var ic = document.createElement('div'); ic.className = 'ficon'; ic.textContent = '📁';
+    th.appendChild(ic);
+    var meta = document.createElement('div'); meta.className = 'meta';
+    var b = document.createElement('b'); b.textContent = folders[fid].n || '（名前なし）';
+    var sp = document.createElement('span'); sp.textContent = countIn(fid) + '件のメモ';
+    meta.appendChild(b); meta.appendChild(sp);
+    inner.appendChild(th); inner.appendChild(meta); card.appendChild(inner);
+    on(inner, 'click', function () { if (selMode) return; setCurFolder(fid); renderList(); $('list-body').scrollTop = 0; });
+    return card;
+  }
+
+  on($('fb-new'), 'click', function () {
+    var name = window.prompt('新しいフォルダの名前', '');
+    if (!name || !name.replace(/\s/g, '')) return;
+    var fid = newId(), b = {}; b['folders/' + fid] = { n: name.replace(/^\s+|\s+$/g, '').slice(0, 40), t: now() };
+    metaPatch(b); renderList();
+  });
+  on($('fb-rename'), 'click', function () {
+    if (!curFolder || !folders[curFolder]) return;
+    var name = window.prompt('フォルダの名前', folders[curFolder].n || '');
+    if (!name || !name.replace(/\s/g, '')) return;
+    var b = {}; b['folders/' + curFolder + '/n'] = name.replace(/^\s+|\s+$/g, '').slice(0, 40);
+    metaPatch(b); renderList();
+  });
+  on($('fb-delete'), 'click', function () {
+    if (!curFolder || !folders[curFolder]) return;
+    if (!window.confirm('フォルダ「' + folders[curFolder].n + '」を削除しますか？\n中のメモは消えず、フォルダの外に出ます。')) return;
+    var b = {}, t = now();
+    for (var id in index) if (index[id].f === curFolder) { b['index/' + id + '/f'] = null; b['index/' + id + '/fm'] = t; }
+    b['folders/' + curFolder] = null;
+    setCurFolder(null); metaPatch(b); exitSelect(); renderList();
+  });
+  on($('fb-select'), 'click', function () { if (selMode) exitSelect(); else { selMode = true; selected = {}; } renderList(); });
+  on($('sel-cancel'), 'click', function () { exitSelect(); renderList(); });
+
+  // まとめて移動
+  on($('sel-move'), 'click', function () {
+    var box = $('move-list'); box.innerHTML = '';
+    var add = function (label, fid) {
+      var bt = document.createElement('button'); bt.type = 'button'; bt.textContent = label;
+      if ((fid || null) === (curFolder || null)) { bt.disabled = true; bt.style.opacity = 0.4; }
+      on(bt, 'click', function () { moveSelected(fid); });
+      box.appendChild(bt);
+    };
+    add('（フォルダの外）', null);
+    each(sortedFolders(), function (fid) { add('📁 ' + folders[fid].n, fid); });
+    $('move-dlg').className = '';
+  });
+  on($('move-new'), 'click', function () {
+    var name = window.prompt('新しいフォルダの名前', '');
+    if (!name || !name.replace(/\s/g, '')) return;
+    var fid = newId(), b = {}; b['folders/' + fid] = { n: name.replace(/^\s+|\s+$/g, '').slice(0, 40), t: now() };
+    metaPatch(b);
+    moveSelected(fid);
+  });
+  on($('move-cancel'), 'click', function () { $('move-dlg').className = 'hidden'; });
+  function moveSelected(fid) {
+    $('move-dlg').className = 'hidden';
+    var b = {}, t = now(), n = 0;
+    for (var id in selected) if (index[id]) { b['index/' + id + '/f'] = fid || null; b['index/' + id + '/fm'] = t; n++; }
+    if (n) metaPatch(b);
+    exitSelect(); renderList();
+  }
+
+  // まとめて削除（画像も消す）
+  on($('sel-del'), 'click', function () {
+    var ids = []; for (var id in selected) if (index[id]) ids.push(id);
+    if (!ids.length) return;
+    if (!window.confirm(ids.length + '件のメモを削除しますか？ほかの端末からも消えます。（元に戻せません）')) return;
+    var i = 0, imgDels = {};
+    var step = function () {
+      if (i >= ids.length) {
+        each(ids, function (id2) { delete index[id2]; lsDel(noteKey(id2)); dirty[id2] = 'del'; });
+        saveIndexLocal(); saveDirtyLocal();
+        for (var k in imgDels) forgetImage(k.slice(4));
+        if (it0(imgDels)) metaPatch(imgDels);
+        busy(null); exitSelect(); renderList(); scheduleFlush(0);
+        return;
+      }
+      var id3 = ids[i++];
+      busy('削除中… ' + i + ' / ' + ids.length);
+      var collect = function (n) { if (n) { normNote(n); each(pagesOf(n), function (p) { each(pageImageIds(p), function (im) { imgDels['img/' + im] = null; }); }); } step(); };
+      var local = lsJSON(noteKey(id3), null);
+      if (local) collect(local);
+      else if (KEY) api('GET', '/notes/' + id3, undefined, function (err, n) { collect(err ? null : n); });
+      else step();
+    };
+    step();
+  });
+
   /* ===================== 一覧・設定の操作 ===================== */
   on($('btn-add'), 'click', function () {
     var id = newId(), t = now();
     var n = { id: id, title: fmtDate(t), strokes: [], items: [], created: t, updated: t };
-    index[id] = { title: n.title, updated: t, thumb: '' };
+    index[id] = newIndexEntry(n, t);
     cacheNote(n);
     openNote(id, true);
   });
