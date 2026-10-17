@@ -48,8 +48,17 @@
     padding: 0 10px; box-sizing: border-box;
     padding-top: env(safe-area-inset-top, 0px); height: calc(52px + env(safe-area-inset-top, 0px));
   }
-  .bar h1 { font-size: 18px; margin: 0; -webkit-box-flex: 1; -webkit-flex: 1; flex: 1; font-weight: 700; }
-  .bar button { background: rgba(255,255,255,.16); color: #fff; margin-left: 8px; }
+  .bar h1 { font-size: 18px; margin: 0; -webkit-box-flex: 1; -webkit-flex: 1; flex: 1; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .bar button { background: rgba(255,255,255,.16); color: #fff; margin-left: 8px; white-space: nowrap; -webkit-flex-shrink: 0; flex-shrink: 0; }
+  .bar .nar { display: none; }
+  /* スマホ：一覧の上のボタンは絵だけにする */
+  @media (max-width: 520px) {
+    #scr-list .bar h1 { font-size: 16px; }
+    #scr-list .bar button { margin-left: 5px; padding-left: 10px; padding-right: 10px; }
+    #scr-list .bar .wide { display: none; }
+    #scr-list .bar .nar { display: inline; }
+    #sync-list { margin-left: 6px; font-size: 11px; }
+  }
   .bar button:first-child { margin-left: 0; }
   .sync { font-size: 12px; margin-left: 10px; white-space: nowrap; opacity: .9; }
   .sync.err { color: #ffd2c8; opacity: 1; }
@@ -223,10 +232,10 @@
     <h1>手書きメモ</h1>
     <span class="sync" id="sync-list"></span>
     <button id="btn-refresh" type="button" title="最新を読み込む">↻</button>
-    <button id="btn-settings" type="button">設定</button>
-    <button id="btn-photo" type="button">📷 写真</button>
-    <button id="btn-pdf" class="hidden" type="button">📄 PDF</button>
-    <button id="btn-add" type="button">＋ 新規</button>
+    <button id="btn-settings" type="button" title="設定"><span class="nar">⚙︎</span><span class="wide">設定</span></button>
+    <button id="btn-photo" type="button" title="写真からメモを作る">📷<span class="wide"> 写真</span></button>
+    <button id="btn-pdf" class="hidden" type="button" title="PDF からメモを作る">📄<span class="wide"> PDF</span></button>
+    <button id="btn-add" type="button" title="新しいメモ">＋<span class="wide"> 新規</span></button>
   </div>
   <div class="body">
     <div class="list">
