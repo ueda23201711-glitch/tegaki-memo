@@ -3049,9 +3049,27 @@
   }
 
   /* ---- 翻訳（Google Apps Script・JSONP） ---- */
-  var jsonpN = 0;
+  var jsonpN = 0, gasXhrOk = lsGet('memo_gas_xhr') !== '0';
+  // まずは普通の通信（ログイン情報を送らないので、Google に複数ログインしていても動く）。だめなら JSONP
   function gasCall(params, cb) {
     if (!gasUrl) { cb(null, 'nourl'); return; }
+    if (!gasXhrOk) { gasJsonp(params, cb); return; }
+    var q = []; for (var k in params) q.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
+    var x = new XMLHttpRequest(), done = false;
+    try { x.open('GET', gasUrl + (gasUrl.indexOf('?') >= 0 ? '&' : '?') + q.join('&'), true); } catch (e) { gasJsonp(params, cb); return; }
+    x.timeout = 30000;
+    var fail = function () { if (done) return; done = true; gasJsonp(params, function (data, err) { if (data && !err) { gasXhrOk = false; lsSet('memo_gas_xhr', '0'); } cb(data, err); }); };
+    x.onreadystatechange = function () {
+      if (x.readyState !== 4 || done) return;
+      var data = null;
+      if (x.status === 200) { try { data = JSON.parse(x.responseText); } catch (e) {} }
+      if (!data) { fail(); return; }
+      done = true; cb(data, null);
+    };
+    x.ontimeout = fail;
+    try { x.send(); } catch (e) { fail(); }
+  }
+  function gasJsonp(params, cb) {
     var name = '__gas' + (++jsonpN) + '_' + now(), done = false;
     var sc = document.createElement('script');
     var q = []; for (var k in params) q.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
@@ -3380,6 +3398,7 @@
     if (!/^https:\/\/script\.google\.com\/macros\/s\/[^\/]+\/exec/.test(u)) { $('gas-msg').textContent = '「https://script.google.com/macros/s/…/exec」の形のアドレスを入れてください。'; return; }
     $('gas-msg').textContent = 'テスト中…';
     var save = gasUrl; gasUrl = u;
+    gasXhrOk = true; lsDel('memo_gas_xhr');
     translateOne('I am looking forward to seeing you.', function (t) {
       if (!t) { gasUrl = save; $('gas-msg').textContent = 'うまくいきませんでした。公開の設定（アクセスできるユーザー：全員）とアドレスを確認してください。'; return; }
       lsSet('memo_gas', u);
