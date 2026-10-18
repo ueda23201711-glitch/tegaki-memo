@@ -3291,9 +3291,9 @@
           if (mkRun !== run) return;
           if (data && data.ok) { netTry = 0; if (data.made) { made++; i++; next(21000); } else { had++; i++; next(0); } return; }
           var e = (data && data.error) || err || 'error';
-          if (/^(429 busy|5\d\d)/.test(e) || ((e === 'net' || e === 'timeout') && (netTry = (netTry || 0) + 1) <= 3)) { show('混んでいるので少し待っています… ' + i + ' / ' + chunks.length); next(30000); return; }
+          if ((/^(429 busy|5\d\d)/.test(e) || e === 'net' || e === 'timeout') && (netTry = (netTry || 0) + 1) <= 4) { show('混んでいるので少し待っています… ' + i + ' / ' + chunks.length); next(30000); return; }
           mkRun = 0; makeButton();
-          show(/^429/.test(e) ? '今日の無料の回数はここまでです（' + i + ' / ' + chunks.length + ' できました）。明日もう一度押すと続きから作ります。' : 'AIの声を作れませんでした（' + gmErrText(e) + '）。');
+          show(netTry > 4 ? '混んでいる状態が続いたので止めました（' + i + ' / ' + chunks.length + ' できました）。今日の回数を使い切ったか、Google が混んでいます。しばらくしてから（または明日）もう一度押すと続きから作ります。' : /^429/.test(e) ? '今日の無料の回数はここまでです（' + i + ' / ' + chunks.length + ' できました）。明日もう一度押すと続きから作ります。' : 'AIの声を作れませんでした（' + gmErrText(e) + '）。');
         });
       }, wait);
     };
