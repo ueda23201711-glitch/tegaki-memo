@@ -3233,6 +3233,7 @@
       keys.sort(function (p, q) { return idx[p][0] - idx[q][0]; });
       while (total > VC_MAX && keys.length > 1) { var old = keys.shift(); if (old === k) continue; total -= idx[old][1]; delete idx[old]; vcDel(old); }
       lsSet(VC_IDX, JSON.stringify(idx));   // 目録はすぐ書く（続けて保存しても取りこぼさない）
+      if (!mkRun && $('rd-make')) setTimeout(makeButton, 0);
       if (window.caches && window.Blob && window.Uint8Array && window.Response) {
         var bin = atob(b64), u = new Uint8Array(bin.length);
         for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
@@ -3385,7 +3386,18 @@
   var mkRun = 0;
   function makeButton() {
     $('rd-make').className = gasUrl && /^gm:/.test(rdVoiceName) ? '' : 'hidden';
-    if (!mkRun) $('rd-make').textContent = '🎙 AIの声を作って保存';
+    if (!mkRun) {
+      var c = vcCount();
+      $('rd-make').textContent = '🎙 AIの声を作って保存' + (c.n ? '（📱 ' + c.have + ' / ' + c.n + '）' : '');
+      $('rd-make').title = c.n ? 'この英文の声（' + gmVoice() + '）のうち、この端末に入っているのは ' + c.have + ' / ' + c.n + ' まとまり' : '';
+    }
+  }
+  // この英文の AI の声のうち、この端末に入っているまとまりの数
+  function vcCount() {
+    if (!rdSents.length || !/^gm:/.test(rdVoiceName)) return { have: 0, n: 0 };
+    var idx = vcIdx(), voice = gmVoice(), chunks = gmChunks(0), have = 0;
+    each(chunks, function (c) { if (idx[vcHash(voice + '|' + c.text)]) have++; });
+    return { have: have, n: chunks.length };
   }
   function makeAll() {
     if (mkRun) { mkRun = 0; makeButton(); $('rd-status').textContent = '作るのを止めました。もう一度押すと続きから作ります。'; return; }
