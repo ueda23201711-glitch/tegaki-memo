@@ -3180,7 +3180,7 @@
     gmTimes.push(t + wait);
     setTimeout(function () {
       gasCall({ tts: text, v: voice }, function (data, err) {
-        if (data && !data.ok && /^429 busy/.test(String(data.error || '')) && tries < 1) { gmSend(text, voice, tries + 1, cb); return; }
+        if (data && !data.ok && /^(429 busy|5\d\d)/.test(String(data.error || '')) && tries < 2) { gmSend(text, voice, tries + 1, cb); return; }
         cb(data, err);
       });
     }, wait);
@@ -3210,6 +3210,7 @@
     e = String(e || '');
     if (e === 'oldscript') return 'Apps Script がまだ古いコードのままです。新しいコードを貼って保存し、「デプロイを管理」で「新バージョン」にしてください';
     if (e === 'nokey') return 'Apps Script に GEMINI_KEY が設定されていません（⚙ 設定の手順を見てください）';
+    if (/(^|\s)5\d\d(\s|$)/.test(e)) return 'Google の AI が混み合っています。少しあとでもう一度どうぞ';
     if (/^429 busy/.test(e)) return '混んでいます（1分に3回まで）。少しあとでもう一度どうぞ';
     if (/^429/.test(e)) return '今日の無料の回数を使い切ったようです';
     if (e === 'nourl') return '翻訳の設定がありません';
@@ -3288,7 +3289,7 @@
           if (mkRun !== run) return;
           if (data && data.ok) { if (data.made) { made++; i++; next(21000); } else { had++; i++; next(0); } return; }
           var e = (data && data.error) || err || 'error';
-          if (/^429 busy/.test(e)) { show('混んでいるので少し待っています… ' + i + ' / ' + chunks.length); next(30000); return; }
+          if (/^(429 busy|5\d\d)/.test(e)) { show('混んでいるので少し待っています… ' + i + ' / ' + chunks.length); next(30000); return; }
           mkRun = 0; makeButton();
           show(/^429/.test(e) ? '今日の無料の回数はここまでです（' + i + ' / ' + chunks.length + ' できました）。明日もう一度押すと続きから作ります。' : 'AIの声を作れませんでした（' + gmErrText(e) + '）。');
         });
@@ -3871,6 +3872,7 @@
     "      continue;",
     "    }",
     "    if (code === 404 || code === 400) { cache.put(\"off_\" + models[i], \"1\", 21600); continue; }",
+    "    if (code >= 500) { busy = true; continue; }   // Google 側が混んでいる：次のモデルへ",
     "    break;",
     "  }",
     "  if (!last) return { ok: false, error: busy ? \"429 busy\" : \"429 PerDay（どのモデルも今日の分を使い切りました）\" };",
