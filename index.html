@@ -488,6 +488,15 @@
       <button id="gas-close" type="button">閉じる</button>
     </div>
     <p id="gas-msg" class="note"></p>
+    <h3 style="margin-top:18px">AIの声（Google Gemini・無料枠）</h3>
+    <p class="note">「通しで聞く」の「声」で AI の声を選ぶと、より自然な読み上げになります（ネットが必要。iPad 2/3 は端末の声のほうが確実です）。<br>
+    ① <b>aistudio.google.com</b> を開き「Get API key」→「APIキーを作成」で鍵をコピー<br>
+    ② 上のコードを Apps Script に貼り替えて保存<br>
+    ③ Apps Script の左の ⚙「プロジェクトの設定」→ 下の「スクリプト プロパティを追加」→ プロパティ <b>GEMINI_KEY</b>、値に鍵 →「保存」<br>
+    ④「デプロイ」→「デプロイを管理」→ ✏ → バージョン「新バージョン」→「デプロイ」（アドレスは変わりません）<br>
+    ⑤ 下の「AIの声をテスト」</p>
+    <div class="row"><button id="gm-test" type="button">AIの声をテスト</button></div>
+    <p id="gm-msg" class="note"></p>
   </div>
 </div>
 
@@ -3075,17 +3084,23 @@
     $('fl-play').textContent = rdSpeaking ? '■ 停止' : (rdIdx > 0 ? '▶ 続きから' : '▶ 最初から');
   }
   function stopSpeak() {
-    rdSpeaking = false; rdQueue = [];
+    rdSpeaking = false; rdQueue = []; playGen++; gmStop();
     if (!flOpen) markSentence(-1);
     try { speechSynthesis.cancel(); } catch (e) {}
     keepAwake(false); playLabel();
   }
+  var playGen = 0;
   function playFrom(i) {
     if (!rdSents.length) return;
     stopSpeak();
     rdSpeaking = true; playLabel(); keepAwake(true);
+    if (useGemini()) { gmPlayFrom(i); return; }
+    devicePlay(i);
+  }
+  function devicePlay(i) {
+    var gen = ++playGen;
     var step = function (k) {
-      if (!rdSpeaking) return;
+      if (!rdSpeaking || gen !== playGen) return;
       if (k >= rdSents.length) { rdIdx = 0; stopSpeak(); if (flOpen) markSentence(-1); playLabel(); return; }
       markSentence(k);
       speak(rdSents[k].text, function () { if (rdSpeaking) setTimeout(function () { step(k + 1); }, 250); });
@@ -3102,6 +3117,103 @@
       return;
     }
     if (k >= 0) { var el = $('rd-text').childNodes[k]; if (el && el.scrollIntoView) { try { el.scrollIntoView(false); } catch (e) {} } }
+  }
+
+  /* ---- AIの声（Gemini を Apps Script 経由で）。文をいくつかまとめて音声にし、先読みしておく ---- */
+  var GM_VOICES = [['Kore', '女性・落ち着き'], ['Aoede', '女性・明るい'], ['Leda', '女性・やわらか'], ['Zephyr', '女性・はきはき'],
+    ['Charon', '男性・落ち着き'], ['Puck', '男性・明るい'], ['Orus', '男性・しっかり'], ['Fenrir', '男性・元気']];
+  var gmCache = {}, gmWait = {}, gmAudio = null, gmOff = false;
+  var SILENT = 'data:audio/wav;base64,UklGRuwAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YcgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
+  function useGemini() { return /^gm:/.test(rdVoiceName) && !!gasUrl && !gmOff; }
+  function gmVoice() { return /^gm:/.test(rdVoiceName) ? rdVoiceName.slice(3) : 'Kore'; }
+  function gmNote(t) { $('fl-note').textContent = t || '文をタップすると、そこから最後まで続けて読みます。'; $('rd-status').textContent = t || ''; }
+  function gmSrc(b64) {
+    try {
+      if (window.Blob && window.URL && URL.createObjectURL && window.Uint8Array) {
+        var bin = atob(b64), u = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+        return URL.createObjectURL(new Blob([u], { type: 'audio/wav' }));
+      }
+    } catch (e) {}
+    return 'data:audio/wav;base64,' + b64;
+  }
+  function gmFetch(text, cb) {
+    var key = gmVoice() + '|' + text;
+    if (gmCache[key]) { cb(gmCache[key]); return; }
+    if (gmWait[key]) { gmWait[key].push(cb); return; }
+    gmWait[key] = [cb];
+    gasCall({ tts: text, v: gmVoice() }, function (data, err) {
+      var r = data && data.ok && data.a ? { src: gmSrc(data.a) } : { err: (data && data.error) || err || 'error' };
+      if (r.src) gmCache[key] = r;
+      var l = gmWait[key]; delete gmWait[key];
+      each(l, function (f) { f(r); });
+    });
+  }
+  // 文のまとまり（最初から決まった区切りにして、聞き直しても同じ音声を使い回す）
+  function gmChunks(from) {
+    var out = [], k = 0;
+    while (k < rdSents.length) {
+      var a = k, len = 0;
+      while (k < rdSents.length && (k === a || (len + rdSents[k].text.length <= 320 && k - a < 4))) { len += rdSents[k].text.length + 1; k++; }
+      if (k - 1 >= from) out.push({ a: Math.max(a, from), b: k - 1 });
+    }
+    each(out, function (c) { var t = []; for (var q = c.a; q <= c.b; q++) t.push(rdSents[q].text); c.text = t.join(' '); });
+    return out;
+  }
+  function gmUnlock() {   // iPhone では、タップした瞬間に一度鳴らしておかないと後から再生できない
+    if (!gmAudio) { gmAudio = new Audio(); gmAudio.preload = 'auto'; }
+    try { gmAudio.src = SILENT; var pr = gmAudio.play(); if (pr && pr['catch']) pr['catch'](function () {}); } catch (e) {}
+  }
+  function gmStop() { if (gmAudio) { gmAudio.onended = null; gmAudio.ontimeupdate = null; gmAudio.onerror = null; try { gmAudio.pause(); } catch (e) {} } }
+  function gmRate() { if (gmAudio) { try { gmAudio.defaultPlaybackRate = rdRate / 0.9; gmAudio.playbackRate = rdRate / 0.9; } catch (e) {} } }
+  function gmErrText(e) {
+    e = String(e || '');
+    if (e === 'nokey') return 'Apps Script に GEMINI_KEY が設定されていません（⚙ 設定の手順を見てください）';
+    if (/^429/.test(e)) return '今日の無料の回数を使い切ったようです';
+    if (e === 'nourl') return '翻訳の設定がありません';
+    if (e === 'timeout') return '時間切れ';
+    if (/^40[013]/.test(e)) return '鍵がまちがっているようです';
+    if (e === 'play') return 'この端末で音声を再生できませんでした';
+    return '原因：' + e.slice(0, 80);
+  }
+  function gmFail(err, at) {
+    if (!rdSpeaking) return;
+    gmOff = true;
+    gmNote('AIの声が使えませんでした（' + gmErrText(err) + '）。端末の声で続けます。');
+    devicePlay(at);
+  }
+  function gmPlayFrom(i) {
+    var gen = ++playGen, chunks = gmChunks(i);
+    gmUnlock(); gmNote('');
+    var step = function (c) {
+      if (gen !== playGen || !rdSpeaking) return;
+      if (c >= chunks.length) { rdIdx = 0; stopSpeak(); if (flOpen) markSentence(-1); playLabel(); return; }
+      var ch = chunks[c];
+      markSentence(ch.a);
+      var ready = !!gmCache[gmVoice() + '|' + ch.text];
+      if (!ready) gmNote('AIの声を準備しています…');
+      gmFetch(ch.text, function (r) {
+        if (gen !== playGen || !rdSpeaking) return;
+        if (r.err) { gmFail(r.err, ch.a); return; }
+        gmNote('');
+        for (var q = c + 1; q <= c + 2 && q < chunks.length; q++) gmFetch(chunks[q].text, function () {});
+        var done = false, au = gmAudio;
+        au.onended = function () { if (done) return; done = true; step(c + 1); };
+        au.onerror = function () { if (done) return; done = true; gmFail('play', ch.a); };
+        // まとまりの中のどの文を読んでいるか（文字数の割合で見積もる）
+        au.ontimeupdate = function () {
+          var d = au.duration; if (!d || !isFinite(d)) return;
+          var f = au.currentTime / d, tot = ch.text.length, acc = 0;
+          for (var q2 = ch.a; q2 <= ch.b; q2++) { acc += rdSents[q2].text.length + 1; if (acc / tot >= f) { if (rdIdx !== q2) markSentence(q2); break; } }
+        };
+        au.src = r.src; gmRate();
+        try { au.load(); } catch (e) {}
+        gmRate();
+        var pr = au.play();
+        if (pr && pr['catch']) pr['catch'](function (e) { if (done || gen !== playGen) return; done = true; gmFail(e && e.name === 'NotAllowedError' ? 'play' : (e && e.name) || 'play', ch.a); });
+      });
+    };
+    step(0);
   }
 
   /* ---- 通しで聞く（全画面・文をタップするとそこから最後まで） ---- */
@@ -3144,7 +3256,14 @@
     vs.sort(function (a, b) { return voiceScore(b) - voiceScore(a); });
     sel.innerHTML = '';
     var o0 = document.createElement('option'); o0.value = ''; o0.textContent = '声：自動（いちばん自然な声）'; sel.appendChild(o0);
-    each(vs, function (v) { if (voiceScore(v) < 0) return; var o = document.createElement('option'); o.value = v.name; o.textContent = v.name + '（' + v.lang + '）'; sel.appendChild(o); });
+    if (gasUrl) {
+      var og = document.createElement('optgroup'); og.label = 'AIの声（Gemini・ネット）';
+      each(GM_VOICES, function (g) { var o = document.createElement('option'); o.value = 'gm:' + g[0]; o.textContent = 'AI ' + g[0] + '（' + g[1] + '）'; og.appendChild(o); });
+      sel.appendChild(og);
+    }
+    var og2 = document.createElement('optgroup'); og2.label = 'この端末の声';
+    each(vs, function (v) { if (voiceScore(v) < 0) return; var o = document.createElement('option'); o.value = v.name; o.textContent = v.name + '（' + v.lang + '）'; og2.appendChild(o); });
+    sel.appendChild(og2);
     sel.value = rdVoiceName;
     if (sel.value !== rdVoiceName) sel.value = '';
   }
@@ -3502,8 +3621,27 @@
   on($('rd-flowbtn'), 'click', openFlow);
   on($('fl-close'), 'click', closeFlow);
   on($('fl-play'), 'click', function () { if (rdSpeaking) stopSpeak(); else playFrom(rdIdx > 0 ? rdIdx : 0); });
-  on($('fl-rate'), 'change', function () { rdRate = Number($('fl-rate').value) || 0.9; lsSet('memo_rd_rate', String(rdRate)); $('rd-rate').value = String(rdRate); if (rdSpeaking) playFrom(rdIdx); });
-  on($('fl-voice'), 'change', function () { rdVoiceName = $('fl-voice').value; lsSet('memo_rd_voice', rdVoiceName); if (rdSpeaking) playFrom(rdIdx); else speak('Hello. This is the voice for reading.'); });
+  on($('fl-rate'), 'change', function () {
+    rdRate = Number($('fl-rate').value) || 0.9; lsSet('memo_rd_rate', String(rdRate)); $('rd-rate').value = String(rdRate);
+    if (rdSpeaking && useGemini()) gmRate(); else if (rdSpeaking) playFrom(rdIdx);
+  });
+  on($('fl-voice'), 'change', function () {
+    rdVoiceName = $('fl-voice').value; lsSet('memo_rd_voice', rdVoiceName); gmOff = false; gmNote('');
+    if (rdSpeaking) { playFrom(rdIdx); return; }
+    if (useGemini()) gmSample(); else speak('Hello. This is the voice for reading.');
+  });
+  function gmSample(msgEl) {
+    gmUnlock();
+    var show = function (t) { if (msgEl) msgEl.textContent = t; else gmNote(t); };
+    show('AIの声を準備しています…');
+    gmFetch('Hello. This is the voice for reading.', function (r) {
+      if (r.err) { show('AIの声が使えませんでした（' + gmErrText(r.err) + '）。'); return; }
+      show(msgEl ? 'うまくいきました。「通しで聞く」の「声」で AI の声を選べます。' : '');
+      gmStop(); gmAudio.src = r.src; gmRate();
+      var pr = gmAudio.play(); if (pr && pr['catch']) pr['catch'](function () { show('音声を再生できませんでした。もう一度押してください。'); });
+    });
+  }
+  on($('gm-test'), 'click', function () { if (!gasUrl) { $('gm-msg').textContent = '先に上の翻訳の設定（テストして保存）をしてください。'; return; } gmSample($('gm-msg')); });
   on($('fl-small'), 'click', function () { flSize = Math.max(14, flSize - 2); lsSet('memo_fl_size', String(flSize)); $('fl-text').style.fontSize = flSize + 'px'; });
   on($('fl-big'), 'click', function () { flSize = Math.min(40, flSize + 2); lsSet('memo_fl_size', String(flSize)); $('fl-text').style.fontSize = flSize + 'px'; });
   on($('rd-rate'), 'change', function () { rdRate = Number($('rd-rate').value) || 0.9; lsSet('memo_rd_rate', String(rdRate)); });
@@ -3512,25 +3650,65 @@
 
   // 翻訳の設定
   var GAS_CODE = [
-    '// 手書きメモの英文リーダー用：英語を日本語に訳す',
-    'function doGet(e) {',
-    '  var p = e.parameter, out;',
-    '  try {',
-    '    var sl = p.sl || "en", tl = p.tl || "ja";',
-    '    if (p.qs) {',
-    '      var list = JSON.parse(p.qs), ts = [];',
-    '      for (var i = 0; i < list.length && i < 30; i++) ts.push(list[i] ? LanguageApp.translate(String(list[i]).slice(0, 4000), sl, tl) : "");',
-    '      out = { ok: true, ts: ts };',
-    '    } else {',
-    '      out = { ok: true, t: p.q ? LanguageApp.translate(String(p.q).slice(0, 4000), sl, tl) : "" };',
-    '    }',
-    '  } catch (err) { out = { ok: false, error: String(err) }; }',
-    '  var json = JSON.stringify(out);',
-    '  if (p.callback && /^[A-Za-z0-9_$]+$/.test(p.callback)) {',
-    '    return ContentService.createTextOutput(p.callback + "(" + json + ")").setMimeType(ContentService.MimeType.JAVASCRIPT);',
-    '  }',
-    '  return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);',
-    '}'
+    "// 英文リーダー用：英語を日本語に訳す ＋ AIの声（Gemini）",
+    "// AIの声を使うときは「プロジェクトの設定」→「スクリプト プロパティ」に GEMINI_KEY（Google AI Studio の鍵）を保存",
+    "function doGet(e) {",
+    "  var p = e.parameter, out;",
+    "  try {",
+    "    var sl = p.sl || \"en\", tl = p.tl || \"ja\";",
+    "    if (p.tts) {",
+    "      out = tts(String(p.tts).slice(0, 1500), String(p.v || \"Kore\").replace(/[^A-Za-z]/g, \"\"));",
+    "    } else if (p.qs) {",
+    "      var list = JSON.parse(p.qs), ts = [];",
+    "      for (var i = 0; i < list.length && i < 30; i++) ts.push(list[i] ? LanguageApp.translate(String(list[i]).slice(0, 4000), sl, tl) : \"\");",
+    "      out = { ok: true, ts: ts };",
+    "    } else {",
+    "      out = { ok: true, t: p.q ? LanguageApp.translate(String(p.q).slice(0, 4000), sl, tl) : \"\" };",
+    "    }",
+    "  } catch (err) { out = { ok: false, error: String(err) }; }",
+    "  var json = JSON.stringify(out);",
+    "  if (p.callback && /^[A-Za-z0-9_$]+$/.test(p.callback)) {",
+    "    return ContentService.createTextOutput(p.callback + \"(\" + json + \")\").setMimeType(ContentService.MimeType.JAVASCRIPT);",
+    "  }",
+    "  return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);",
+    "}",
+    "// 文章を Gemini で音声（WAV）にして返す。回数制限にかかったら別のモデルを試す",
+    "function tts(text, voice) {",
+    "  var key = PropertiesService.getScriptProperties().getProperty(\"GEMINI_KEY\");",
+    "  if (!key) return { ok: false, error: \"nokey\" };",
+    "  var models = [\"gemini-3.8-flash-tts\", \"gemini-3.8-flash-lite-tts\", \"gemini-3.1-flash-tts-preview\", \"gemini-2.5-flash-preview-tts\"];",
+    "  var last = \"\";",
+    "  for (var i = 0; i < models.length; i++) {",
+    "    var res = UrlFetchApp.fetch(\"https://generativelanguage.googleapis.com/v1beta/models/\" + models[i] + \":generateContent\", {",
+    "      method: \"post\", contentType: \"application/json\", muteHttpExceptions: true,",
+    "      headers: { \"x-goog-api-key\": key },",
+    "      payload: JSON.stringify({",
+    "        contents: [{ role: \"user\", parts: [{ text: text }] }],",
+    "        generationConfig: { responseModalities: [\"AUDIO\"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } }",
+    "      })",
+    "    });",
+    "    var code = res.getResponseCode();",
+    "    if (code === 200) {",
+    "      var j = JSON.parse(res.getContentText()), part = j.candidates[0].content.parts[0].inlineData;",
+    "      var bytes = Utilities.base64Decode(part.data);",
+    "      if (!(bytes[0] === 82 && bytes[1] === 73 && bytes[2] === 70 && bytes[3] === 70)) {   // \"RIFF\" で始まらなければ WAV にする",
+    "        var m = /rate=(\\d+)/.exec(part.mimeType || \"\"), rate = m ? Number(m[1]) : 24000;",
+    "        bytes = wavHead(bytes.length, rate).concat(bytes);",
+    "      }",
+    "      return { ok: true, a: Utilities.base64Encode(bytes), m: models[i] };",
+    "    }",
+    "    last = code + \" \" + res.getContentText().slice(0, 300);",
+    "    if (code === 401 || code === 403) break;",
+    "  }",
+    "  return { ok: false, error: last };",
+    "}",
+    "function wavHead(n, rate) {",
+    "  var h = [], put = function (v, len) { for (var i = 0; i < len; i++) { var b = (v >> (8 * i)) & 255; h.push(b > 127 ? b - 256 : b); } };",
+    "  var str = function (t) { for (var i = 0; i < t.length; i++) h.push(t.charCodeAt(i)); };",
+    "  str(\"RIFF\"); put(36 + n, 4); str(\"WAVE\"); str(\"fmt \"); put(16, 4); put(1, 2); put(1, 2);",
+    "  put(rate, 4); put(rate * 2, 4); put(2, 2); put(16, 2); str(\"data\"); put(n, 4);",
+    "  return h;",
+    "}"
   ].join('\n');
   on($('btn-rd-set'), 'click', function () {
     $('gas-url').value = gasUrl; $('gas-code').value = GAS_CODE; $('gas-msg').textContent = '';
