@@ -447,6 +447,7 @@
     <div id="rd-view" class="hidden">
       <div id="rd-ctrl">
         <button id="rd-play" class="primary" type="button">▶ 再生</button>
+        <button id="rd-cont" type="button" title="🔊 で読んだあと、次の文も続けて読む">🔁 続けて：オフ</button>
         <button id="rd-flowbtn" type="button">📖 通しで聞く</button>
         <select id="rd-rate" title="速さ">
           <option value="0.6">ゆっくり</option><option value="0.75">やや遅く</option><option value="0.9">ふつう</option><option value="1">少し速く</option><option value="1.15">速く</option>
@@ -459,7 +460,7 @@
         <span id="rd-status" class="note"></span>
       </div>
       <div class="rd-wrap">
-        <p class="note rd-hint">単語をタップすると意味と発音、<span class="idm-sample">下線</span>は熟語・定型表現です。🔊 でその文だけ読みます。</p>
+        <p class="note rd-hint">単語をタップすると意味と発音、<span class="idm-sample">下線</span>は熟語・定型表現です。🔊 でその文を読みます（「🔁 続けて」がオンなら、そこから最後まで）。</p>
         <div id="rd-text"></div>
       </div>
     </div>
@@ -3518,7 +3519,10 @@
     $('rd-rate').value = String(rdRate);
     fillVoiceSel($('rd-voice'));
   }
+  var rdCont = lsGet('memo_rd_cont') === '1';
+  function contLabel() { $('rd-cont').textContent = rdCont ? '🔁 続けて：オン' : '🔁 続けて：オフ'; $('rd-cont').className = rdCont ? 'primary' : ''; }
   function playOne(si) {
+    if (rdCont) { playFrom(si); return; }   // 「続けて」がオンなら、その文から最後まで
     stopSpeak(); markSentence(si);
     if (useGemini()) { rdSpeaking = true; playLabel(); gmPlayFrom(si, true); return; }
     speak(rdSents[si].text, function () { markSentence(-1); });
@@ -3681,6 +3685,8 @@
   on($('rd-new'), 'click', function () { $('rd-in').value = ''; rdShowInput(); });
   on($('rd-play'), 'click', function () { if (rdSpeaking) stopSpeak(); else playFrom(rdIdx >= 0 ? rdIdx : 0); });
   on($('rd-flowbtn'), 'click', openFlow);
+  on($('rd-cont'), 'click', function () { rdCont = !rdCont; lsSet('memo_rd_cont', rdCont ? '1' : '0'); contLabel(); });
+  contLabel();
   on($('pop-play'), 'click', function () { $('word-pop').className = 'hidden'; if (flOpen && flPlayAt >= 0) playFrom(flPlayAt); });
   on($('fl-close'), 'click', closeFlow);
   on($('fl-play'), 'click', function () { if (rdSpeaking) stopSpeak(); else playFrom(rdIdx > 0 ? rdIdx : 0); });
