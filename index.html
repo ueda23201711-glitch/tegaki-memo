@@ -3395,12 +3395,15 @@
   // まずは普通の通信（ログイン情報を送らないので、Google に複数ログインしていても動く）。だめなら JSONP
   function gasCall(params, cb) {
     if (!gasUrl) { cb(null, 'nourl'); return; }
-    if (!gasXhrOk) { gasJsonp(params, cb); return; }
+    // JSONP の方式になっている端末でも、失敗したら普通の通信をもう一度試す（うまくいけば戻す）
+    if (!gasXhrOk) { gasJsonp(params, function (data, err) { if (data) { cb(data, err); return; } gasXhrOk = true; gasCall(params, function (d2, e2) { if (!d2) { gasXhrOk = false; } else lsDel('memo_gas_xhr'); cb(d2, e2 || (d2 ? null : err)); }); }); return; }
     var q = []; for (var k in params) q.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
     var x = new XMLHttpRequest(), done = false;
     try { x.open('GET', gasUrl + (gasUrl.indexOf('?') >= 0 ? '&' : '?') + q.join('&'), true); } catch (e) { gasJsonp(params, cb); return; }
-    x.timeout = 30000;
-    var fail = function () { if (done) return; done = true; gasJsonp(params, function (data, err) { if (data && !err) { gasXhrOk = false; lsSet('memo_gas_xhr', '0'); } cb(data, err); }); };
+    x.timeout = params.tts ? 120000 : 30000;   // 音声は大きいので長めに待つ
+    var timedOut = false;
+    // 普通の通信がだめなら JSONP。音声や時間切れのときは、方式を切り替えたままにしない
+    var fail = function () { if (done) return; done = true; gasJsonp(params, function (data, err) { if (data && !err && !params.tts && !timedOut) { gasXhrOk = false; lsSet('memo_gas_xhr', '0'); } cb(data, err); }); };
     x.onreadystatechange = function () {
       if (x.readyState !== 4 || done) return;
       var data = null;
@@ -3408,14 +3411,14 @@
       if (!data) { fail(); return; }
       done = true; cb(data, null);
     };
-    x.ontimeout = fail;
+    x.ontimeout = function () { timedOut = true; fail(); };
     try { x.send(); } catch (e) { fail(); }
   }
   function gasJsonp(params, cb) {
     var name = '__gas' + (++jsonpN) + '_' + now(), done = false;
     var sc = document.createElement('script');
     var q = []; for (var k in params) q.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
-    var timer = setTimeout(function () { finish(null, 'timeout'); }, 30000);
+    var timer = setTimeout(function () { finish(null, 'timeout'); }, params.tts ? 120000 : 30000);
     var finish = function (data, err) {
       if (done) return; done = true; clearTimeout(timer);
       try { delete window[name]; } catch (e) { window[name] = undefined; }
