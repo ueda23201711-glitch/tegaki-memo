@@ -169,6 +169,13 @@
   #fl-text .w:active { background: #d9ecf5; }
   #fl-text .w.idm { border-bottom: 2px solid #e8830c; }
   #pop-play { margin-top: 10px; }
+  #yt-wrap { background: #000; margin: -8px -12px 8px; text-align: center; }
+  #yt-box { display: inline-block; width: 100%; vertical-align: top; }
+  #yt-box iframe { width: 100%; height: 100%; border: 0; display: block; }
+  .rd-say.yt { font-size: 13px; font-variant-numeric: tabular-nums; }
+  .yt-in { margin-top: 22px; padding-top: 14px; border-top: 1px solid #d7dee3; }
+  .yt-in input { width: 100%; box-sizing: border-box; font-size: 16px; padding: 10px; border: 1px solid #c9d2d8; border-radius: 10px; margin-bottom: 8px; }
+  .yt-in textarea { width: 100%; box-sizing: border-box; min-height: 120px; font-size: 15px; padding: 10px; border: 1px solid #c9d2d8; border-radius: 10px; }
   /* 英文だけ（iPhone の「画面の読み上げ」用）：ほかの画面とボタンを隠し、ふつうのページとして並べる */
   body.fl-only > *:not(#rd-flow):not(#pl-ov):not(#word-pop):not(#fl-exit) { display: none !important; }
   body.fl-only #rd-flow { position: static; overflow: visible; min-height: 100vh; }
@@ -448,13 +455,25 @@
           <button id="rd-paste" class="hidden" type="button">📋 コピーした文字を貼り付け</button>
         </div>
       </div>
+      <div class="yt-in">
+        <h3 class="rd-h" style="margin-top:0">🎬 YouTube の動画で読む</h3>
+        <input id="yt-url" type="url" placeholder="YouTube のアドレス（https://www.youtube.com/watch?v=…）" autocapitalize="off" autocorrect="off">
+        <textarea id="yt-in" placeholder="（空のままで大丈夫：字幕を自動で取ってきます。うまくいかないときだけ、文字起こしを時刻つきで貼り付け）"></textarea>
+        <div class="row"><button id="yt-go" class="primary" type="button">動画といっしょに読み込む</button></div>
+        <p class="note" id="yt-msg"></p>
+        <p class="note">字幕は、アドレスだけ入れて押せば自動で取ってきます（英語の字幕がある動画）。取れないときの貼り付け方（パソコンが簡単です）：YouTube で動画を開き、説明欄の「…もっと見る」→ いちばん下の「文字起こしを表示」→ 右に出た文字起こしをドラッグで最後まで選んでコピーして、上に貼り付けます（時刻も一緒に）。字幕ファイル（.srt / .vtt）の中身でも大丈夫です。</p>
+      </div>
       <p class="note">保存した単語・熟語は <a href="/kiku-memo/" target="_blank">📚 メモ単語帳</a> で学習できます（iPad 2/3 は <a href="/kiku-memo/ipad.html" target="_blank">こちら</a>）。</p>
       <h3 id="rd-hist-h" class="rd-h">これまでの英文</h3>
       <div id="rd-hist"></div>
     </div>
     <div id="rd-view" class="hidden">
       <div id="rd-ctrl">
+        <div id="yt-wrap" class="hidden"><div id="yt-box"><div id="yt-player"></div></div>
+          <div id="yt-safari" class="hidden" style="color:#fff;padding:14px 12px;font-size:14px;line-height:1.6">この iPad では、動画をこの画面の中で再生できません。<br>セリフの「▶ 時刻」を押すと、YouTube のその場面が別の画面で開きます。見終わったら、この画面に戻って単語を調べてください。<br>
+            <button id="yt-safari-btn" class="primary" type="button" style="margin-top:8px">▶ YouTube で最初から見る</button></div></div>
         <button id="rd-play" class="primary" type="button">▶ 再生</button>
+        <button id="yt-loop" class="hidden" type="button" title="今のセリフをくり返し再生">🔂 1文くり返し：オフ</button>
         <button id="rd-cont" type="button" title="🔊 で読んだあと、次の文も続けて読む">🔁 続けて：オフ</button>
         <button id="rd-flowbtn" type="button">📖 通しで聞く</button>
         <button id="rd-make" class="hidden" type="button" title="この英文の AI の声を先に作ってドライブに保存しておく">🎙 AIの声を作って保存</button>
@@ -469,7 +488,7 @@
         <span id="rd-status" class="note"></span>
       </div>
       <div class="rd-wrap">
-        <p class="note rd-hint">単語をタップすると意味と発音、<span class="idm-sample">下線</span>は熟語・定型表現です。🔊 でその文を読みます（「🔁 続けて」がオンなら、そこから最後まで）。</p>
+        <p class="note rd-hint" id="rd-hint-p">単語をタップすると意味と発音、<span class="idm-sample">下線</span>は熟語・定型表現です。🔊 でその文を読みます（「🔁 続けて」がオンなら、そこから最後まで）。</p>
         <div id="rd-text"></div>
       </div>
     </div>
@@ -3391,6 +3410,197 @@
     next(0);
   }
 
+  /* ---- 🎬 YouTube の動画で読む ---- */
+  var ytPlayer = null, ytReady = false, ytWait = [], ytTimer = null, ytLoop = false, ytLoopIdx = -1, ytVid = '';
+  function fmtSec(t) { t = Math.floor(t || 0); var h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, x = t % 60; return (h ? h + ':' + pad2(m) : m) + ':' + pad2(x); }
+  // YouTube の文字起こしをコピーすると付いてくる読み上げ用の時間（「1 分 28 秒」「28 seconds」など）を消す
+  function stripDur(t) {
+    return String(t || '').replace(/^\s*(\d*\s*(時間|分|秒)\s*)+/, '')
+      .replace(/^\s*(\d+\s*(hours?|minutes?|seconds?)\s*,?\s*)+$/i, '').replace(/^\s+/, '');
+  }
+  // 前に読み込んだ字幕も直す（直したら訳を作り直す）
+  function fixCues(d) {
+    var changed = false;
+    each(d.cues, function (c) { var t = stripDur(c[1]); if (t !== c[1]) { c[1] = t; changed = true; } });
+    if (changed) { d.text = cueTexts(d.cues).join('\n'); d.title = '🎬 ' + (d.cues[0] ? d.cues[0][1].slice(0, 56) : ''); delete d.tr; rdSaveLocal(); }
+    return changed;
+  }
+  function cueTexts(cues) { var a = []; each(cues, function (c) { a.push(c[1]); }); return a; }
+  function ytIdOf(u) {
+    u = String(u || '').replace(/^\s+|\s+$/g, '');
+    var m = /(?:youtu\.be\/|[?&]v=|\/shorts\/|\/embed\/|\/live\/)([A-Za-z0-9_-]{11})/.exec(u);
+    return m ? m[1] : (/^[A-Za-z0-9_-]{11}$/.test(u) ? u : null);
+  }
+  // 時刻つきの字幕を読む（YouTube の文字起こし「0:12 ↵ 文」・「0:12 文」・SRT・VTT）
+  function parseCues(raw) {
+    var lines = String(raw || '').replace(/\r/g, '').split('\n'), cues = [], cur = null;
+    var TS = /^\s*(?:(\d{1,2}):)?(\d{1,2}):(\d{2})(?:[.,](\d{1,3}))?/;
+    for (var i = 0; i < lines.length; i++) {
+      var l = lines[i].replace(/^\s+|\s+$/g, '');
+      if (!l || /^(WEBVTT|NOTE\b|Kind:|Language:|STYLE\b)/.test(l)) continue;
+      if (/^\d+$/.test(l) && lines[i + 1] && lines[i + 1].indexOf('-->') >= 0) continue;   // SRT の番号
+      var m = TS.exec(l);
+      if (m) {
+        var sec = (m[1] ? Number(m[1]) * 3600 : 0) + Number(m[2]) * 60 + Number(m[3]) + (m[4] ? Number('0.' + m[4]) : 0);
+        var rest = l.slice(m[0].length).replace(/^\s*-->\s*[\d:.,]+[^\n]*/, '');
+        rest = stripDur(rest);
+        if (l.indexOf('-->') >= 0) rest = '';
+        cur = { t: sec, s: rest }; cues.push(cur);
+        continue;
+      }
+      l = stripDur(l);
+      if (cur && l) cur.s += (cur.s ? ' ' : '') + l;
+    }
+    var out = [];
+    each(cues, function (c) {
+      var t = c.s.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/\[[^\]]*\]|\([A-Z][a-z]+\)/g, '').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '');
+      if (t && /[A-Za-z]/.test(t)) out.push([Math.round(c.t * 10) / 10, t]);
+    });
+    // 句読点がある字幕なら、文の終わりまでつなげる（自動字幕など句読点がなければ、そのまま）
+    var ends = 0; each(out, function (c) { if (/[.!?]["'”’)\]]*$/.test(c[1])) ends++; });
+    if (out.length > 3 && ends / out.length >= 0.25) {
+      var merged = [], acc = null, n = 0;
+      each(out, function (c) {
+        if (!acc) { acc = [c[0], c[1]]; n = 1; } else { acc[1] += ' ' + c[1]; n++; }
+        if (/[.!?]["'”’)\]]*$/.test(acc[1]) || acc[1].length > 220 || n >= 5) { merged.push(acc); acc = null; }
+      });
+      if (acc) merged.push(acc);
+      out = merged;
+    }
+    return out;
+  }
+  function ytLoad() {
+    var vid = ytIdOf($('yt-url').value);
+    if (!vid) { alert('YouTube の動画のアドレスを入れてください（https://www.youtube.com/watch?v=… や https://youtu.be/…）。'); return; }
+    var raw = $('yt-in').value.replace(/^\s+|\s+$/g, '');
+    if (!raw) { ytAuto(vid); return; }
+    ytMake(vid, parseCues(raw));
+  }
+  // Apps Script に頼んで、YouTube から英語の字幕を取ってくる
+  function ytAuto(vid) {
+    if (!gasUrl) { alert('字幕を自動で取るには、先に「⚙ 翻訳の設定」が必要です。設定しない場合は、字幕を貼り付けてください。'); return; }
+    $('yt-go').disabled = true; $('yt-msg').textContent = '字幕を取ってきています…';
+    gasCall({ yt: vid }, function (data, err) {
+      $('yt-go').disabled = false;
+      if (data && data.ok && data.cues && data.cues.length) {
+        var lines = []; each(data.cues, function (c) { lines.push(fmtSec(c[0]) + (c[0] % 1 ? '.' + Math.round((c[0] % 1) * 10) : '') + '\n' + c[1]); });
+        $('yt-msg').textContent = data.auto ? '自動字幕を取ってきました（句読点がないので、YouTube の区切りのままです）。' : '字幕を取ってきました。';
+        ytMake(vid, parseCues(lines.join('\n')));
+        return;
+      }
+      var e = String((data && data.error) || err || '');
+      var msg = data && data.ok && !data.cues ? 'Apps Script が古いコードのままです（「⚙ 翻訳の設定」のコードに貼り替えて「新バージョン」でデプロイしてください）。'
+        : /nocaptions/.test(e) ? 'この動画には英語の字幕がないようです。' : '字幕を自動で取れませんでした（' + e.slice(0, 60) + '）。';
+      $('yt-msg').textContent = msg + ' 「文字起こしを表示」の内容を貼り付けて、もう一度押してください。';
+    });
+  }
+  function ytMake(vid, cues) {
+    if (!cues.length) { alert('時刻つきの字幕が見つかりませんでした。YouTube の「文字起こしを表示」の内容を、時刻ごとコピーして貼り付けてください。'); return; }
+    if (cues.length > 1500) cues = cues.slice(0, 1500);
+    var text = cueTexts(cues).join('\n'), ids = rdIds();
+    for (var i = 0; i < ids.length; i++) if (rdDocs[ids[i]].yt === vid && rdDocs[ids[i]].text === text) { $('yt-in').value = ''; openRdDoc(ids[i]); return; }
+    var id = newId();
+    rdDocs[id] = { title: '🎬 ' + cues[0][1].slice(0, 56), text: text, at: now(), yt: vid, cues: cues };
+    rdSaveLocal();
+    $('yt-in').value = ''; $('yt-url').value = '';
+    openRdDoc(id, true);
+  }
+  function ytOn() { return !!(rdCur && rdCur.d && rdCur.d.yt && rdCur.d.cues); }
+  function ytApi(cb) {
+    if (window.YT && window.YT.Player) { cb(); return; }
+    ytWait.push(cb);
+    if (ytWait.length > 1) return;
+    window.onYouTubeIframeAPIReady = function () { var l = ytWait; ytWait = []; each(l, function (f) { f(); }); };
+    var sc = document.createElement('script'); sc.src = 'https://www.youtube.com/iframe_api';
+    sc.onerror = function () { ytWait = []; $('rd-status').textContent = 'YouTube を読み込めませんでした（字幕を読むことはできます）。'; };
+    document.head.appendChild(sc);
+  }
+  function ytSize() {
+    var w = $('rd-ctrl').clientWidth || 360, h = Math.round(w * 9 / 16), maxH = Math.round(window.innerHeight * 0.34);
+    if (h > maxH) { h = maxH; w = Math.round(h * 16 / 9); }
+    $('yt-box').style.width = w + 'px'; $('yt-box').style.height = h + 'px';
+  }
+  function ytShowCtl(v) {
+    var hide = ['rd-flowbtn', 'rd-cont', 'rd-voice', 'rd-make'];
+    each(hide, function (id) { var e = $(id); if (e) e.style.display = v ? 'none' : ''; });
+    $('yt-loop').className = v ? '' : 'hidden';
+    var hp = $('rd-hint-p');
+    if (!hp.getAttribute('data-n')) hp.setAttribute('data-n', hp.innerHTML);
+    hp.innerHTML = v ? 'セリフの ▶ でその場面から再生。単語をタップすると動画が止まって意味が出ます（<span class="idm-sample">下線</span>は熟語）。「🔂 1文くり返し」で今のセリフをくり返します。' : hp.getAttribute('data-n');
+  }
+  // iPad 2/3 のホーム画面アプリでは YouTube が再生できないので、Safari で開く
+  // iPad 2/3（iOS 9 まで）は YouTube の埋め込み再生ができないので、YouTube のページをその場面から開く
+  function ytNeedSafari() { return /OS [5-9]_\d.* like Mac OS X/.test(navigator.userAgent); }
+  function ytOpenOut(sec) { if (!rdCur) return; window.open('https://www.youtube.com/watch?v=' + rdCur.d.yt + '&t=' + Math.floor(sec || 0) + 's', '_blank'); }
+  function ytOpen(d) {
+    $('yt-wrap').className = ''; ytShowCtl(true);
+    if (ytNeedSafari()) {
+      $('yt-box').style.display = 'none'; $('yt-safari').className = '';
+      ytLoop = false; ytLoopIdx = -1; ytLoopLabel(); $('yt-loop').className = 'hidden';
+      return;
+    }
+    ytSize();
+    ytLoop = false; ytLoopIdx = -1; ytLoopLabel();
+    $('rd-play').textContent = '▶ 再生';
+    if (ytPlayer && ytReady) { if (ytVid !== d.yt) { ytVid = d.yt; ytPlayer.cueVideoById(d.yt); } }
+    else if (!ytPlayer) {
+      ytApi(function () {
+        if (!ytOn() || ytPlayer) return;
+        ytVid = rdCur.d.yt;
+        ytPlayer = new YT.Player('yt-player', {
+          videoId: ytVid, width: '100%', height: '100%',
+          playerVars: { playsinline: 1, rel: 0, modestbranding: 1, cc_load_policy: 0, origin: location.protocol + '//' + location.host },
+          events: {
+            onReady: function () { ytReady = true; ytRate(); if (ytOn() && ytVid !== rdCur.d.yt) { ytVid = rdCur.d.yt; ytPlayer.cueVideoById(ytVid); } },
+            onStateChange: function (e) { $('rd-play').textContent = e.data === 1 ? '⏸ 一時停止' : '▶ 再生'; },
+            onError: function () { $('rd-status').textContent = 'この動画はここでは再生できません（埋め込み不可など）。字幕を読むことはできます。'; }
+          }
+        });
+      });
+    }
+    if (!ytTimer) ytTimer = setInterval(ytTick, 250);
+  }
+  function ytClose() {
+    if (ytPlayer && ytReady) { try { ytPlayer.pauseVideo(); } catch (e) {} }
+    $('yt-wrap').className = 'hidden'; ytShowCtl(false);
+    if (ytTimer) { clearInterval(ytTimer); ytTimer = null; }
+  }
+  function ytState() { try { return ytPlayer && ytReady ? ytPlayer.getPlayerState() : -1; } catch (e) { return -1; } }
+  function ytToggle() {
+    if (!ytPlayer || !ytReady) return;
+    if (ytState() === 1) ytPlayer.pauseVideo(); else ytPlayer.playVideo();
+  }
+  function ytSeek(si) {
+    if (!ytOn()) return;
+    if (ytNeedSafari()) { markSentence(si); ytOpenOut(rdCur.d.cues[si][0]); return; }
+    if (ytLoop) ytLoopIdx = si;
+    markSentence(si);
+    if (!ytPlayer || !ytReady) return;
+    ytPlayer.seekTo(rdCur.d.cues[si][0], true); ytPlayer.playVideo();
+  }
+  function ytRate() {
+    if (!ytPlayer || !ytReady) return;
+    var map = { '0.6': 0.5, '0.75': 0.75, '0.9': 1, '1': 1.25, '1.15': 1.5 };
+    try { ytPlayer.setPlaybackRate(map[String(rdRate)] || 1); } catch (e) {}
+  }
+  function ytLoopLabel() { $('yt-loop').textContent = ytLoop ? '🔂 1文くり返し：オン' : '🔂 1文くり返し：オフ'; $('yt-loop').className = ytOn() ? (ytLoop ? 'primary' : '') : 'hidden'; }
+  // 再生している場所に合わせてセリフを光らせる（くり返しのときは戻す）
+  function ytTick() {
+    if (!ytOn() || !ytPlayer || !ytReady) return;
+    var st = ytState(); if (st !== 1) return;
+    var t = 0; try { t = ytPlayer.getCurrentTime(); } catch (e) { return; }
+    var cues = rdCur.d.cues, k = 0;
+    for (var i = 0; i < cues.length; i++) { if (cues[i][0] <= t + 0.15) k = i; else break; }
+    if (ytLoop && ytLoopIdx >= 0) {
+      var end = ytLoopIdx + 1 < cues.length ? cues[ytLoopIdx + 1][0] : null;
+      if ((end !== null && t >= end - 0.05) || t < cues[ytLoopIdx][0] - 1) { ytPlayer.seekTo(cues[ytLoopIdx][0], true); k = ytLoopIdx; }
+    }
+    if (k !== rdIdx) markSentence(k);
+  }
+  var ytWasPlaying = false;
+  function ytPauseForWord() { ytWasPlaying = ytState() === 1; if (ytWasPlaying) { try { ytPlayer.pauseVideo(); } catch (e) {} } }
+  function ytPopLabel() { if (ytOn()) { $('pop-play').textContent = '▶ 動画の続き'; $('pop-play').className = ''; } }
+
   /* ---- 通しで聞く（全画面・文をタップするとそこから最後まで） ---- */
   var flOpen = false, flEls = [], flSize = Number(lsGet('memo_fl_size') || 22);
   function openFlow() {
@@ -3582,7 +3792,7 @@
     else rdShowInput();
   }
   function rdShowInput() {
-    stopSpeak(); rdCur = null;
+    stopSpeak(); ytClose(); rdCur = null;
     $('rd-input').className = ''; $('rd-view').className = 'hidden';
     $('rd-paste').className = (navigator.clipboard && navigator.clipboard.readText) ? '' : 'hidden';
     renderRdHistory();
@@ -3592,7 +3802,7 @@
     if (!text) { alert('英文を入力するか、貼り付けてください。'); return; }
     $('rd-in').value = '';
     if (text.length > 20000) text = text.slice(0, 20000);
-    // 同じ英文が履歴にあればそれを開く
+    // 同じ英文が履歴にあればそれを開く（動画のものは除く）
     var ids = rdIds();
     for (var i = 0; i < ids.length; i++) if (rdDocs[ids[i]].text === text) { openRdDoc(ids[i]); return; }
     var id = newId();
@@ -3613,11 +3823,13 @@
     stopSpeak();
     rdCur = { id: id, d: d };
     $('rd-input').className = 'hidden'; $('rd-view').className = '';
-    var list = splitSentences(d.text);
+    if (d.cues && fixCues(d)) isNew = true;
+    var list = d.cues ? cueTexts(d.cues) : splitSentences(d.text);
     rdSents = [];
     each(list, function (t) { rdSents.push({ text: t, toks: tokenize(t), idioms: [] }); });
     renderRd();
     $('rd-body').scrollTop = 0;
+    if (d.yt && d.cues) ytOpen(d); else ytClose();
     loadPhrases(function () {
       if (!rdCur || rdCur.id !== id) return;
       each(rdSents, function (s) { s.idioms = findIdioms(s.toks); });
@@ -3644,7 +3856,8 @@
     each(rdSents, function (s, si) {
       var blk = document.createElement('div'); blk.className = 'rd-sent' + (si === rdIdx ? ' now' : '');
       var pb = document.createElement('button'); pb.type = 'button'; pb.className = 'rd-say'; pb.textContent = '🔊';
-      on(pb, 'click', function () { playOne(si); });
+      if (d.cues && d.cues[si]) { pb.className = 'rd-say yt'; pb.textContent = '▶ ' + fmtSec(d.cues[si][0]); on(pb, 'click', function () { ytSeek(si); }); }
+      else on(pb, 'click', function () { playOne(si); });
       blk.appendChild(pb);
       var en = document.createElement('span'); en.className = 'rd-en';
       // 熟語の範囲（単語の番号）
@@ -3749,15 +3962,17 @@
     });
   }
   function tapWord(si, ti) {
+    if (ytOn()) ytPauseForWord();
     var st = rdSents[si], hit = null;
     each(st.idioms || [], function (f) { if (!hit && ti >= f.s && ti <= f.e) hit = f; });
-    if (!hit) { wordTap(si, ti); return; }
+    if (!hit) { wordTap(si, ti); ytPopLabel(); return; }
     phraseTap(hit, si);
-    $('pop-play').className = flOpen && flPlayAt >= 0 ? '' : 'hidden';
+    $('pop-play').className = (flOpen && flPlayAt >= 0) || ytOn() ? '' : 'hidden';
     var d = document.createElement('div'); d.className = 'pop-id';
     var bt = document.createElement('button'); bt.type = 'button'; bt.textContent = '単語「' + st.toks[ti].w + '」の意味を見る';
     on(bt, 'click', function () { wordTap(si, ti); });
     d.appendChild(bt); $('pop-idiom').appendChild(d);
+    ytPopLabel();
   }
   function phraseTap(f, si) {
     var p = phrases[f.pi];
@@ -3850,12 +4065,16 @@
   });
   on($('rd-my'), 'click', function () { window.open(/OS [5-9]_\d.* like Mac OS X/.test(navigator.userAgent) ? '/kiku-memo/ipad.html' : '/kiku-memo/', '_blank'); });
   on($('rd-new'), 'click', function () { $('rd-in').value = ''; rdShowInput(); });
-  on($('rd-play'), 'click', function () { if (rdSpeaking) stopSpeak(); else playFrom(rdIdx >= 0 ? rdIdx : 0); });
+  on($('rd-play'), 'click', function () { if (ytOn()) { ytToggle(); return; } if (rdSpeaking) stopSpeak(); else playFrom(rdIdx >= 0 ? rdIdx : 0); });
+  on($('yt-go'), 'click', ytLoad);
+  on($('yt-safari-btn'), 'click', function () { ytOpenOut(0); });
+  on($('yt-loop'), 'click', function () { ytLoop = !ytLoop; ytLoopIdx = ytLoop ? rdIdx : -1; ytLoopLabel(); });
+  on(window, 'resize', function () { if (ytOn()) ytSize(); });
   on($('rd-flowbtn'), 'click', openFlow);
   on($('rd-make'), 'click', makeAll);
   on($('rd-cont'), 'click', function () { rdCont = !rdCont; lsSet('memo_rd_cont', rdCont ? '1' : '0'); contLabel(); });
   contLabel();
-  on($('pop-play'), 'click', function () { $('word-pop').className = 'hidden'; if (flOpen && flPlayAt >= 0) playFrom(flPlayAt); });
+  on($('pop-play'), 'click', function () { $('word-pop').className = 'hidden'; if (flOpen && flPlayAt >= 0) playFrom(flPlayAt); else if (ytOn() && ytPlayer && ytPlayer.playVideo) ytPlayer.playVideo(); });
   on($('fl-close'), 'click', closeFlow);
   on($('fl-only'), 'click', function () { stopSpeak(); setFlOnly(true); });
   on($('fl-exit'), 'click', function () { setFlOnly(false); });
@@ -3886,7 +4105,7 @@
   on($('gm-test'), 'click', function () { if (!gasUrl) { $('gm-msg').textContent = '先に上の翻訳の設定（テストして保存）をしてください。'; return; } gmSample($('gm-msg')); });
   on($('fl-small'), 'click', function () { flSize = Math.max(14, flSize - 2); lsSet('memo_fl_size', String(flSize)); $('fl-text').style.fontSize = flSize + 'px'; });
   on($('fl-big'), 'click', function () { flSize = Math.min(40, flSize + 2); lsSet('memo_fl_size', String(flSize)); $('fl-text').style.fontSize = flSize + 'px'; });
-  on($('rd-rate'), 'change', function () { rdRate = Number($('rd-rate').value) || 0.9; lsSet('memo_rd_rate', String(rdRate)); $('fl-rate').value = String(rdRate); if (rdSpeaking && useGemini()) gmRate(); });
+  on($('rd-rate'), 'change', function () { rdRate = Number($('rd-rate').value) || 0.9; if (ytOn()) ytRate(); lsSet('memo_rd_rate', String(rdRate)); $('fl-rate').value = String(rdRate); if (rdSpeaking && useGemini()) gmRate(); });
   on($('rd-trbtn'), 'click', function () { rdShowTr = !rdShowTr; lsSet('memo_rd_tr', rdShowTr ? '1' : '0'); renderRd(); });
   on($('rd-retr'), 'click', function () { if (!rdCur) return; delete rdCur.d.tr; openRdDoc(rdCur.id); });
 
@@ -3898,7 +4117,9 @@
     "  var p = e.parameter, out;",
     "  try {",
     "    var sl = p.sl || \"en\", tl = p.tl || \"ja\";",
-    "    if (p.tts) {",
+    "    if (p.yt) {",
+    "      out = ytCaptions(String(p.yt).replace(/[^A-Za-z0-9_-]/g, \"\").slice(0, 11));",
+    "    } else if (p.tts) {",
     "      out = ttsSaved(String(p.tts).slice(0, 1500), String(p.v || \"Kore\").replace(/[^A-Za-z]/g, \"\"), p.pre === \"1\", Number(p.part) || 0);",
     "    } else if (p.qs) {",
     "      var list = JSON.parse(p.qs), ts = [];",
@@ -3933,6 +4154,71 @@
     "  }",
     "  var b64 = Utilities.base64Encode(bytes), PART = 400000, n = Math.ceil(b64.length / PART), k = Math.min(n - 1, part);",
     "  return { ok: true, a: b64.slice(k * PART, (k + 1) * PART), n: n, k: k, saved: saved };",
+    "}",
+    "// YouTube の字幕（英語）を時刻つきで取ってくる。1) 字幕ファイル 2) 文字起こし の順に試す",
+    "function ytCaptions(id) {",
+    "  var html = UrlFetchApp.fetch(\"https://www.youtube.com/watch?v=\" + id + \"&hl=en\", { muteHttpExceptions: true, headers: { \"Accept-Language\": \"en-US,en;q=0.9\" } }).getContentText();",
+    "  var err = \"\";",
+    "  var tracks = jsonAfter(html, '\"captionTracks\":');",
+    "  if (tracks && tracks.length) {",
+    "    var pick = null, i;",
+    "    for (i = 0; i < tracks.length && !pick; i++) if (/^en/.test(tracks[i].languageCode) && tracks[i].kind !== \"asr\") pick = tracks[i];",
+    "    for (i = 0; i < tracks.length && !pick; i++) if (/^en/.test(tracks[i].languageCode)) pick = tracks[i];",
+    "    if (!pick) pick = tracks[0];",
+    "    try {",
+    "      var r = UrlFetchApp.fetch(pick.baseUrl.replace(/\\\\u0026/g, \"&\") + \"&fmt=json3\", { muteHttpExceptions: true });",
+    "      var txt = r.getContentText();",
+    "      if (r.getResponseCode() === 200 && txt) {",
+    "        var j = JSON.parse(txt), cues = [];",
+    "        (j.events || []).forEach(function (ev) {",
+    "          if (!ev.segs) return;",
+    "          var t = ev.segs.map(function (x) { return x.utf8 || \"\"; }).join(\"\").replace(/\\s+/g, \" \").trim();",
+    "          if (t) cues.push([Math.round((ev.tStartMs || 0) / 100) / 10, t]);",
+    "        });",
+    "        if (cues.length) return { ok: true, cues: cues, lang: pick.languageCode, auto: pick.kind === \"asr\" };",
+    "      }",
+    "      err = \"timedtext \" + r.getResponseCode();",
+    "    } catch (e) { err = String(e); }",
+    "  } else err = /consent|recaptcha|confirm you/i.test(html) ? \"blocked\" : \"nocaptions\";",
+    "  try {",
+    "    var pm = /\"getTranscriptEndpoint\":\\{\"params\":\"([^\"]+)\"/.exec(html), km = /\"INNERTUBE_API_KEY\":\"([^\"]+)\"/.exec(html), vm = /\"INNERTUBE_CLIENT_VERSION\":\"([^\"]+)\"/.exec(html);",
+    "    if (pm && km) {",
+    "      var res = UrlFetchApp.fetch(\"https://www.youtube.com/youtubei/v1/get_transcript?key=\" + km[1], {",
+    "        method: \"post\", contentType: \"application/json\", muteHttpExceptions: true,",
+    "        payload: JSON.stringify({ context: { client: { clientName: \"WEB\", clientVersion: vm ? vm[1] : \"2.20251001.00.00\", hl: \"en\" } }, params: pm[1] })",
+    "      });",
+    "      if (res.getResponseCode() === 200) {",
+    "        var cues2 = [];",
+    "        var walk = function (o) {",
+    "          if (!o || typeof o !== \"object\") return;",
+    "          if (o.transcriptSegmentRenderer) {",
+    "            var g = o.transcriptSegmentRenderer, t2 = ((g.snippet && g.snippet.runs) || []).map(function (x) { return x.text; }).join(\"\").replace(/\\s+/g, \" \").trim();",
+    "            if (t2) cues2.push([Math.round(Number(g.startMs || 0) / 100) / 10, t2]);",
+    "            return;",
+    "          }",
+    "          for (var k in o) walk(o[k]);",
+    "        };",
+    "        walk(JSON.parse(res.getContentText()));",
+    "        if (cues2.length) return { ok: true, cues: cues2, via: \"transcript\" };",
+    "      }",
+    "      err += \" / transcript \" + res.getResponseCode();",
+    "    }",
+    "  } catch (e2) { err += \" / \" + e2; }",
+    "  return { ok: false, error: err || \"nocaptions\" };",
+    "}",
+    "// 文字列の中の  \"名前\":[ ... ]  の [ ... ] を取り出して読む（中の文字列や入れ子も考える）",
+    "function jsonAfter(s, key) {",
+    "  var i = s.indexOf(key); if (i < 0) return null;",
+    "  i += key.length; var open = s.charAt(i); if (open !== \"[\" && open !== \"{\") return null;",
+    "  var close = open === \"[\" ? \"]\" : \"}\", depth = 0, inStr = false;",
+    "  for (var j = i; j < s.length; j++) {",
+    "    var c = s.charAt(j);",
+    "    if (inStr) { if (c === \"\\\\\") j++; else if (c === '\"') inStr = false; continue; }",
+    "    if (c === '\"') inStr = true;",
+    "    else if (c === \"[\" || c === \"{\") depth++;",
+    "    else if (c === \"]\" || c === \"}\") { depth--; if (depth === 0) { try { return JSON.parse(s.slice(i, j + 1)); } catch (e) { return null; } } }",
+    "  }",
+    "  return null;",
     "}",
     "function voiceFolder() {",
     "  var props = PropertiesService.getScriptProperties(), id = props.getProperty(\"VOICE_FOLDER\");",
