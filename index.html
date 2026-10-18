@@ -3052,6 +3052,8 @@
   // 自然さの目安：プレミアム＞拡張＞ふつう（iPhone は「設定」でダウンロードした声が使える）
   function voiceScore(v) {
     var l = (v.lang || '').replace('_', '-').toLowerCase(), id = (v.name || '') + ' ' + (v.voiceURI || '');
+    if (/speech\.synthesis\.voice\.|com\.apple\.eloquence/i.test(v.voiceURI || '') && !/(Samantha|Alex|Daniel|Karen|Moira|Tessa|Rishi|Veena|Fiona)/.test(v.name)) return -10;
+    if (/^(ベル|震え|道化|オルガン|スーパースター|トリノイド|ささやき声|バブル|チェロ|ブーイング|うれしい知らせ|悪い知らせ|ゾーン|ジェスター|ワブル|おばあちゃん|おじいちゃん|ロッコ|サンディ|シェリー|リード|エディ|フロー|フレッド|ジュニア|ラルフ|キャシー|アルバート|ザーヴォックス|ザルボックス|Bahh|バー)/.test(v.name)) return -10;
     if (/(Eddy|Flo|Grandma|Grandpa|Reed|Rocko|Sandy|Shelley|Bahh|Bells|Boing|Bubbles|Cellos|Wobble|Bad News|Good News|Jester|Organ|Superstar|Trinoids|Whisper|Zarvox|Albert|Fred|Junior|Kathy|Ralph)/.test(v.name)) return -10;
     return (l === 'en-us' ? 4 : l === 'en-gb' ? 3 : 1) + (/premium/i.test(id) ? 8 : /enhanced|拡張/i.test(id) ? 5 : 0) +
       (/(Samantha|Alex|Ava|Allison|Susan|Zoe|Evan|Nathan|Noelle|Joelle|Tom|Karen|Daniel|Serena|Google US English|Microsoft (Aria|Jenny|Guy))/.test(v.name) ? 3 : 0) +
@@ -3060,7 +3062,7 @@
   function enVoice() {
     var vs = enVoices(), best = null, score = -99;
     each(vs, function (v) {
-      if (rdVoiceName && v.name === rdVoiceName) { best = v; score = 999; }
+      if (rdVoiceName && (v.voiceURI === rdVoiceName || v.name === rdVoiceName) && score < 999) { best = v; score = 999; }
       var sc = voiceScore(v);
       if (sc > score) { score = sc; best = v; }
     });
@@ -3311,7 +3313,7 @@
       sel.appendChild(og);
     }
     var og2 = document.createElement('optgroup'); og2.label = 'この端末の声';
-    each(vs, function (v) { if (voiceScore(v) < 0) return; var o = document.createElement('option'); o.value = v.name; o.textContent = v.name + '（' + v.lang + '）'; og2.appendChild(o); });
+    each(vs, function (v) { if (voiceScore(v) < 0) return; var o = document.createElement('option'); o.value = v.voiceURI || v.name; o.textContent = v.name + '（' + v.lang + (/premium/i.test(v.voiceURI || '') ? '・プレミアム' : /enhanced/i.test(v.voiceURI || '') ? '・拡張' : /compact/i.test(v.voiceURI || '') ? '・標準' : '') + '）'; og2.appendChild(o); });
     sel.appendChild(og2);
     sel.value = rdVoiceName;
     if (sel.value !== rdVoiceName) sel.value = '';
