@@ -3148,19 +3148,33 @@
     if (gmCache[key]) { cb(gmCache[key]); return; }
     if (gmWait[key]) { gmWait[key].push(cb); return; }
     gmWait[key] = [cb];
-    gasCall({ tts: text, v: gmVoice() }, function (data, err) {
+    gmSend(text, gmVoice(), 0, function (data, err) {
       var r = data && data.ok && data.a ? { src: gmSrc(data.a) } : { err: (data && data.error) || err || (data && data.ok ? 'oldscript' : 'error') };
       if (r.src) gmCache[key] = r;
       var l = gmWait[key]; delete gmWait[key];
       each(l, function (f) { f(r); });
     });
   }
+  var gmTimes = [];   // 最近頼んだ時刻（1分に3回まで）
+  function gmSend(text, voice, tries, cb) {
+    var t = now();
+    while (gmTimes.length && gmTimes[0] < t - 61000) gmTimes.shift();
+    var wait = gmTimes.length >= 3 ? gmTimes[gmTimes.length - 3] + 61000 - t : 0;
+    if (tries) wait = Math.max(wait, 20000);
+    gmTimes.push(t + wait);
+    setTimeout(function () {
+      gasCall({ tts: text, v: voice }, function (data, err) {
+        if (data && !data.ok && /^429 busy/.test(String(data.error || '')) && tries < 1) { gmSend(text, voice, tries + 1, cb); return; }
+        cb(data, err);
+      });
+    }, wait);
+  }
   // 文のまとまり（最初から決まった区切りにして、聞き直しても同じ音声を使い回す）
   function gmChunks(from) {
     var out = [], k = 0;
     while (k < rdSents.length) {
       var a = k, len = 0;
-      while (k < rdSents.length && (k === a || (len + rdSents[k].text.length <= 320 && k - a < 4))) { len += rdSents[k].text.length + 1; k++; }
+      while (k < rdSents.length && (k === a || (len + rdSents[k].text.length <= 600 && k - a < 8))) { len += rdSents[k].text.length + 1; k++; }
       if (k - 1 >= from) out.push({ a: Math.max(a, from), b: k - 1 });
     }
     each(out, function (c) { var t = []; for (var q = c.a; q <= c.b; q++) t.push(rdSents[q].text); c.text = t.join(' '); });
@@ -3176,6 +3190,7 @@
     e = String(e || '');
     if (e === 'oldscript') return 'Apps Script がまだ古いコードのままです。新しいコードを貼って保存し、「デプロイを管理」で「新バージョン」にしてください';
     if (e === 'nokey') return 'Apps Script に GEMINI_KEY が設定されていません（⚙ 設定の手順を見てください）';
+    if (/^429 busy/.test(e)) return '混んでいます（1分に3回まで）。少しあとでもう一度どうぞ';
     if (/^429/.test(e)) return '今日の無料の回数を使い切ったようです';
     if (e === 'nourl') return '翻訳の設定がありません';
     if (e === 'timeout') return '時間切れ';
@@ -3206,7 +3221,7 @@
         if (gen !== playGen || !rdSpeaking) return;
         if (r.err) { gmFail(r.err, ch.a); return; }
         gmNote('');
-        for (var q = c + 1; q <= c + 2 && q < chunks.length; q++) gmFetch(chunks[q].text, function () {});
+        if (c + 1 < chunks.length) gmFetch(chunks[c + 1].text, function () {});
         var done = false, au = gmAudio;
         au.onended = function () { if (done) return; done = true; step(c + 1); };
         au.onerror = function () { if (done) return; done = true; gmFail('play', ch.a); };
@@ -3713,12 +3728,14 @@
     "  return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);",
     "}",
     "// 文章を Gemini で音声（WAV）にして返す。回数制限にかかったら別のモデルを試す",
+    "// 1日の回数を使い切ったモデルはしばらく飛ばす（むだな失敗で回数を減らさないため）",
     "function tts(text, voice) {",
     "  var key = PropertiesService.getScriptProperties().getProperty(\"GEMINI_KEY\");",
     "  if (!key) return { ok: false, error: \"nokey\" };",
     "  var models = [\"gemini-3.8-flash-tts\", \"gemini-3.8-flash-lite-tts\", \"gemini-3.1-flash-tts-preview\", \"gemini-2.5-flash-preview-tts\"];",
-    "  var last = \"\";",
+    "  var cache = CacheService.getScriptCache(), last = \"\", busy = false;",
     "  for (var i = 0; i < models.length; i++) {",
+    "    if (cache.get(\"off_\" + models[i])) continue;",
     "    var res = UrlFetchApp.fetch(\"https://generativelanguage.googleapis.com/v1beta/models/\" + models[i] + \":generateContent\", {",
     "      method: \"post\", contentType: \"application/json\", muteHttpExceptions: true,",
     "      headers: { \"x-goog-api-key\": key },",
@@ -3727,20 +3744,27 @@
     "        generationConfig: { responseModalities: [\"AUDIO\"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } }",
     "      })",
     "    });",
-    "    var code = res.getResponseCode();",
+    "    var code = res.getResponseCode(), body = res.getContentText();",
     "    if (code === 200) {",
-    "      var j = JSON.parse(res.getContentText()), part = j.candidates[0].content.parts[0].inlineData;",
+    "      var j = JSON.parse(body), part = j.candidates[0].content.parts[0].inlineData;",
     "      var bytes = Utilities.base64Decode(part.data);",
-    "      if (!(bytes[0] === 82 && bytes[1] === 73 && bytes[2] === 70 && bytes[3] === 70)) {   // \"RIFF\" で始まらなければ WAV にする",
+    "      if (!(bytes[0] === 82 && bytes[1] === 73 && bytes[2] === 70 && bytes[3] === 70)) {",
     "        var m = /rate=(\\d+)/.exec(part.mimeType || \"\"), rate = m ? Number(m[1]) : 24000;",
     "        bytes = wavHead(bytes.length, rate).concat(bytes);",
     "      }",
     "      return { ok: true, a: Utilities.base64Encode(bytes), m: models[i] };",
     "    }",
-    "    last = code + \" \" + res.getContentText().slice(0, 300);",
-    "    if (code === 401 || code === 403) break;",
+    "    last = code + \" \" + body.slice(0, 300);",
+    "    if (code === 429) {",
+    "      if (/PerDay/i.test(body)) cache.put(\"off_\" + models[i], \"1\", 21600);   // 1日の分を使い切り：6時間飛ばす",
+    "      else { cache.put(\"off_\" + models[i], \"1\", 60); busy = true; }         // 1分の分：1分だけ飛ばす",
+    "      continue;",
+    "    }",
+    "    if (code === 404 || code === 400) { cache.put(\"off_\" + models[i], \"1\", 21600); continue; }",
+    "    break;",
     "  }",
-    "  return { ok: false, error: last };",
+    "  if (!last) return { ok: false, error: busy ? \"429 busy\" : \"429 PerDay（どのモデルも今日の分を使い切りました）\" };",
+    "  return { ok: false, error: busy ? \"429 busy \" + last : last };",
     "}",
     "function wavHead(n, rate) {",
     "  var h = [], put = function (v, len) { for (var i = 0; i < len; i++) { var b = (v >> (8 * i)) & 255; h.push(b > 127 ? b - 256 : b); } };",
