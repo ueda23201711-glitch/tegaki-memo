@@ -3394,10 +3394,10 @@
     var show = function (t) { if (mkRun === run || !mkRun) $('rd-status').textContent = t; };
     var next = function (wait) {
       if (mkRun !== run) return;
-      if (i >= chunks.length) { mkRun = 0; makeButton(); show('この英文の AI の声（' + voice + '）をすべて保存しました（今回作った ' + made + ' ・前からあった ' + had + '）。この端末にも入れたので、すぐ再生できます。ほかの端末でも回数を使わずに聞けます。'); return; }
+      if (i >= chunks.length) { mkRun = 0; makeButton(); show('この英文の AI の声（' + voice + '）をすべて保存しました（AI が新しく作った ' + made + ' ・ドライブなどにあった ' + had + '）。この端末にも入れたので、すぐ再生できます。ほかの端末でも回数を使わずに聞けます。'); return; }
       setTimeout(function () {
         if (mkRun !== run) return;
-        show('AIの声を作って、この端末に入れています… ' + i + ' / ' + chunks.length);
+        show('AIの声をこの端末に入れています… ' + i + ' / ' + chunks.length + '（ドライブから取り込んだ ' + had + ' ・AI が新しく作った ' + made + '）');
         var known = !!gmCache[voice + '|' + chunks[i].text];
         gmFetch(chunks[i].text, function (r) {
           if (mkRun !== run) return;
