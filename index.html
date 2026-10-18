@@ -451,6 +451,7 @@
         <select id="rd-rate" title="速さ">
           <option value="0.6">ゆっくり</option><option value="0.75">やや遅く</option><option value="0.9">ふつう</option><option value="1">少し速く</option><option value="1.15">速く</option>
         </select>
+        <select id="rd-voice" title="声" style="max-width:46%"></select>
         <button id="rd-trbtn" type="button">訳を隠す</button>
         <button id="rd-new" type="button">✎ 別の英文</button>
         <button id="rd-retr" type="button" title="日本語訳を作り直す">↻ 訳</button>
@@ -3182,14 +3183,17 @@
     if (e === 'play') return 'この端末で音声を再生できませんでした';
     return '原因：' + e.slice(0, 80);
   }
+  var gmOne = false;
   function gmFail(err, at) {
     if (!rdSpeaking) return;
     gmOff = true;
     gmNote('AIの声が使えませんでした（' + gmErrText(err) + '）。端末の声で続けます。');
+    if (gmOne) { rdSpeaking = false; playLabel(); speak(rdSents[at].text, function () { markSentence(-1); }); return; }
     devicePlay(at);
   }
-  function gmPlayFrom(i) {
-    var gen = ++playGen, chunks = gmChunks(i);
+  function gmPlayFrom(i, one) {
+    var gen = ++playGen, chunks = one ? [{ a: i, b: i, text: rdSents[i].text }] : gmChunks(i);
+    gmOne = !!one;
     gmUnlock(); gmNote('');
     var step = function (c) {
       if (gen !== playGen || !rdSpeaking) return;
@@ -3279,8 +3283,9 @@
     playLabel();
   }
   function closeFlow() { stopSpeak(); flOpen = false; $('rd-flow').className = 'hidden'; markSentence(-1); }
-  function fillVoices() {
-    var sel = $('fl-voice'), vs = enVoices();
+  function fillVoices() { fillVoiceSel($('fl-voice')); fillVoiceSel($('rd-voice')); }
+  function fillVoiceSel(sel) {
+    var vs = enVoices();
     vs.sort(function (a, b) { return voiceScore(b) - voiceScore(a); });
     sel.innerHTML = '';
     var o0 = document.createElement('option'); o0.value = ''; o0.textContent = '声：自動（いちばん自然な声）'; sel.appendChild(o0);
@@ -3295,7 +3300,7 @@
     sel.value = rdVoiceName;
     if (sel.value !== rdVoiceName) sel.value = '';
   }
-  if (window.speechSynthesis && 'onvoiceschanged' in speechSynthesis) speechSynthesis.onvoiceschanged = function () { if (flOpen) fillVoices(); };
+  if (window.speechSynthesis && 'onvoiceschanged' in speechSynthesis) speechSynthesis.onvoiceschanged = function () { fillVoices(); };
 
   /* ---- 翻訳（Google Apps Script・JSONP） ---- */
   var jsonpN = 0, gasXhrOk = lsGet('memo_gas_xhr') !== '0';
@@ -3496,9 +3501,11 @@
     });
     $('rd-trbtn').textContent = rdShowTr ? '訳を隠す' : '訳を表示';
     $('rd-rate').value = String(rdRate);
+    fillVoiceSel($('rd-voice'));
   }
   function playOne(si) {
     stopSpeak(); markSentence(si);
+    if (useGemini()) { rdSpeaking = true; playLabel(); gmPlayFrom(si, true); return; }
     speak(rdSents[si].text, function () { markSentence(-1); });
   }
 
@@ -3655,11 +3662,14 @@
     rdRate = Number($('fl-rate').value) || 0.9; lsSet('memo_rd_rate', String(rdRate)); $('rd-rate').value = String(rdRate);
     if (rdSpeaking && useGemini()) gmRate(); else if (rdSpeaking) playFrom(rdIdx);
   });
-  on($('fl-voice'), 'change', function () {
-    rdVoiceName = $('fl-voice').value; lsSet('memo_rd_voice', rdVoiceName); gmOff = false; gmNote('');
-    if (rdSpeaking) { playFrom(rdIdx); return; }
+  function voiceChanged(sel) {
+    rdVoiceName = sel.value; lsSet('memo_rd_voice', rdVoiceName); gmOff = false; gmNote('');
+    $('fl-voice').value = rdVoiceName; $('rd-voice').value = rdVoiceName;
+    if (rdSpeaking) { playFrom(rdIdx >= 0 ? rdIdx : 0); return; }
     if (useGemini()) gmSample(); else speak('Hello. This is the voice for reading.');
-  });
+  }
+  on($('fl-voice'), 'change', function () { voiceChanged($('fl-voice')); });
+  on($('rd-voice'), 'change', function () { voiceChanged($('rd-voice')); });
   function gmSample(msgEl) {
     gmUnlock();
     var show = function (t) { if (msgEl) msgEl.textContent = t; else gmNote(t); };
@@ -3674,7 +3684,7 @@
   on($('gm-test'), 'click', function () { if (!gasUrl) { $('gm-msg').textContent = '先に上の翻訳の設定（テストして保存）をしてください。'; return; } gmSample($('gm-msg')); });
   on($('fl-small'), 'click', function () { flSize = Math.max(14, flSize - 2); lsSet('memo_fl_size', String(flSize)); $('fl-text').style.fontSize = flSize + 'px'; });
   on($('fl-big'), 'click', function () { flSize = Math.min(40, flSize + 2); lsSet('memo_fl_size', String(flSize)); $('fl-text').style.fontSize = flSize + 'px'; });
-  on($('rd-rate'), 'change', function () { rdRate = Number($('rd-rate').value) || 0.9; lsSet('memo_rd_rate', String(rdRate)); });
+  on($('rd-rate'), 'change', function () { rdRate = Number($('rd-rate').value) || 0.9; lsSet('memo_rd_rate', String(rdRate)); $('fl-rate').value = String(rdRate); if (rdSpeaking && useGemini()) gmRate(); });
   on($('rd-trbtn'), 'click', function () { rdShowTr = !rdShowTr; lsSet('memo_rd_tr', rdShowTr ? '1' : '0'); renderRd(); });
   on($('rd-retr'), 'click', function () { if (!rdCur) return; delete rdCur.d.tr; openRdDoc(rdCur.id); });
 
