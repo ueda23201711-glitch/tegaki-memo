@@ -3292,7 +3292,7 @@
     var was = rdSpeaking;
     stopSpeak();
     flPlayAt = was && rdIdx >= 0 ? rdIdx : si;
-    wordTap(si, ti);
+    tapWord(si, ti);
     $('pop-play').textContent = was ? '▶ 続きから再生' : '▶ この文から再生';
     $('pop-play').className = '';
     playLabel();
@@ -3487,7 +3487,7 @@
         if (t.s > pos) en.appendChild(document.createTextNode(s.text.slice(pos, t.s)));
         var w = document.createElement('span'); w.className = 'w' + (idAt[ti] !== undefined ? ' idm' : '');
         w.textContent = t.w;
-        on(w, 'click', function (e) { e.stopPropagation(); wordTap(si, ti); });
+        on(w, 'click', function (e) { e.stopPropagation(); tapWord(si, ti); });
         en.appendChild(w);
         // 熟語の途中の空白にも下線
         pos = t.e;
@@ -3528,7 +3528,7 @@
   var popItem = null;   // {w, m, ex, si}
   function wordTap(si, ti) {
     var s = rdSents[si], t = s.toks[ti];
-    $('pop-play').className = 'hidden';
+    $('pop-play').className = flOpen && flPlayAt >= 0 ? '' : 'hidden';
     try { speechSynthesis.cancel(); } catch (e) {} rdSpeaking = false; $('rd-play').textContent = '▶ 再生';
     speak(t.w);
     $('pop-head').textContent = t.w;
@@ -3576,6 +3576,17 @@
       if (list.length > 1 && (/^[A-Za-z]+の(過去|現在分詞|複数形|三人称|比較級|最上級|三単現)/.test(list[0].mean) || (list[0].head === t.l && /(ed|ing|s)$/.test(t.l)))) first = 1;
       pick(first);
     });
+  }
+  function tapWord(si, ti) {
+    var st = rdSents[si], hit = null;
+    each(st.idioms || [], function (f) { if (!hit && ti >= f.s && ti <= f.e) hit = f; });
+    if (!hit) { wordTap(si, ti); return; }
+    phraseTap(hit, si);
+    $('pop-play').className = flOpen && flPlayAt >= 0 ? '' : 'hidden';
+    var d = document.createElement('div'); d.className = 'pop-id';
+    var bt = document.createElement('button'); bt.type = 'button'; bt.textContent = '単語「' + st.toks[ti].w + '」の意味を見る';
+    on(bt, 'click', function () { wordTap(si, ti); });
+    d.appendChild(bt); $('pop-idiom').appendChild(d);
   }
   function phraseTap(f, si) {
     var p = phrases[f.pi];
