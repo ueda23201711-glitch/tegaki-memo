@@ -155,6 +155,16 @@
   .rd-hint { margin: 0 0 10px; }
   .rd-sent { background: #fff; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(31,42,48,.1); }
   .rd-sent.now { box-shadow: 0 0 0 3px #e8b44c; background: #fffbea; }
+  #rd-flow { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 60; background: #fbf8f1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  #fl-ctrl { position: -webkit-sticky; position: sticky; top: 0; z-index: 2; background: rgba(251,248,241,.97); border-bottom: 1px solid #e3dccb; padding: 8px 12px; }
+  #fl-ctrl button, #fl-ctrl select { margin: 2px 6px 2px 0; }
+  #fl-ctrl select { font-size: 15px; padding: 6px; border-radius: 8px; border: 1px solid #c9d2d8; background: #fff; max-width: 46%; }
+  #fl-ctrl .note { margin: 4px 0 0; }
+  #fl-text { max-width: 760px; margin: 0 auto; padding: 18px 20px 45vh; font-family: Georgia, "Times New Roman", serif; line-height: 1.75; color: #1f2a30; }
+  #fl-text p { margin: 0 0 1em; }
+  .fl-s { border-radius: 5px; -webkit-tap-highlight-color: rgba(232,180,76,.3); cursor: pointer; }
+  .fl-s.now { background: #ffe39a; box-shadow: 0 0 0 2px #ffe39a; }
+  .fl-s.done { color: #6b7780; }
   .rd-say { float: left; padding: 4px 8px; margin: 0 8px 0 0; background: #f1f4f6; font-size: 15px; }
   .rd-en { font-size: 20px; line-height: 1.7; color: #1f2a30; font-family: Georgia, "Times New Roman", serif; }
   .rd-en .w { cursor: pointer; border-radius: 4px; }
@@ -433,6 +443,7 @@
     <div id="rd-view" class="hidden">
       <div id="rd-ctrl">
         <button id="rd-play" class="primary" type="button">▶ 再生</button>
+        <button id="rd-flowbtn" type="button">📖 通しで聞く</button>
         <select id="rd-rate" title="速さ">
           <option value="0.6">ゆっくり</option><option value="0.75">やや遅く</option><option value="0.9">ふつう</option><option value="1">少し速く</option><option value="1.15">速く</option>
         </select>
@@ -667,6 +678,19 @@
 </div>
 
 <script src="vendor/qrcode.js"></script>
+        <div id="rd-flow" class="hidden">
+          <div id="fl-ctrl">
+            <button id="fl-play" class="primary" type="button">▶ 最初から</button>
+            <select id="fl-rate" title="速さ">
+              <option value="0.6">ゆっくり</option><option value="0.75">やや遅く</option><option value="0.9">ふつう</option><option value="1">少し速く</option><option value="1.15">速く</option>
+            </select>
+            <select id="fl-voice" title="声"></select>
+            <button id="fl-small" type="button">A−</button><button id="fl-big" type="button">A＋</button>
+            <button id="fl-close" type="button">✕ 閉じる</button>
+            <p class="note" id="fl-note">文をタップすると、そこから最後まで続けて読みます。</p>
+          </div>
+          <div id="fl-text"></div>
+        </div>
 <script>
 (function () {
   'use strict';
@@ -3003,12 +3027,25 @@
 
   /* ---- 読み上げ ---- */
   var rdSpeaking = false, rdQueue = [], rdIdx = -1;
+  var rdVoiceName = lsGet('memo_rd_voice') || '';
+  function enVoices() {
+    var vs = (window.speechSynthesis && speechSynthesis.getVoices()) || [], out = [];
+    each(vs, function (v) { if ((v.lang || '').replace('_', '-').toLowerCase().indexOf('en') === 0) out.push(v); });
+    return out;
+  }
+  // 自然さの目安：プレミアム＞拡張＞ふつう（iPhone は「設定」でダウンロードした声が使える）
+  function voiceScore(v) {
+    var l = (v.lang || '').replace('_', '-').toLowerCase(), id = (v.name || '') + ' ' + (v.voiceURI || '');
+    if (/(Eddy|Flo|Grandma|Grandpa|Reed|Rocko|Sandy|Shelley|Bahh|Bells|Boing|Bubbles|Cellos|Wobble|Bad News|Good News|Jester|Organ|Superstar|Trinoids|Whisper|Zarvox|Albert|Fred|Junior|Kathy|Ralph)/.test(v.name)) return -10;
+    return (l === 'en-us' ? 4 : l === 'en-gb' ? 3 : 1) + (/premium/i.test(id) ? 8 : /enhanced|拡張/i.test(id) ? 5 : 0) +
+      (/(Samantha|Alex|Ava|Allison|Susan|Zoe|Evan|Nathan|Noelle|Joelle|Tom|Karen|Daniel|Serena|Google US English|Microsoft (Aria|Jenny|Guy))/.test(v.name) ? 3 : 0) +
+      (/(Natural|Neural|Online)/.test(v.name) ? 4 : 0) + (/(compact|eloquence)/i.test(id) ? -3 : 0) + (v.localService ? 1 : 0);
+  }
   function enVoice() {
-    var vs = (window.speechSynthesis && speechSynthesis.getVoices()) || [], best = null, score = -1;
+    var vs = enVoices(), best = null, score = -99;
     each(vs, function (v) {
-      var l = (v.lang || '').replace('_', '-').toLowerCase();
-      if (l.indexOf('en') !== 0) return;
-      var sc = (l === 'en-us' ? 4 : l === 'en-gb' ? 3 : 1) + (/(Samantha|Alex|Ava|Allison|Susan|Zoe|Karen|Daniel|Google US English)/.test(v.name) ? 3 : 0) + (/(compact|eloquence)/i.test(v.name) ? -2 : 0) + (v.localService ? 1 : 0);
+      if (rdVoiceName && v.name === rdVoiceName) { best = v; score = 999; }
+      var sc = voiceScore(v);
       if (sc > score) { score = sc; best = v; }
     });
     return best;
@@ -3026,17 +3063,30 @@
     // iOS で終わりの合図が来ないことがあるので、長さから見積もった時間で次へ進む保険
     if (onend) setTimeout(function () { if (!done && !speechSynthesis.speaking) fin(); }, 1500 + text.length * 120 / rdRate);
   }
+  var wakeLock = null;
+  function keepAwake(onOff) {
+    try {
+      if (onOff && navigator.wakeLock && !wakeLock) navigator.wakeLock.request('screen').then(function (w) { wakeLock = w; }, function () {});
+      if (!onOff && wakeLock) { wakeLock.release(); wakeLock = null; }
+    } catch (e) {}
+  }
+  function playLabel() {
+    $('rd-play').textContent = rdSpeaking ? '■ 停止' : '▶ 再生';
+    $('fl-play').textContent = rdSpeaking ? '■ 停止' : (rdIdx > 0 ? '▶ 続きから' : '▶ 最初から');
+  }
   function stopSpeak() {
-    rdSpeaking = false; rdQueue = []; markSentence(-1);
+    rdSpeaking = false; rdQueue = [];
+    if (!flOpen) markSentence(-1);
     try { speechSynthesis.cancel(); } catch (e) {}
-    $('rd-play').textContent = '▶ 再生';
+    keepAwake(false); playLabel();
   }
   function playFrom(i) {
     if (!rdSents.length) return;
     stopSpeak();
-    rdSpeaking = true; $('rd-play').textContent = '■ 停止';
+    rdSpeaking = true; playLabel(); keepAwake(true);
     var step = function (k) {
-      if (!rdSpeaking || k >= rdSents.length) { stopSpeak(); return; }
+      if (!rdSpeaking) return;
+      if (k >= rdSents.length) { rdIdx = 0; stopSpeak(); if (flOpen) markSentence(-1); playLabel(); return; }
       markSentence(k);
       speak(rdSents[k].text, function () { if (rdSpeaking) setTimeout(function () { step(k + 1); }, 250); });
     };
@@ -3044,9 +3094,61 @@
   }
   function markSentence(k) {
     rdIdx = k;
-    each($('rd-text').childNodes, function (el, i) { el.className = 'rd-sent' + (i === k ? ' now' : ''); });
+    each($('rd-text').childNodes, function (el, i) { if (el.id !== 'rd-flow') el.className = 'rd-sent' + (i === k ? ' now' : ''); });
+    if (flOpen) {
+      each(flEls, function (el, i) { el.className = 'fl-s' + (i === k ? ' now' : k >= 0 && i < k ? ' done' : ''); });
+      var fe = flEls[k], box = $('rd-flow');
+      if (fe) { var y = fe.offsetTop - box.clientHeight * 0.3; if (Math.abs(box.scrollTop - y) > box.clientHeight * 0.25) box.scrollTop = Math.max(0, y); }
+      return;
+    }
     if (k >= 0) { var el = $('rd-text').childNodes[k]; if (el && el.scrollIntoView) { try { el.scrollIntoView(false); } catch (e) {} } }
   }
+
+  /* ---- 通しで聞く（全画面・文をタップするとそこから最後まで） ---- */
+  var flOpen = false, flEls = [], flSize = Number(lsGet('memo_fl_size') || 22);
+  function openFlow() {
+    if (!rdCur || !rdSents.length) return;
+    stopSpeak();
+    var box = $('fl-text'); box.innerHTML = ''; flEls = [];
+    var paras = String(rdCur.d.text || '').replace(/\r/g, '').split(/\n\s*\n|\n/), k = 0;
+    each(paras, function (para) {
+      var list = splitSentences(para);
+      if (!list.length) return;
+      var p = document.createElement('p');
+      each(list, function () {
+        if (k >= rdSents.length) return;
+        var idx = k++, sp = document.createElement('span');
+        sp.className = 'fl-s'; sp.textContent = rdSents[idx].text;
+        on(sp, 'click', function () { playFrom(idx); });
+        p.appendChild(sp); p.appendChild(document.createTextNode(' '));
+        flEls.push(sp);
+      });
+      box.appendChild(p);
+    });
+    // 念のため：数が合わなかった文は最後に足す
+    if (k < rdSents.length) {
+      var p2 = document.createElement('p');
+      for (; k < rdSents.length; k++) (function (idx) { var sp = document.createElement('span'); sp.className = 'fl-s'; sp.textContent = rdSents[idx].text; on(sp, 'click', function () { playFrom(idx); }); p2.appendChild(sp); p2.appendChild(document.createTextNode(' ')); flEls.push(sp); })(k);
+      box.appendChild(p2);
+    }
+    box.style.fontSize = flSize + 'px';
+    $('fl-rate').value = String(rdRate);
+    fillVoices();
+    flOpen = true; $('rd-flow').className = ''; $('rd-flow').scrollTop = 0;
+    var start = rdIdx > 0 ? rdIdx : 0; rdIdx = start; markSentence(start > 0 ? start : -1); rdIdx = start;
+    playLabel();
+  }
+  function closeFlow() { stopSpeak(); flOpen = false; $('rd-flow').className = 'hidden'; markSentence(-1); }
+  function fillVoices() {
+    var sel = $('fl-voice'), vs = enVoices();
+    vs.sort(function (a, b) { return voiceScore(b) - voiceScore(a); });
+    sel.innerHTML = '';
+    var o0 = document.createElement('option'); o0.value = ''; o0.textContent = '声：自動（いちばん自然な声）'; sel.appendChild(o0);
+    each(vs, function (v) { if (voiceScore(v) < 0) return; var o = document.createElement('option'); o.value = v.name; o.textContent = v.name + '（' + v.lang + '）'; sel.appendChild(o); });
+    sel.value = rdVoiceName;
+    if (sel.value !== rdVoiceName) sel.value = '';
+  }
+  if (window.speechSynthesis && 'onvoiceschanged' in speechSynthesis) speechSynthesis.onvoiceschanged = function () { if (flOpen) fillVoices(); };
 
   /* ---- 翻訳（Google Apps Script・JSONP） ---- */
   var jsonpN = 0, gasXhrOk = lsGet('memo_gas_xhr') !== '0';
@@ -3397,6 +3499,13 @@
   on($('rd-my'), 'click', function () { window.open(/OS [5-9]_\d.* like Mac OS X/.test(navigator.userAgent) ? '/kiku-memo/ipad.html' : '/kiku-memo/', '_blank'); });
   on($('rd-new'), 'click', function () { $('rd-in').value = ''; rdShowInput(); });
   on($('rd-play'), 'click', function () { if (rdSpeaking) stopSpeak(); else playFrom(rdIdx >= 0 ? rdIdx : 0); });
+  on($('rd-flowbtn'), 'click', openFlow);
+  on($('fl-close'), 'click', closeFlow);
+  on($('fl-play'), 'click', function () { if (rdSpeaking) stopSpeak(); else playFrom(rdIdx > 0 ? rdIdx : 0); });
+  on($('fl-rate'), 'change', function () { rdRate = Number($('fl-rate').value) || 0.9; lsSet('memo_rd_rate', String(rdRate)); $('rd-rate').value = String(rdRate); if (rdSpeaking) playFrom(rdIdx); });
+  on($('fl-voice'), 'change', function () { rdVoiceName = $('fl-voice').value; lsSet('memo_rd_voice', rdVoiceName); if (rdSpeaking) playFrom(rdIdx); else speak('Hello. This is the voice for reading.'); });
+  on($('fl-small'), 'click', function () { flSize = Math.max(14, flSize - 2); lsSet('memo_fl_size', String(flSize)); $('fl-text').style.fontSize = flSize + 'px'; });
+  on($('fl-big'), 'click', function () { flSize = Math.min(40, flSize + 2); lsSet('memo_fl_size', String(flSize)); $('fl-text').style.fontSize = flSize + 'px'; });
   on($('rd-rate'), 'change', function () { rdRate = Number($('rd-rate').value) || 0.9; lsSet('memo_rd_rate', String(rdRate)); });
   on($('rd-trbtn'), 'click', function () { rdShowTr = !rdShowTr; lsSet('memo_rd_tr', rdShowTr ? '1' : '0'); renderRd(); });
   on($('rd-retr'), 'click', function () { if (!rdCur) return; delete rdCur.d.tr; openRdDoc(rdCur.id); });
