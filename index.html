@@ -3159,12 +3159,85 @@
     } catch (e) {}
     return 'data:audio/wav;base64,' + b64;
   }
+  /* ---- 端末の中の声の保存（どちらのアプリでも共通） ---- */
+  var VC_NAME = 'voice-cache-v1', VC_IDX = 'vcache_idx';
+  var VC_MAX = /OS [5-9]_\d.* like Mac OS X/.test(navigator.userAgent) ? 40e6 : 300e6;
+  function vcHash(t) {   // 文字列の短い指紋（cyrb53）
+    var h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+    for (var i = 0; i < t.length; i++) { var c = t.charCodeAt(i); h1 = Math.imul ? Math.imul(h1 ^ c, 2654435761) : ((h1 ^ c) * 2654435761) | 0; h2 = Math.imul ? Math.imul(h2 ^ c, 1597334677) : ((h2 ^ c) * 1597334677) | 0; }
+    h1 = (Math.imul ? Math.imul(h1 ^ (h1 >>> 16), 2246822507) : ((h1 ^ (h1 >>> 16)) * 2246822507) | 0) ^ (Math.imul ? Math.imul(h2 ^ (h2 >>> 13), 3266489909) : ((h2 ^ (h2 >>> 13)) * 3266489909) | 0);
+    h2 = (Math.imul ? Math.imul(h2 ^ (h2 >>> 16), 2246822507) : ((h2 ^ (h2 >>> 16)) * 2246822507) | 0) ^ (Math.imul ? Math.imul(h1 ^ (h1 >>> 13), 3266489909) : ((h1 ^ (h1 >>> 13)) * 3266489909) | 0);
+    return (h2 >>> 0).toString(36) + (h1 >>> 0).toString(36) + t.length.toString(36);
+  }
+  function vcIdx() { try { return JSON.parse(lsGet(VC_IDX) || '{}') || {}; } catch (e) { return {}; } }
+  function vcUrl(k) { return location.protocol + '//' + location.host + '/__voice/' + k; }
+  var vcDb = null, vcDbWait = null;
+  function vcIdb(cb) {   // Cache API がない端末用
+    if (vcDb) { cb(vcDb); return; }
+    if (vcDbWait) { vcDbWait.push(cb); return; }
+    vcDbWait = [cb];
+    var done = function (db) { vcDb = db; var l = vcDbWait; vcDbWait = null; each(l, function (f) { f(db); }); };
+    try {
+      var rq = window.indexedDB.open('voice-cache', 1);
+      rq.onupgradeneeded = function () { try { rq.result.createObjectStore('a'); } catch (e) {} };
+      rq.onsuccess = function () { done(rq.result); };
+      rq.onerror = function () { done(null); };
+    } catch (e) { done(null); }
+  }
+  function vcGet(k, cb) {
+    var idx = vcIdx(); if (!idx[k]) { cb(null); return; }
+    var hit = function (src) { if (src) { idx = vcIdx(); if (idx[k]) { idx[k][0] = now(); lsSet(VC_IDX, JSON.stringify(idx)); } } cb(src); };
+    try {
+      if (window.caches && window.Blob) {
+        caches.open(VC_NAME).then(function (c) { return c.match(vcUrl(k)); }).then(function (r) { return r ? r.blob() : null; })
+          .then(function (b) { hit(b ? URL.createObjectURL(b) : null); }, function () { cb(null); });
+        return;
+      }
+      if (!window.indexedDB) { cb(null); return; }
+      vcIdb(function (db) {
+        if (!db) { cb(null); return; }
+        try { var rq = db.transaction('a', 'readonly').objectStore('a').get(k); rq.onsuccess = function () { hit(rq.result ? gmSrc(rq.result) : null); }; rq.onerror = function () { cb(null); }; } catch (e) { cb(null); }
+      });
+    } catch (e) { cb(null); }
+  }
+  function vcDel(k) {
+    try {
+      if (window.caches) caches.open(VC_NAME).then(function (c) { c['delete'](vcUrl(k)); }, function () {});
+      else vcIdb(function (db) { if (db) { try { db.transaction('a', 'readwrite').objectStore('a')['delete'](k); } catch (e) {} } });
+    } catch (e) {}
+  }
+  function vcPut(k, b64) {
+    try {
+      var idx = vcIdx(), total = 0, keys = [];
+      idx[k] = [now(), b64.length];
+      for (var x in idx) { total += idx[x][1]; keys.push(x); }
+      keys.sort(function (p, q) { return idx[p][0] - idx[q][0]; });
+      while (total > VC_MAX && keys.length > 1) { var old = keys.shift(); if (old === k) continue; total -= idx[old][1]; delete idx[old]; vcDel(old); }
+      if (window.caches && window.Blob && window.Uint8Array && window.Response) {
+        var bin = atob(b64), u = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+        caches.open(VC_NAME).then(function (c) { return c.put(vcUrl(k), new Response(new Blob([u], { type: 'audio/wav' }))); })
+          .then(function () { lsSet(VC_IDX, JSON.stringify(idx)); }, function () {});
+        return;
+      }
+      if (!window.indexedDB) return;
+      vcIdb(function (db) {
+        if (!db) return;
+        try { var tx = db.transaction('a', 'readwrite'); tx.objectStore('a').put(b64, k); tx.oncomplete = function () { lsSet(VC_IDX, JSON.stringify(idx)); }; } catch (e) {}
+      });
+    } catch (e) {}
+  }
   function gmFetch(text, cb) {
     var key = gmVoice() + '|' + text;
     if (gmCache[key]) { cb(gmCache[key]); return; }
     if (gmWait[key]) { gmWait[key].push(cb); return; }
     gmWait[key] = [cb];
-    var voice = gmVoice();
+    var voice = gmVoice(), vk = vcHash(voice + '|' + text);
+    vcGet(vk, function (src) {
+      if (src) { var r0 = { src: src, saved: true, local: true }; gmCache[key] = r0; var l0 = gmWait[key]; delete gmWait[key]; each(l0, function (f) { f(r0); }); return; }
+      fromNet();
+    });
+    function fromNet() {
     gmSend(text, voice, 0, function (data, err) {
       // 小分けで返ってきたら、残りを順に受け取ってつなげる
       if (data && data.ok && data.a && data.n > 1) {
@@ -3180,7 +3253,9 @@
       }
       fin(data, err);
     });
+    }
     function fin(data, err) {
+      if (data && data.ok && data.a) vcPut(vk, data.a);
       var r = data && data.ok && data.a ? { src: gmSrc(data.a), saved: !!data.saved } : { err: (data && data.error) || err || (data && data.ok ? 'oldscript' : 'error') };
       if (r.src) gmCache[key] = r;
       var l = gmWait[key]; delete gmWait[key];
@@ -3259,7 +3334,7 @@
         if (gen !== playGen || !rdSpeaking) return;
         if (r.err) { gmFail(r.err, st0); return; }
         // どちらの声かを表示：ドライブに保存してあった声／今 AI が作った声
-        gmNote(r.saved ? '💾 保存してある声で再生中（無料枠を使っていません）' : '✨ AI が今作った声で再生中（ドライブに保存しました）');
+        gmNote(r.local ? '📱 この端末に保存してある声で再生中' : r.saved ? '💾 ドライブに保存してある声で再生中（無料枠を使っていません）' : '✨ AI が今作った声で再生中（ドライブに保存しました）');
         if (c + 1 < chunks.length) gmFetch(chunks[c + 1].text, function () {});
         var done = false, au = gmAudio;
         au.onended = function () { if (done) return; done = true; step(c + 1); };
