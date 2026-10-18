@@ -165,6 +165,10 @@
   .fl-s { border-radius: 5px; -webkit-tap-highlight-color: rgba(232,180,76,.3); cursor: pointer; }
   .fl-s.now { background: #ffe39a; box-shadow: 0 0 0 2px #ffe39a; }
   .fl-s.done { color: #6b7780; }
+  #fl-text .w { border-radius: 4px; cursor: pointer; }
+  #fl-text .w:active { background: #d9ecf5; }
+  #fl-text .w.idm { border-bottom: 2px solid #e8830c; }
+  #pop-play { margin-top: 10px; }
   .rd-say { float: left; padding: 4px 8px; margin: 0 8px 0 0; background: #f1f4f6; font-size: 15px; }
   .rd-en { font-size: 20px; line-height: 1.7; color: #1f2a30; font-family: Georgia, "Times New Roman", serif; }
   .rd-en .w { cursor: pointer; border-radius: 4px; }
@@ -474,6 +478,7 @@
       <button id="pop-save" class="primary" type="button">＋ メモ単語帳に保存</button>
       <span id="pop-msg" class="note"></span>
     </div>
+    <button id="pop-play" class="hidden" type="button">▶ この文から再生</button>
   </div>
 </div>
 <div id="gas-dlg" class="hidden">
@@ -696,7 +701,7 @@
             <select id="fl-voice" title="声"></select>
             <button id="fl-small" type="button">A−</button><button id="fl-big" type="button">A＋</button>
             <button id="fl-close" type="button">✕ 閉じる</button>
-            <p class="note" id="fl-note">文をタップすると、そこから最後まで続けて読みます。</p>
+            <p class="note" id="fl-note">単語をタップすると止まって意味が出ます（単語帳にも保存できます）。続きは「▶ 続きから」。</p>
           </div>
           <div id="fl-text"></div>
         </div>
@@ -3126,7 +3131,7 @@
   var SILENT = 'data:audio/wav;base64,UklGRuwAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YcgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
   function useGemini() { return /^gm:/.test(rdVoiceName) && !!gasUrl && !gmOff; }
   function gmVoice() { return /^gm:/.test(rdVoiceName) ? rdVoiceName.slice(3) : 'Kore'; }
-  function gmNote(t) { $('fl-note').textContent = t || '文をタップすると、そこから最後まで続けて読みます。'; $('rd-status').textContent = t || ''; }
+  function gmNote(t) { $('fl-note').textContent = t || '単語をタップすると止まって意味が出ます（単語帳にも保存できます）。続きは「▶ 続きから」。'; $('rd-status').textContent = t || ''; }
   function gmSrc(b64) {
     try {
       if (window.Blob && window.URL && URL.createObjectURL && window.Uint8Array) {
@@ -3231,8 +3236,7 @@
       each(list, function () {
         if (k >= rdSents.length) return;
         var idx = k++, sp = document.createElement('span');
-        sp.className = 'fl-s'; sp.textContent = rdSents[idx].text;
-        on(sp, 'click', function () { playFrom(idx); });
+        sp.className = 'fl-s'; flFill(sp, idx);
         p.appendChild(sp); p.appendChild(document.createTextNode(' '));
         flEls.push(sp);
       });
@@ -3241,7 +3245,7 @@
     // 念のため：数が合わなかった文は最後に足す
     if (k < rdSents.length) {
       var p2 = document.createElement('p');
-      for (; k < rdSents.length; k++) (function (idx) { var sp = document.createElement('span'); sp.className = 'fl-s'; sp.textContent = rdSents[idx].text; on(sp, 'click', function () { playFrom(idx); }); p2.appendChild(sp); p2.appendChild(document.createTextNode(' ')); flEls.push(sp); })(k);
+      for (; k < rdSents.length; k++) (function (idx) { var sp = document.createElement('span'); sp.className = 'fl-s'; flFill(sp, idx); p2.appendChild(sp); p2.appendChild(document.createTextNode(' ')); flEls.push(sp); })(k);
       box.appendChild(p2);
     }
     box.style.fontSize = flSize + 'px';
@@ -3249,6 +3253,29 @@
     fillVoices();
     flOpen = true; $('rd-flow').className = ''; $('rd-flow').scrollTop = 0;
     var start = rdIdx > 0 ? rdIdx : 0; rdIdx = start; markSentence(start > 0 ? start : -1); rdIdx = start;
+    playLabel();
+  }
+  // 文を単語に分けて並べる（単語をタップ：止めて辞書。単語以外：再生中なら止める／止まっていればその文から）
+  var flPlayAt = -1;
+  function flFill(sp, si) {
+    var st = rdSents[si], idAt = {}, pos = 0;
+    each(st.idioms || [], function (f) { for (var q = f.s; q <= f.e; q++) idAt[q] = 1; });
+    each(st.toks, function (t, ti) {
+      if (t.s > pos) sp.appendChild(document.createTextNode(st.text.slice(pos, t.s)));
+      var w = document.createElement('span'); w.className = 'w' + (idAt[ti] ? ' idm' : ''); w.textContent = t.w;
+      on(w, 'click', function (e) { e.stopPropagation(); flWordTap(si, ti); });
+      sp.appendChild(w); pos = t.e;
+    });
+    if (pos < st.text.length) sp.appendChild(document.createTextNode(st.text.slice(pos)));
+    on(sp, 'click', function () { if (rdSpeaking) stopSpeak(); else playFrom(si); });
+  }
+  function flWordTap(si, ti) {
+    var was = rdSpeaking;
+    stopSpeak();
+    flPlayAt = was && rdIdx >= 0 ? rdIdx : si;
+    wordTap(si, ti);
+    $('pop-play').textContent = was ? '▶ 続きから再生' : '▶ この文から再生';
+    $('pop-play').className = '';
     playLabel();
   }
   function closeFlow() { stopSpeak(); flOpen = false; $('rd-flow').className = 'hidden'; markSentence(-1); }
@@ -3479,6 +3506,7 @@
   var popItem = null;   // {w, m, ex, si}
   function wordTap(si, ti) {
     var s = rdSents[si], t = s.toks[ti];
+    $('pop-play').className = 'hidden';
     try { speechSynthesis.cancel(); } catch (e) {} rdSpeaking = false; $('rd-play').textContent = '▶ 再生';
     speak(t.w);
     $('pop-head').textContent = t.w;
@@ -3620,6 +3648,7 @@
   on($('rd-new'), 'click', function () { $('rd-in').value = ''; rdShowInput(); });
   on($('rd-play'), 'click', function () { if (rdSpeaking) stopSpeak(); else playFrom(rdIdx >= 0 ? rdIdx : 0); });
   on($('rd-flowbtn'), 'click', openFlow);
+  on($('pop-play'), 'click', function () { $('word-pop').className = 'hidden'; if (flOpen && flPlayAt >= 0) playFrom(flPlayAt); });
   on($('fl-close'), 'click', closeFlow);
   on($('fl-play'), 'click', function () { if (rdSpeaking) stopSpeak(); else playFrom(rdIdx > 0 ? rdIdx : 0); });
   on($('fl-rate'), 'change', function () {
