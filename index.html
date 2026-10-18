@@ -457,6 +457,7 @@
         <button id="rd-play" class="primary" type="button">▶ 再生</button>
         <button id="rd-cont" type="button" title="🔊 で読んだあと、次の文も続けて読む">🔁 続けて：オフ</button>
         <button id="rd-flowbtn" type="button">📖 通しで聞く</button>
+        <button id="rd-make" class="hidden" type="button" title="この英文の AI の声を先に作ってドライブに保存しておく">🎙 AIの声を作って保存</button>
         <select id="rd-rate" title="速さ">
           <option value="0.6">ゆっくり</option><option value="0.75">やや遅く</option><option value="0.9">ふつう</option><option value="1">少し速く</option><option value="1.15">速く</option>
         </select>
@@ -509,7 +510,8 @@
     ② 上のコードを Apps Script に貼り替えて保存<br>
     ③ Apps Script の左の ⚙「プロジェクトの設定」→ 下の「スクリプト プロパティを追加」→ プロパティ <b>GEMINI_KEY</b>、値に鍵 →「保存」<br>
     ④「デプロイ」→「デプロイを管理」→ ✏ → バージョン「新バージョン」→「デプロイ」（アドレスは変わりません）<br>
-    ⑤ 下の「AIの声をテスト」</p>
+    ⑤ 下の「AIの声をテスト」（許可を聞かれたら「詳細」→「安全ではないページに移動」→「許可」）<br>
+    作った声は、ご自分の Google ドライブの「英文リーダーの声（AI）」フォルダに保存され、どの端末からでも回数を使わずに聞き直せます。</p>
     <div class="row"><button id="gm-test" type="button">AIの声をテスト</button></div>
     <p id="gm-msg" class="note"></p>
   </div>
@@ -3189,16 +3191,20 @@
     while (k < rdSents.length) {
       var a = k, len = 0;
       while (k < rdSents.length && (k === a || (len + rdSents[k].text.length <= 600 && k - a < 8))) { len += rdSents[k].text.length + 1; k++; }
-      if (k - 1 >= from) out.push({ a: Math.max(a, from), b: k - 1 });
+      if (k - 1 >= from) out.push({ a: a, b: k - 1, from: Math.max(a, from) });
     }
-    each(out, function (c) { var t = []; for (var q = c.a; q <= c.b; q++) t.push(rdSents[q].text); c.text = t.join(' '); });
+    each(out, function (c) {
+      var t = [], skip = 0;
+      for (var q = c.a; q <= c.b; q++) { t.push(rdSents[q].text); if (q < c.from) skip += rdSents[q].text.length + 1; }
+      c.text = t.join(' '); c.skip = skip / c.text.length;   // 途中の文から：音声のこの割合のところから再生
+    });
     return out;
   }
   function gmUnlock() {   // iPhone では、タップした瞬間に一度鳴らしておかないと後から再生できない
     if (!gmAudio) { gmAudio = new Audio(); gmAudio.preload = 'auto'; }
     try { gmAudio.src = SILENT; var pr = gmAudio.play(); if (pr && pr['catch']) pr['catch'](function () {}); } catch (e) {}
   }
-  function gmStop() { if (gmAudio) { gmAudio.onended = null; gmAudio.ontimeupdate = null; gmAudio.onerror = null; try { gmAudio.pause(); } catch (e) {} } }
+  function gmStop() { if (gmAudio) { gmAudio.onended = null; gmAudio.ontimeupdate = null; gmAudio.onerror = null; gmAudio.onloadedmetadata = null; gmAudio.muted = false; try { gmAudio.pause(); } catch (e) {} } }
   function gmRate() { if (gmAudio) { try { gmAudio.defaultPlaybackRate = rdRate / 0.9; gmAudio.playbackRate = rdRate / 0.9; } catch (e) {} } }
   function gmErrText(e) {
     e = String(e || '');
@@ -3221,38 +3227,74 @@
     devicePlay(at);
   }
   function gmPlayFrom(i, one) {
-    var gen = ++playGen, chunks = one ? [{ a: i, b: i, text: rdSents[i].text }] : gmChunks(i);
+    var gen = ++playGen, chunks = one ? [{ a: i, b: i, from: i, skip: 0, text: rdSents[i].text }] : gmChunks(i);
     gmOne = !!one;
     gmUnlock(); gmNote('');
     var step = function (c) {
       if (gen !== playGen || !rdSpeaking) return;
       if (c >= chunks.length) { rdIdx = 0; stopSpeak(); if (flOpen) markSentence(-1); playLabel(); return; }
-      var ch = chunks[c];
-      markSentence(ch.a);
+      var ch = chunks[c], st0 = c === 0 ? ch.from : ch.a;
+      markSentence(st0);
       var ready = !!gmCache[gmVoice() + '|' + ch.text];
       if (!ready) gmNote('AIの声を準備しています…');
       gmFetch(ch.text, function (r) {
         if (gen !== playGen || !rdSpeaking) return;
-        if (r.err) { gmFail(r.err, ch.a); return; }
+        if (r.err) { gmFail(r.err, st0); return; }
         gmNote('');
         if (c + 1 < chunks.length) gmFetch(chunks[c + 1].text, function () {});
         var done = false, au = gmAudio;
         au.onended = function () { if (done) return; done = true; step(c + 1); };
-        au.onerror = function () { if (done) return; done = true; gmFail('play', ch.a); };
+        au.onerror = function () { if (done) return; done = true; gmFail('play', st0); };
+        var skip = c === 0 ? ch.skip || 0 : 0, seeked = !skip;
+        // 途中の文から：音声を読み込んだら、その位置へ（ずらすまでは音を消しておく）
+        var seekNow = function () { var d = au.duration; if (seeked || !d || !isFinite(d)) return; seeked = true; try { au.currentTime = Math.max(0, d * skip - 0.35); } catch (e) {} au.muted = false; };
+        au.muted = !!skip;
+        au.onloadedmetadata = seekNow;
         // まとまりの中のどの文を読んでいるか（文字数の割合で見積もる）
         au.ontimeupdate = function () {
           var d = au.duration; if (!d || !isFinite(d)) return;
+          if (!seeked) { seekNow(); return; }
           var f = au.currentTime / d, tot = ch.text.length, acc = 0;
-          for (var q2 = ch.a; q2 <= ch.b; q2++) { acc += rdSents[q2].text.length + 1; if (acc / tot >= f) { if (rdIdx !== q2) markSentence(q2); break; } }
+          for (var q2 = ch.a; q2 <= ch.b; q2++) { acc += rdSents[q2].text.length + 1; if (acc / tot >= f) { q2 = Math.max(q2, st0); if (rdIdx !== q2) markSentence(q2); break; } }
         };
         au.src = r.src; gmRate();
         try { au.load(); } catch (e) {}
         gmRate();
         var pr = au.play();
-        if (pr && pr['catch']) pr['catch'](function (e) { if (done || gen !== playGen) return; done = true; gmFail(e && e.name === 'NotAllowedError' ? 'play' : (e && e.name) || 'play', ch.a); });
+        if (pr && pr['catch']) pr['catch'](function (e) { if (done || gen !== playGen) return; done = true; gmFail(e && e.name === 'NotAllowedError' ? 'play' : (e && e.name) || 'play', st0); });
       });
     };
     step(0);
+  }
+
+  /* ---- この英文の AI の声を先に全部作って保存しておく（1分3回・1日の回数の範囲で） ---- */
+  var mkRun = 0;
+  function makeButton() {
+    $('rd-make').className = gasUrl && /^gm:/.test(rdVoiceName) ? '' : 'hidden';
+    if (!mkRun) $('rd-make').textContent = '🎙 AIの声を作って保存';
+  }
+  function makeAll() {
+    if (mkRun) { mkRun = 0; makeButton(); $('rd-status').textContent = '作るのを止めました。もう一度押すと続きから作ります。'; return; }
+    var run = mkRun = now(), chunks = gmChunks(0), i = 0, made = 0, had = 0, voice = gmVoice();
+    $('rd-make').textContent = '■ 作るのを止める';
+    var show = function (t) { if (mkRun === run || !mkRun) $('rd-status').textContent = t; };
+    var next = function (wait) {
+      if (mkRun !== run) return;
+      if (i >= chunks.length) { mkRun = 0; makeButton(); show('この英文の AI の声（' + voice + '）をすべて保存しました（今回作った ' + made + ' ・前からあった ' + had + '）。どの端末でも回数を使わずに聞けます。'); return; }
+      setTimeout(function () {
+        if (mkRun !== run) return;
+        show('AIの声を作っています… ' + i + ' / ' + chunks.length);
+        gasCall({ tts: chunks[i].text, v: voice, pre: '1' }, function (data, err) {
+          if (mkRun !== run) return;
+          if (data && data.ok) { if (data.made) { made++; i++; next(21000); } else { had++; i++; next(0); } return; }
+          var e = (data && data.error) || err || 'error';
+          if (/^429 busy/.test(e)) { show('混んでいるので少し待っています… ' + i + ' / ' + chunks.length); next(30000); return; }
+          mkRun = 0; makeButton();
+          show(/^429/.test(e) ? '今日の無料の回数はここまでです（' + i + ' / ' + chunks.length + ' できました）。明日もう一度押すと続きから作ります。' : 'AIの声を作れませんでした（' + gmErrText(e) + '）。');
+        });
+      }, wait);
+    };
+    next(0);
   }
 
   /* ---- 通しで聞く（全画面・文をタップするとそこから最後まで） ---- */
@@ -3470,6 +3512,7 @@
   }
   function openRdDoc(id, isNew) {
     var d = rdDocs[id]; if (!d) return;
+    if (rdCur && rdCur.id !== id) mkRun = 0;
     stopSpeak();
     rdCur = { id: id, d: d };
     $('rd-input').className = 'hidden'; $('rd-view').className = '';
@@ -3544,7 +3587,7 @@
     });
     $('rd-trbtn').textContent = rdShowTr ? '訳を隠す' : '訳を表示';
     $('rd-rate').value = String(rdRate);
-    fillVoiceSel($('rd-voice'));
+    fillVoiceSel($('rd-voice')); makeButton();
   }
   var rdCont = lsGet('memo_rd_cont') === '1';
   function contLabel() { $('rd-cont').textContent = rdCont ? '🔁 続けて：オン' : '🔁 続けて：オフ'; $('rd-cont').className = rdCont ? 'primary' : ''; }
@@ -3712,6 +3755,7 @@
   on($('rd-new'), 'click', function () { $('rd-in').value = ''; rdShowInput(); });
   on($('rd-play'), 'click', function () { if (rdSpeaking) stopSpeak(); else playFrom(rdIdx >= 0 ? rdIdx : 0); });
   on($('rd-flowbtn'), 'click', openFlow);
+  on($('rd-make'), 'click', makeAll);
   on($('rd-cont'), 'click', function () { rdCont = !rdCont; lsSet('memo_rd_cont', rdCont ? '1' : '0'); contLabel(); });
   contLabel();
   on($('pop-play'), 'click', function () { $('word-pop').className = 'hidden'; if (flOpen && flPlayAt >= 0) playFrom(flPlayAt); });
@@ -3725,7 +3769,7 @@
   });
   function voiceChanged(sel) {
     rdVoiceName = sel.value; lsSet('memo_rd_voice', rdVoiceName); gmOff = false; gmNote('');
-    $('fl-voice').value = rdVoiceName; $('rd-voice').value = rdVoiceName;
+    $('fl-voice').value = rdVoiceName; $('rd-voice').value = rdVoiceName; makeButton();
     if (rdSpeaking) { playFrom(rdIdx >= 0 ? rdIdx : 0); return; }
     if (useGemini()) gmSample(); else speak('Hello. This is the voice for reading.');
   }
@@ -3751,14 +3795,14 @@
 
   // 翻訳の設定
   var GAS_CODE = [
-    "// 英文リーダー用：英語を日本語に訳す ＋ AIの声（Gemini）",
+    "// 英文リーダー用：英語を日本語に訳す ＋ AIの声（Gemini）＋ 作った声をドライブに保存して使い回す",
     "// AIの声を使うときは「プロジェクトの設定」→「スクリプト プロパティ」に GEMINI_KEY（Google AI Studio の鍵）を保存",
     "function doGet(e) {",
     "  var p = e.parameter, out;",
     "  try {",
     "    var sl = p.sl || \"en\", tl = p.tl || \"ja\";",
     "    if (p.tts) {",
-    "      out = tts(String(p.tts).slice(0, 1500), String(p.v || \"Kore\").replace(/[^A-Za-z]/g, \"\"));",
+    "      out = ttsSaved(String(p.tts).slice(0, 1500), String(p.v || \"Kore\").replace(/[^A-Za-z]/g, \"\"), p.pre === \"1\");",
     "    } else if (p.qs) {",
     "      var list = JSON.parse(p.qs), ts = [];",
     "      for (var i = 0; i < list.length && i < 30; i++) ts.push(list[i] ? LanguageApp.translate(String(list[i]).slice(0, 4000), sl, tl) : \"\");",
@@ -3772,6 +3816,26 @@
     "    return ContentService.createTextOutput(p.callback + \"(\" + json + \")\").setMimeType(ContentService.MimeType.JAVASCRIPT);",
     "  }",
     "  return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);",
+    "}",
+    "// 同じ文・同じ声の音声がドライブにあれば、それを返す（無料枠を使わない）。なければ作って保存する",
+    "// pre=1 のときは音声を返さず、「あった／作った」だけを返す（先に作っておくとき用）",
+    "function ttsSaved(text, voice, pre) {",
+    "  var name = Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, voice + \"|\" + text, Utilities.Charset.UTF_8)).replace(/=+$/, \"\") + \".wav\";",
+    "  var folder = voiceFolder(), it = folder.getFilesByName(name);",
+    "  if (it.hasNext()) return pre ? { ok: true, has: true } : { ok: true, a: Utilities.base64Encode(it.next().getBlob().getBytes()), saved: true };",
+    "  var r = tts(text, voice);",
+    "  if (r.ok) {",
+    "    folder.createFile(Utilities.newBlob(Utilities.base64Decode(r.a), \"audio/wav\", name));",
+    "    if (pre) return { ok: true, made: true, m: r.m };",
+    "  }",
+    "  return r;",
+    "}",
+    "function voiceFolder() {",
+    "  var props = PropertiesService.getScriptProperties(), id = props.getProperty(\"VOICE_FOLDER\");",
+    "  if (id) { try { return DriveApp.getFolderById(id); } catch (e) {} }",
+    "  var f = DriveApp.createFolder(\"英文リーダーの声（AI）\");",
+    "  props.setProperty(\"VOICE_FOLDER\", f.getId());",
+    "  return f;",
     "}",
     "// 文章を Gemini で音声（WAV）にして返す。回数制限にかかったら別のモデルを試す",
     "// 1日の回数を使い切ったモデルはしばらく飛ばす（むだな失敗で回数を減らさないため）",
