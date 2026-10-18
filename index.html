@@ -3165,7 +3165,7 @@
     if (gmWait[key]) { gmWait[key].push(cb); return; }
     gmWait[key] = [cb];
     gmSend(text, gmVoice(), 0, function (data, err) {
-      var r = data && data.ok && data.a ? { src: gmSrc(data.a) } : { err: (data && data.error) || err || (data && data.ok ? 'oldscript' : 'error') };
+      var r = data && data.ok && data.a ? { src: gmSrc(data.a), saved: !!data.saved } : { err: (data && data.error) || err || (data && data.ok ? 'oldscript' : 'error') };
       if (r.src) gmCache[key] = r;
       var l = gmWait[key]; delete gmWait[key];
       each(l, function (f) { f(r); });
@@ -3241,7 +3241,8 @@
       gmFetch(ch.text, function (r) {
         if (gen !== playGen || !rdSpeaking) return;
         if (r.err) { gmFail(r.err, st0); return; }
-        gmNote('');
+        // どちらの声かを表示：ドライブに保存してあった声／今 AI が作った声
+        gmNote(r.saved ? '💾 保存してある声で再生中（無料枠を使っていません）' : '✨ AI が今作った声で再生中（ドライブに保存しました）');
         if (c + 1 < chunks.length) gmFetch(chunks[c + 1].text, function () {});
         var done = false, au = gmAudio;
         au.onended = function () { if (done) return; done = true; step(c + 1); };
