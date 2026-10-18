@@ -3232,21 +3232,22 @@
       for (var x in idx) { total += idx[x][1]; keys.push(x); }
       keys.sort(function (p, q) { return idx[p][0] - idx[q][0]; });
       while (total > VC_MAX && keys.length > 1) { var old = keys.shift(); if (old === k) continue; total -= idx[old][1]; delete idx[old]; vcDel(old); }
+      lsSet(VC_IDX, JSON.stringify(idx));   // 目録はすぐ書く（続けて保存しても取りこぼさない）
       if (window.caches && window.Blob && window.Uint8Array && window.Response) {
         var bin = atob(b64), u = new Uint8Array(bin.length);
         for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
         caches.open(VC_NAME).then(function (c) { return c.put(vcUrl(k), new Response(new Blob([u], { type: 'audio/wav' }))); })
-          .then(function () { lsSet(VC_IDX, JSON.stringify(idx)); }, function () {});
+          .then(function () {}, function () {});
         return;
       }
       if (!window.indexedDB) return;
       vcIdb(function (db) {
         if (!db) return;
-        try { var tx = db.transaction('a', 'readwrite'); tx.objectStore('a').put(b64, k); tx.oncomplete = function () { lsSet(VC_IDX, JSON.stringify(idx)); }; } catch (e) {}
+        try { var tx = db.transaction('a', 'readwrite'); tx.objectStore('a').put(b64, k);  } catch (e) {}
       });
     } catch (e) {}
   }
-  function gmFetch(text, cb) {
+  function gmFetch(text, cb, quick) {
     var key = gmVoice() + '|' + text;
     if (gmCache[key]) { cb(gmCache[key]); return; }
     if (gmWait[key]) { gmWait[key].push(cb); return; }
@@ -3257,7 +3258,7 @@
       fromNet();
     });
     function fromNet() {
-    gmSend(text, voice, 0, function (data, err) {
+    gmSend(text, voice, 0, function (data, err) {   // quick：まとめて取り込むとき（間隔は呼ぶ側であける）
       // 小分けで返ってきたら、残りを順に受け取ってつなげる
       if (data && data.ok && data.a && data.n > 1) {
         var parts = [data.a], k = 1, first = data;
@@ -3271,21 +3272,21 @@
         more(); return;
       }
       fin(data, err);
-    });
+    }, quick);
     }
     function fin(data, err) {
       if (data && data.ok && data.a) vcPut(vk, data.a);
       var r = data && data.ok && data.a ? { src: gmSrc(data.a), saved: !!data.saved } : { err: (data && data.error) || err || (data && data.ok ? 'oldscript' : 'error') };
-      if (r.src) gmCache[key] = r;
+      if (r.src) gmCache[key] = { src: r.src, saved: true };   // 次からは「保存してある声」
       var l = gmWait[key]; delete gmWait[key];
       each(l, function (f) { f(r); });
     }
   }
   var gmTimes = [];   // 最近頼んだ時刻（1分に3回まで）
-  function gmSend(text, voice, tries, cb) {
+  function gmSend(text, voice, tries, cb, quick) {
     var t = now();
     while (gmTimes.length && gmTimes[0] < t - 61000) gmTimes.shift();
-    var wait = gmTimes.length >= 3 ? gmTimes[gmTimes.length - 3] + 61000 - t : 0;
+    var wait = !quick && gmTimes.length >= 3 ? gmTimes[gmTimes.length - 3] + 61000 - t : 0;
     if (tries) wait = Math.max(wait, 20000);
     gmTimes.push(t + wait);
     setTimeout(function () {
@@ -3393,18 +3394,19 @@
     var show = function (t) { if (mkRun === run || !mkRun) $('rd-status').textContent = t; };
     var next = function (wait) {
       if (mkRun !== run) return;
-      if (i >= chunks.length) { mkRun = 0; makeButton(); show('この英文の AI の声（' + voice + '）をすべて保存しました（今回作った ' + made + ' ・前からあった ' + had + '）。どの端末でも回数を使わずに聞けます。'); return; }
+      if (i >= chunks.length) { mkRun = 0; makeButton(); show('この英文の AI の声（' + voice + '）をすべて保存しました（今回作った ' + made + ' ・前からあった ' + had + '）。この端末にも入れたので、すぐ再生できます。ほかの端末でも回数を使わずに聞けます。'); return; }
       setTimeout(function () {
         if (mkRun !== run) return;
-        show('AIの声を作っています… ' + i + ' / ' + chunks.length);
-        gasCall({ tts: chunks[i].text, v: voice, pre: '1' }, function (data, err) {
+        show('AIの声を作って、この端末に入れています… ' + i + ' / ' + chunks.length);
+        var known = !!gmCache[voice + '|' + chunks[i].text];
+        gmFetch(chunks[i].text, function (r) {
           if (mkRun !== run) return;
-          if (data && data.ok) { netTry = 0; if (data.made) { made++; i++; next(21000); } else { had++; i++; next(0); } return; }
-          var e = (data && data.error) || err || 'error';
+          if (!r.err) { netTry = 0; if (known || r.local || r.saved) { had++; i++; next(0); } else { made++; i++; next(21000); } return; }
+          var e = r.err;
           if ((/^(429 busy|5\d\d)/.test(e) || e === 'net' || e === 'timeout') && (netTry = (netTry || 0) + 1) <= 4) { show('混んでいるので少し待っています… ' + i + ' / ' + chunks.length); next(30000); return; }
           mkRun = 0; makeButton();
           show(netTry > 4 ? '混んでいる状態が続いたので止めました（' + i + ' / ' + chunks.length + ' できました）。今日の回数を使い切ったか、Google が混んでいます。しばらくしてから（または明日）もう一度押すと続きから作ります。' : /^429/.test(e) ? '今日の無料の回数はここまでです（' + i + ' / ' + chunks.length + ' できました）。明日もう一度押すと続きから作ります。' : 'AIの声を作れませんでした（' + gmErrText(e) + '）。');
-        });
+        }, true);
       }, wait);
     };
     next(0);
