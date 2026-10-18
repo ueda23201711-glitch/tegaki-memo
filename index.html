@@ -3154,6 +3154,7 @@
   function rdLoad() {
     var text = $('rd-in').value.replace(/^\s+|\s+$/g, '');
     if (!text) { alert('英文を入力するか、貼り付けてください。'); return; }
+    $('rd-in').value = '';
     if (text.length > 20000) text = text.slice(0, 20000);
     // 同じ英文が履歴にあればそれを開く
     var ids = rdIds();
@@ -3280,7 +3281,7 @@
       $('pop-chips').innerHTML = '';
       if (!list.length) {
         $('pop-mean').textContent = '辞書に見つかりませんでした。';
-        if (gasUrl) translateOne(t.w, function (j) { if (j) { $('pop-mean').textContent = '（翻訳）' + j; popItem = { w: t.w.toLowerCase(), m: j, si: si }; $('pop-save').disabled = false; } });
+        if (gasUrl) translateOne(t.w, function (j) { if (j) { $('pop-mean').textContent = '（翻訳）' + j; popItem = { w: t.w.toLowerCase(), m: j, si: si, a: ti, b: ti }; $('pop-save').disabled = false; } });
         return;
       }
       var pick = function (k) {
@@ -3288,7 +3289,7 @@
         $('pop-head').textContent = r.head;
         $('pop-sub').textContent = r.head !== t.l ? t.w + ' → ' + r.head : '';
         $('pop-mean').textContent = prettyMean(r.mean);
-        popItem = { w: r.head, m: cleanMean(r.mean, 70), si: si };
+        popItem = { w: r.head, m: cleanMean(r.mean, 70), si: si, a: ti, b: ti };
         $('pop-save').disabled = false; $('pop-msg').textContent = '';
         each($('pop-chips').childNodes, function (b2, i2) { b2.className = i2 === k ? 'on' : ''; });
       };
@@ -3315,7 +3316,7 @@
     $('pop-mean').textContent = p[2] ? p[1] : prettyMean(p[1]);
     $('pop-idiom').innerHTML = '';
     $('pop-msg').textContent = '';
-    popItem = { w: p[0], m: p[2] ? p[1] : cleanMean(p[1], 70), si: si };
+    popItem = { w: p[0], m: p[2] ? p[1] : cleanMean(p[1], 70), si: si, a: f.s, b: f.e };
     $('pop-save').disabled = false;
     $('word-pop').className = '';
   }
@@ -3324,9 +3325,43 @@
   on($('word-pop'), 'click', function (e) { if (e.target === $('word-pop')) $('word-pop').className = 'hidden'; });
 
   /* ---- メモ単語帳に保存（キクタンと同じ形） ---- */
+  // 例文は、保存する語を含むところを7〜8語くらいに短くする（区切り：, ; : などの句読点）
+  var EX_MAX = 8;
+  function shortExample(si, a, b) {
+    var s = rdSents[si]; if (!s || !s.toks.length) return '';
+    var toks = s.toks, n = toks.length;
+    if (a === undefined) { a = 0; b = 0; }
+    if (n <= EX_MAX + 2) return s.text;
+    // 句読点で区切った「かたまり」のうち、保存する語を含むもの
+    var cs = a, ce = b;
+    var cut = function (i) { return /[,;:—–()"“”]/.test(s.text.slice(toks[i].e, toks[i + 1].s)); };
+    while (cs > 0 && !cut(cs - 1)) cs--;
+    while (ce < n - 1 && !cut(ce)) ce++;
+    var st = cs, en = ce;
+    if (en - st + 1 > EX_MAX + 2) {
+      var need = EX_MAX - (b - a + 1);
+      st = Math.max(cs, a - Math.floor(need / 2));
+      en = Math.min(ce, st + EX_MAX - 1);
+      if (en < b) en = b;
+      st = Math.max(cs, Math.min(st, en - EX_MAX + 1));
+    }
+    var out = s.text.slice(toks[st].s, toks[en].e);
+    if (en === n - 1) out = s.text.slice(toks[st].s).replace(/\s+$/, '');   // 文の終わりなら句点も残す
+    // 文の途中で切ったところは「…」で示す
+    if (st > 0) out = '… ' + out;
+    if (en < n - 1) out = out + ' …';
+    return out;
+  }
   on($('pop-save'), 'click', function () {
     if (!popItem || !KEY) return;
-    var it = popItem, sent = rdSents[it.si] ? rdSents[it.si].text : '', tr = rdCur && rdCur.d.tr ? rdCur.d.tr[it.si] : '';
+    var it0 = popItem, full = rdSents[it0.si] ? rdSents[it0.si].text : '';
+    var ex = shortExample(it0.si, it0.a, it0.b);
+    if (ex && ex !== full && gasUrl) {
+      $('pop-save').disabled = true; $('pop-msg').textContent = '例文の訳を作成中…';
+      translateOne(ex, function (j) { saveVocab(it0, ex, j || ''); });
+    } else saveVocab(it0, ex || full, ex === full && rdCur && rdCur.d.tr ? rdCur.d.tr[it0.si] : '');
+  });
+  function saveVocab(it, sent, tr) {
     $('pop-save').disabled = true; $('pop-msg').textContent = '保存中…';
     api('GET', '/memovocab/words', undefined, function (err, words) {
       if (err) { $('pop-msg').textContent = '保存できませんでした（' + errText(err) + '）'; $('pop-save').disabled = false; return; }
@@ -3347,7 +3382,7 @@
         $('pop-msg').appendChild(document.createTextNode('メモ単語帳に保存しました（No.' + n + '）。'));
       });
     });
-  });
+  }
 
   /* ---- 操作 ---- */
   on($('btn-reader'), 'click', function () { openReader(''); });
