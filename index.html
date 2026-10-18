@@ -3164,12 +3164,28 @@
     if (gmCache[key]) { cb(gmCache[key]); return; }
     if (gmWait[key]) { gmWait[key].push(cb); return; }
     gmWait[key] = [cb];
-    gmSend(text, gmVoice(), 0, function (data, err) {
+    var voice = gmVoice();
+    gmSend(text, voice, 0, function (data, err) {
+      // 小分けで返ってきたら、残りを順に受け取ってつなげる
+      if (data && data.ok && data.a && data.n > 1) {
+        var parts = [data.a], k = 1, first = data;
+        var more = function () {
+          if (k >= first.n) { fin({ ok: true, a: parts.join(''), saved: first.saved }, null); return; }
+          gasCall({ tts: text, v: voice, part: String(k) }, function (d2, e2) {
+            if (!d2 || !d2.ok || !d2.a) { fin(d2, e2 || 'error'); return; }
+            parts.push(d2.a); k++; more();
+          });
+        };
+        more(); return;
+      }
+      fin(data, err);
+    });
+    function fin(data, err) {
       var r = data && data.ok && data.a ? { src: gmSrc(data.a), saved: !!data.saved } : { err: (data && data.error) || err || (data && data.ok ? 'oldscript' : 'error') };
       if (r.src) gmCache[key] = r;
       var l = gmWait[key]; delete gmWait[key];
       each(l, function (f) { f(r); });
-    });
+    }
   }
   var gmTimes = [];   // 最近頼んだ時刻（1分に3回まで）
   function gmSend(text, voice, tries, cb) {
@@ -3808,7 +3824,7 @@
     "  try {",
     "    var sl = p.sl || \"en\", tl = p.tl || \"ja\";",
     "    if (p.tts) {",
-    "      out = ttsSaved(String(p.tts).slice(0, 1500), String(p.v || \"Kore\").replace(/[^A-Za-z]/g, \"\"), p.pre === \"1\");",
+    "      out = ttsSaved(String(p.tts).slice(0, 1500), String(p.v || \"Kore\").replace(/[^A-Za-z]/g, \"\"), p.pre === \"1\", Number(p.part) || 0);",
     "    } else if (p.qs) {",
     "      var list = JSON.parse(p.qs), ts = [];",
     "      for (var i = 0; i < list.length && i < 30; i++) ts.push(list[i] ? LanguageApp.translate(String(list[i]).slice(0, 4000), sl, tl) : \"\");",
@@ -3825,16 +3841,23 @@
     "}",
     "// 同じ文・同じ声の音声がドライブにあれば、それを返す（無料枠を使わない）。なければ作って保存する",
     "// pre=1 のときは音声を返さず、「あった／作った」だけを返す（先に作っておくとき用）",
-    "function ttsSaved(text, voice, pre) {",
+    "// 音声は大きいので、約40万文字ずつに分けて返す（part=0,1,2…）。n が分けた数",
+    "function ttsSaved(text, voice, pre, part) {",
     "  var name = Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, voice + \"|\" + text, Utilities.Charset.UTF_8)).replace(/=+$/, \"\") + \".wav\";",
-    "  var folder = voiceFolder(), it = folder.getFilesByName(name);",
-    "  if (it.hasNext()) return pre ? { ok: true, has: true } : { ok: true, a: Utilities.base64Encode(it.next().getBlob().getBytes()), saved: true };",
-    "  var r = tts(text, voice);",
-    "  if (r.ok) {",
-    "    folder.createFile(Utilities.newBlob(Utilities.base64Decode(r.a), \"audio/wav\", name));",
+    "  var folder = voiceFolder(), it = folder.getFilesByName(name), bytes, saved = false;",
+    "  if (it.hasNext()) {",
+    "    if (pre) return { ok: true, has: true };",
+    "    bytes = it.next().getBlob().getBytes(); saved = true;",
+    "  } else {",
+    "    if (part > 0) return { ok: false, error: \"nofile\" };",
+    "    var r = tts(text, voice);",
+    "    if (!r.ok) return r;",
+    "    bytes = Utilities.base64Decode(r.a);",
+    "    folder.createFile(Utilities.newBlob(bytes, \"audio/wav\", name));",
     "    if (pre) return { ok: true, made: true, m: r.m };",
     "  }",
-    "  return r;",
+    "  var b64 = Utilities.base64Encode(bytes), PART = 400000, n = Math.ceil(b64.length / PART), k = Math.min(n - 1, part);",
+    "  return { ok: true, a: b64.slice(k * PART, (k + 1) * PART), n: n, k: k, saved: saved };",
     "}",
     "function voiceFolder() {",
     "  var props = PropertiesService.getScriptProperties(), id = props.getProperty(\"VOICE_FOLDER\");",
