@@ -3143,7 +3143,7 @@
     if (gmWait[key]) { gmWait[key].push(cb); return; }
     gmWait[key] = [cb];
     gasCall({ tts: text, v: gmVoice() }, function (data, err) {
-      var r = data && data.ok && data.a ? { src: gmSrc(data.a) } : { err: (data && data.error) || err || 'error' };
+      var r = data && data.ok && data.a ? { src: gmSrc(data.a) } : { err: (data && data.error) || err || (data && data.ok ? 'oldscript' : 'error') };
       if (r.src) gmCache[key] = r;
       var l = gmWait[key]; delete gmWait[key];
       each(l, function (f) { f(r); });
@@ -3168,6 +3168,7 @@
   function gmRate() { if (gmAudio) { try { gmAudio.defaultPlaybackRate = rdRate / 0.9; gmAudio.playbackRate = rdRate / 0.9; } catch (e) {} } }
   function gmErrText(e) {
     e = String(e || '');
+    if (e === 'oldscript') return 'Apps Script がまだ古いコードのままです。新しいコードを貼って保存し、「デプロイを管理」で「新バージョン」にしてください';
     if (e === 'nokey') return 'Apps Script に GEMINI_KEY が設定されていません（⚙ 設定の手順を見てください）';
     if (/^429/.test(e)) return '今日の無料の回数を使い切ったようです';
     if (e === 'nourl') return '翻訳の設定がありません';
