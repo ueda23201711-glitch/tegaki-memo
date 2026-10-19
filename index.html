@@ -3557,16 +3557,12 @@
   }
   function stepJob(j, wait) {
     if (mkJob !== j || !j.run) return;
+    if (isAz(j.voice)) { azPump(j); return; }
     var run = j.run;
     setTimeout(function () {
       if (mkJob !== j || j.run !== run) return;
       if (j.i >= j.chunks.length) {
-        var d = rdDocs[j.id];
-        if (d) { d.ai = d.ai || {}; d.ai[j.voice] = 1; rdSaveLocal(); if (KEY) { var b = {}; b['reader/' + j.id + '/ai/' + j.voice] = 1; api('PATCH', '', b, function () {}); } }
-        mkJob = null; mkRun = 0;
-        cvScan(j.id); lsSet('eibun_cv', JSON.stringify(cvRes)); cvBox();
-        mkShow(j, 'この英文の AI の声（' + j.voice + '）をすべて保存しました（AI が新しく作った ' + j.made + ' ・ドライブなどにあった ' + j.had + '）。この端末にも入れたので、すぐ再生できます。ほかの端末でも回数を使わずに聞けます。');
-        resumeNext(); makeButton(); renderIfList();
+        jobDone(j);
         return;
       }
       mkShow(j, 'AIの声をこの端末に入れています… ' + j.i + ' / ' + j.chunks.length + '（ドライブから取り込んだ ' + j.had + ' ・AI が新しく作った ' + j.made + '）');
@@ -3577,17 +3573,67 @@
         if (!r.err) { j.netTry = 0; cvAdd(j.voice, text); if (known || r.local || r.saved) { j.had++; j.i++; stepJob(j, 0); } else { j.made++; j.i++; stepJob(j, isAz(j.voice) ? 3500 : 21000); } return; }
         var e = r.err;
         if ((/^(429 busy|5\d\d)/.test(e) || e === 'net' || e === 'timeout') && (j.netTry = (j.netTry || 0) + 1) <= 4) { mkShow(j, '混んでいるので少し待っています… ' + j.i + ' / ' + j.chunks.length); stepJob(j, 30000); return; }
-        // 続けられない（回数切れなど）：順番待ちも止める
-        var msg = j.netTry > 4 ? '混んでいる状態が続いたので止めました（' + j.i + ' / ' + j.chunks.length + ' できました）。今日の回数を使い切ったか、Google が混んでいます。しばらくしてから（または明日）もう一度押すと続きから作ります。'
-          : /^429/.test(e) ? '今日の無料の回数はここまでです（' + j.i + ' / ' + j.chunks.length + ' できました）。回数は ' + gmResetText() + 'に戻るので、そのあともう一度押すと続きから作ります。' : 'AIの声を作れませんでした（' + gmErrText(e) + '）。';
-        if (mkQueue.length && /^429/.test(e)) msg += '（順番待ちだった ' + mkQueue.length + ' 件も止めました）';
-        if (/^429/.test(e)) mkQueue = [];
-        mkJob = null; mkRun = 0;
-        mkShow(j, msg);
-        if (!rdCur || rdCur.id !== j.id) { var el = $('mk-banner'); if (el) { el.className = ''; el.textContent = '🎙 「' + docTitle(j.id) + '」：' + msg; } }
-        resumeNext(); makeButton(); renderIfList();
+        jobFail(j, e);
       }, true, j.voice);
     }, wait || 0);
+  }
+  function jobDone(j) {
+    var d = rdDocs[j.id];
+    if (d) { d.ai = d.ai || {}; d.ai[j.voice] = 1; rdSaveLocal(); if (KEY) { var b = {}; b['reader/' + j.id + '/ai/' + j.voice] = 1; api('PATCH', '', b, function () {}); } }
+    mkJob = null; mkRun = 0;
+    cvScan(j.id); lsSet('eibun_cv', JSON.stringify(cvRes)); cvBox();
+    mkShow(j, 'この英文の AI の声（' + j.voice + '）をすべて保存しました（AI が新しく作った ' + j.made + ' ・ドライブなどにあった ' + j.had + '）。この端末にも入れたので、すぐ再生できます。ほかの端末でも回数を使わずに聞けます。');
+    resumeNext(); makeButton(); renderIfList();
+  }
+  function jobFail(j, e) {
+    // 続けられない（回数切れなど）：順番待ちも止める
+    var msg = j.netTry > 4 ? '混んでいる状態が続いたので止めました（' + j.i + ' / ' + j.chunks.length + ' できました）。' + (isAz(j.voice) ? 'Azure が混んでいます。' : '今日の回数を使い切ったか、Google が混んでいます。') + 'しばらくしてから（または明日）もう一度押すと続きから作ります。'
+      : /^429/.test(e) && !isAz(j.voice) ? '今日の無料の回数はここまでです（' + j.i + ' / ' + j.chunks.length + ' できました）。回数は ' + gmResetText() + 'に戻るので、そのあともう一度押すと続きから作ります。' : 'AIの声を作れませんでした（' + gmErrText(e) + '）。';
+    if (mkQueue.length && /^429/.test(e)) msg += '（順番待ちだった ' + mkQueue.length + ' 件も止めました）';
+    if (/^429/.test(e)) mkQueue = [];
+    mkJob = null; mkRun = 0;
+    mkShow(j, msg);
+    if (!rdCur || rdCur.id !== j.id) { var el = $('mk-banner'); if (el) { el.className = ''; el.textContent = '🎙 「' + docTitle(j.id) + '」：' + msg; } }
+    resumeNext(); makeButton(); renderIfList();
+  }
+  // Azure：同時に3まとまりまで。Azure に頼むものは3秒以上あけて（無料は1分20回まで）
+  var azNextAt = 0;   // Azure に次に頼んでよい時刻（英文をまたいで共通）
+  function azPump(j) {
+    if (mkJob !== j || !j.run) return;
+    var run = j.run, n = j.chunks.length;
+    if (!j.todo) { j.todo = []; for (var q = j.i; q < n; q++) j.todo.push(q); j.fly = 0; }
+    if (!j.todo.length && !j.fly) { jobDone(j); return; }
+    mkShow(j, 'AIの声をこの端末に入れています… ' + j.i + ' / ' + n + '（ドライブから取り込んだ ' + j.had + ' ・AI が新しく作った ' + j.made + '・同時に ' + j.fly + '）');
+    makeButton();
+    while (j.fly < 3 && j.todo.length) {
+      var k = j.todo[0], text = j.chunks[k];
+      var have = !!gmCache[j.voice + '|' + text] || !!vcIdx()[vcHash(j.voice + '|' + text)] || !!(cvNames && cvNames[gasName(j.voice, text)]);
+      if (!have && now() < azNextAt) break;
+      j.todo.shift(); j.fly++;
+      if (!have) azNextAt = now() + 3100;
+      (function (k, text, have) {
+        gmFetch(text, function (r) {
+          j.fly--;
+          if (mkJob !== j || j.run !== run) { j.todo.unshift(k); return; }   // 一時停止中に届いた：再開したらもう一度（端末に入っているのですぐ）
+          if (!r.err) {
+            j.netTry = 0; cvAdd(j.voice, text);
+            if (have || r.local || r.saved) j.had++; else j.made++;
+            j.i++; azPump(j); return;
+          }
+          var e = r.err;
+          j.todo.unshift(k);
+          if ((/^(429 busy|5\d\d)/.test(e) || e === 'net' || e === 'timeout') && (j.netTry = (j.netTry || 0) + 1) <= 6) {
+            azNextAt = Math.max(azNextAt, now() + 10000);
+            mkShow(j, '混んでいるので少し待っています… ' + j.i + ' / ' + n);
+            setTimeout(function () { azPump(j); }, 10000); return;
+          }
+          if (j.fly) { j.stop = e; return; }   // ほかの同時の分を待ってから止める
+          jobFail(j, e);
+        }, true, j.voice);
+      })(k, text, have);
+    }
+    if (j.stop && !j.fly) { var e2 = j.stop; j.stop = null; jobFail(j, e2); return; }
+    if (j.todo.length && j.fly < 3 && !j.stop) setTimeout(function () { azPump(j); }, Math.max(300, azNextAt - now()));
   }
   function renderIfList() { if (!rdCur) renderRdHistory(); }
   /* ---- ドライブに保存してある AI の声（声ごと）を調べる ---- */
@@ -4077,7 +4123,7 @@
       row.appendChild(del); row.appendChild(ren); row.appendChild(b); row.appendChild(sp); row.appendChild(bd);
       on(row, 'click', function () { openRdDoc(id); });
       box.appendChild(row);
-    });
+    });    mkBanner();
   }
   function rdPullHistory() {
     if (!KEY) return;
