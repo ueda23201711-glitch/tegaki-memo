@@ -571,6 +571,18 @@
     「📎 ファイル共有」で送ったファイルは、ドライブの「手書きメモ・英文リーダーの共有ファイル」フォルダに入ります（このコードが必要です）。</p>
     <div class="row"><button id="gm-test" type="button">AIの声をテスト</button></div>
     <p id="gm-msg" class="note"></p>
+    <h3 style="margin-top:18px">AIの声（Microsoft Azure・無料枠 毎月50万文字）</h3>
+    <p class="note">Windows の Edge の「Microsoft Ava Online (Natural)」などと同じ声です。「声」で「AI Ava」などを選びます。作った声は Gemini と同じくドライブに保存され、どの端末（iPad 2/3 も）でも聞けます。<br>
+    ① <b>portal.azure.com</b> を開き、Microsoft アカウントでサインインして無料アカウントを作る（本人確認でカードと電話番号の登録が必要）<br>
+    ② 上の検索で「<b>音声サービス</b>」（Speech services）を開き「＋ 作成」<br>
+    　サブスクリプション：そのまま／リソース グループ：「新規作成」で好きな名前／リージョン：<b>Japan East</b>／名前：好きな名前（英数字）／価格レベル：<b>Free F0</b> →「確認および作成」→「作成」<br>
+    ③ できたら「リソースに移動」→ 左の「キーとエンドポイント」で「<b>キー 1</b>」をコピー（「場所/地域」が japaneast であることも確認）<br>
+    ④ Apps Script の ⚙「プロジェクトの設定」→「スクリプト プロパティを追加」で 2 つ保存：<b>AZURE_KEY</b>（値：キー 1）と <b>AZURE_REGION</b>（値：japaneast）<br>
+    ⑤ 上のコードを Apps Script に貼り替えて保存 →「デプロイを管理」→ ✏ →「新バージョン」→「デプロイ」<br>
+    ⑥ 下の「Azure の声をテスト」<br>
+    価格レベルが Free F0 なら、上限を超えても請求はされず、その月はそこで止まるだけです。</p>
+    <div class="row"><button id="az-test" type="button">Azure の声をテスト（Ava）</button></div>
+    <p id="az-msg" class="note"></p>
   </div>
 </div>
 
@@ -3206,7 +3218,11 @@
 
   /* ---- AIの声（Gemini を Apps Script 経由で）。文をいくつかまとめて音声にし、先読みしておく ---- */
   var GM_VOICES = [['Kore', '女性・落ち着き'], ['Aoede', '女性・明るい'], ['Leda', '女性・やわらか'], ['Zephyr', '女性・はきはき'],
-    ['Charon', '男性・落ち着き'], ['Puck', '男性・明るい'], ['Orus', '男性・しっかり'], ['Fenrir', '男性・元気']];
+    ['Charon', '男性・落ち着き'], ['Puck', '男性・明るい'], ['Orus', '男性・しっかり'], ['Fenrir', '男性・元気'],
+    // Microsoft Azure の声（Edge の「Online (Natural)」と同じ）
+    ['Ava', '女性・自然・米', 'az'], ['Andrew', '男性・自然・米', 'az'], ['Emma', '女性・明るい・米', 'az'], ['Brian', '男性・明るい・米', 'az'],
+    ['Jenny', '女性・米', 'az'], ['Guy', '男性・米', 'az'], ['Sonia', '女性・英国', 'az'], ['Ryan', '男性・英国', 'az']];
+  function isAz(v) { for (var i = 0; i < GM_VOICES.length; i++) if (GM_VOICES[i][0] === v) return !!GM_VOICES[i][2]; return false; }
   var gmCache = {}, gmWait = {}, gmAudio = null, gmOff = false;
   var SILENT = 'data:audio/wav;base64,UklGRuwAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YcgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
   function useGemini() { return /^gm:/.test(rdVoiceName) && !!gasUrl && !gmOff; }
@@ -3331,9 +3347,9 @@
   function gmSend(text, voice, tries, cb, quick) {
     var t = now();
     while (gmTimes.length && gmTimes[0] < t - 61000) gmTimes.shift();
-    var wait = !quick && gmTimes.length >= 3 ? gmTimes[gmTimes.length - 3] + 61000 - t : 0;
-    if (tries) wait = Math.max(wait, 20000);
-    gmTimes.push(t + wait);
+    var az = isAz(voice), wait = !az && !quick && gmTimes.length >= 3 ? gmTimes[gmTimes.length - 3] + 61000 - t : 0;
+    if (tries) wait = Math.max(wait, az ? 5000 : 20000);
+    if (!az) gmTimes.push(t + wait);
     setTimeout(function () {
       gasCall({ tts: text, v: voice }, function (data, err) {
         if (((data && !data.ok && /^(429 busy|5\d\d)/.test(String(data.error || ''))) || (!data && (err === 'net' || err === 'timeout'))) && tries < 2) { gmSend(text, voice, tries + 1, cb); return; }
@@ -3376,6 +3392,11 @@
     e = String(e || '');
     if (/^nomodel/.test(e)) return 'AIの声のモデルが Google 側で使えなくなっているようです（回数切れではありません）。' + e.replace(/^nomodel\s*/, '');
     if (e === 'oldscript') return 'Apps Script がまだ古いコードのままです。新しいコードを貼って保存し、「デプロイを管理」で「新バージョン」にしてください';
+    if (e === 'noazkey') return 'Apps Script に AZURE_KEY が設定されていません（⚙ の「AIの声（Microsoft Azure）」の手順を見てください）';
+    if (e === 'azquota') return 'Azure の今月の無料分（50万文字）を使い切ったようです。来月になると戻ります。それまでは Gemini の声か端末の声を使ってください';
+    if (/^azkey/.test(e)) return 'Azure のキー（AZURE_KEY）か場所（AZURE_REGION）がまちがっているようです';
+    if (/^429 busy azure/.test(e)) return 'Azure が混んでいます。少しあとでもう一度どうぞ';
+    if (/^azure/.test(e)) return 'Azure の声を作れませんでした（' + e.slice(6, 80) + '）';
     if (e === 'nokey') return 'Apps Script に GEMINI_KEY が設定されていません（⚙ 設定の手順を見てください）';
     if (/(^|\s)5\d\d(\s|$)/.test(e)) return 'Google の AI が混み合っています。少しあとでもう一度どうぞ';
     if (/^429 busy/.test(e)) return '混んでいます（1分に3回まで）。少しあとでもう一度どうぞ';
@@ -3548,7 +3569,7 @@
       var text = j.chunks[j.i], known = !!gmCache[j.voice + '|' + text];
       gmFetch(text, function (r) {
         if (mkJob !== j || j.run !== run) return;
-        if (!r.err) { j.netTry = 0; cvAdd(j.voice, text); if (known || r.local || r.saved) { j.had++; j.i++; stepJob(j, 0); } else { j.made++; j.i++; stepJob(j, 21000); } return; }
+        if (!r.err) { j.netTry = 0; cvAdd(j.voice, text); if (known || r.local || r.saved) { j.had++; j.i++; stepJob(j, 0); } else { j.made++; j.i++; stepJob(j, isAz(j.voice) ? 3500 : 21000); } return; }
         var e = r.err;
         if ((/^(429 busy|5\d\d)/.test(e) || e === 'net' || e === 'timeout') && (j.netTry = (j.netTry || 0) + 1) <= 4) { mkShow(j, '混んでいるので少し待っています… ' + j.i + ' / ' + j.chunks.length); stepJob(j, 30000); return; }
         // 続けられない（回数切れなど）：順番待ちも止める
@@ -3954,8 +3975,9 @@
     var o0 = document.createElement('option'); o0.value = ''; o0.textContent = '声：自動（いちばん自然な声）'; sel.appendChild(o0);
     if (gasUrl) {
       var og = document.createElement('optgroup'); og.label = 'AIの声（Gemini・ネット）';
-      each(GM_VOICES, function (g) { var o = document.createElement('option'); o.value = 'gm:' + g[0]; o.textContent = 'AI ' + g[0] + '（' + g[1] + '）'; og.appendChild(o); });
-      sel.appendChild(og);
+      var oa = document.createElement('optgroup'); oa.label = 'AIの声（Microsoft Azure・ネット）';
+      each(GM_VOICES, function (g) { var o = document.createElement('option'); o.value = 'gm:' + g[0]; o.textContent = 'AI ' + g[0] + '（' + g[1] + '）'; (g[2] ? oa : og).appendChild(o); });
+      sel.appendChild(oa); sel.appendChild(og);
     }
     var og2 = document.createElement('optgroup'); og2.label = 'この端末の声';
     each(vs, function (v) { if (voiceScore(v) < 0) return; var o = document.createElement('option'); o.value = v.voiceURI || v.name; o.textContent = v.name + '（' + v.lang + (/premium/i.test(v.voiceURI || '') ? '・プレミアム' : /enhanced/i.test(v.voiceURI || '') ? '・拡張' : /compact/i.test(v.voiceURI || '') ? '・標準' : '') + '）'; og2.appendChild(o); });
@@ -4463,7 +4485,7 @@
   }
   on($('fl-voice'), 'change', function () { voiceChanged($('fl-voice')); });
   on($('rd-voice'), 'change', function () { voiceChanged($('rd-voice')); });
-  function gmSample(msgEl) {
+  function gmSample(msgEl, vOver) {
     gmUnlock();
     var show = function (t) { if (msgEl) msgEl.textContent = t; else gmNote(t); };
     show('AIの声を準備しています…');
@@ -4472,8 +4494,9 @@
       show(msgEl ? 'うまくいきました。「通しで聞く」の「声」で AI の声を選べます。' : '');
       gmStop(); gmAudio.src = r.src; gmRate();
       var pr = gmAudio.play(); if (pr && pr['catch']) pr['catch'](function () { show('音声を再生できませんでした。もう一度押してください。'); });
-    });
+    }, false, vOver);
   }
+  on($('az-test'), 'click', function () { if (!gasUrl) { $('az-msg').textContent = '先に上の翻訳の設定（テストして保存）をしてください。'; return; } gmSample($('az-msg'), 'Ava'); });
   on($('gm-test'), 'click', function () { if (!gasUrl) { $('gm-msg').textContent = '先に上の翻訳の設定（テストして保存）をしてください。'; return; } gmSample($('gm-msg')); });
   on($('fl-small'), 'click', function () { flSize = Math.max(14, flSize - 2); lsSet('memo_fl_size', String(flSize)); $('fl-text').style.fontSize = flSize + 'px'; });
   on($('fl-big'), 'click', function () { flSize = Math.min(40, flSize + 2); lsSet('memo_fl_size', String(flSize)); $('fl-text').style.fontSize = flSize + 'px'; });
@@ -4731,7 +4754,31 @@
     "}",
     "// 文章を Gemini で音声（WAV）にして返す。回数制限にかかったら別のモデルを試す",
     "// 1日の回数を使い切ったモデルはしばらく飛ばす（むだな失敗で回数を減らさないため）",
+    "// ===== Microsoft Azure の声（Edge の「Online (Natural)」と同じ声）。無料 F0 は毎月50万文字まで =====",
+    "// スクリプト プロパティ：AZURE_KEY（キー 1）、AZURE_REGION（場所。例 japaneast）",
+    "var AZ_VOICES = { Ava: \"en-US-AvaNeural\", Andrew: \"en-US-AndrewNeural\", Emma: \"en-US-EmmaNeural\", Brian: \"en-US-BrianNeural\",",
+    "  Jenny: \"en-US-JennyNeural\", Guy: \"en-US-GuyNeural\", Sonia: \"en-GB-SoniaNeural\", Ryan: \"en-GB-RyanNeural\" };",
+    "function azTts(text, voice) {",
+    "  var props = PropertiesService.getScriptProperties(), key = props.getProperty(\"AZURE_KEY\");",
+    "  var region = String(props.getProperty(\"AZURE_REGION\") || \"japaneast\").replace(/[^A-Za-z0-9]/g, \"\").toLowerCase();",
+    "  if (!key) return { ok: false, error: \"noazkey\" };",
+    "  var name = AZ_VOICES[voice], lang = name.slice(0, 5);",
+    "  var esc = String(text).replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\");",
+    "  var ssml = \"<speak version='1.0' xml:lang='\" + lang + \"'><voice name='\" + name + \"'>\" + esc + \"</voice></speak>\";",
+    "  var res = UrlFetchApp.fetch(\"https://\" + region + \".tts.speech.microsoft.com/cognitiveservices/v1\", {",
+    "    method: \"post\", muteHttpExceptions: true, contentType: \"application/ssml+xml\", payload: ssml,",
+    "    headers: { \"Ocp-Apim-Subscription-Key\": key.trim(), \"X-Microsoft-OutputFormat\": \"riff-24khz-16bit-mono-pcm\", \"User-Agent\": \"eibun-reader\" }",
+    "  });",
+    "  var code = res.getResponseCode(), body = \"\";",
+    "  if (code === 200) return { ok: true, a: Utilities.base64Encode(res.getBlob().getBytes()), m: \"azure\" };",
+    "  try { body = res.getContentText().slice(0, 200); } catch (e) {}",
+    "  if (code === 429) return { ok: false, error: \"429 busy azure\" };",
+    "  if (code === 403 && /quota/i.test(body)) return { ok: false, error: \"azquota\" };",
+    "  if (code === 401 || code === 403) return { ok: false, error: \"azkey \" + code };",
+    "  return { ok: false, error: \"azure \" + code + \" \" + body.slice(0, 100) };",
+    "}",
     "function tts(text, voice) {",
+    "  if (AZ_VOICES[voice]) return azTts(text, voice);",
     "  var key = PropertiesService.getScriptProperties().getProperty(\"GEMINI_KEY\");",
     "  if (!key) return { ok: false, error: \"nokey\" };",
     "  var models = [\"gemini-3.8-flash-tts\", \"gemini-3.8-flash-lite-tts\", \"gemini-3.1-flash-tts-preview\", \"gemini-2.5-flash-preview-tts\"];",
