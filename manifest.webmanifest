@@ -35,5 +35,14 @@
       "type": "image/png",
       "purpose": "maskable"
     }
-  ]
+  ],
+  "share_target": {
+    "action": "./",
+    "method": "GET",
+    "params": {
+      "title": "stt",
+      "text": "st",
+      "url": "su"
+    }
+  }
 }

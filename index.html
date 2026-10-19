@@ -548,6 +548,18 @@
     パソコンの Chrome：☆ でブックマーク → ブックマークを右クリック →「編集」→ URL に貼り付け。</p>
     <textarea id="bm-code" readonly style="height:70px"></textarea>
     <div class="row"><button id="bm-copy" type="button">コードをコピー</button></div>
+    <h3 style="margin-top:18px">📤 共有ボタンから送る（iPhone・Android）</h3>
+    <p class="note"><b>Android</b>：この英文リーダーをホーム画面に追加（インストール）しておくと、Chrome やニュースアプリの「共有」の送り先に「手書きメモ」が出ます。押すと、その記事を読み込みます（出ないときは、一度アンインストールして入れ直してください）。<br>
+    <b>iPhone・iPad</b>：「ショートカット」アプリで、共有ボタンに「英文リーダーで読む」を追加します（最初に一度だけ）。<br>
+    ① ショートカットアプリを開き、右上の ＋ を押す<br>
+    ② いちばん上の名前を押して「英文リーダーで読む」にする<br>
+    ③ 下の検索で「URLを開く」を探して追加する<br>
+    ④ 下の「アドレスをコピー」を押し、「URLを開く」の青い「URL」の部分に貼り付ける<br>
+    ⑤ 貼り付けた文字のすぐ後ろで、キーボードの上の「ショートカットの入力」を選ぶ（「…#ru=」の後ろに「ショートカットの入力」が付いた形）<br>
+    ⑥ 右上の ⓘ（または名前の横の ⌄ →「詳細」）で「共有シートに表示」をオンにして「完了」<br>
+    使うとき：Safari などで記事を開き、共有ボタン →（いちばん下の）「英文リーダーで読む」。英文リーダーは Safari で開くので、Safari の英文リーダーにも合言葉を入れておいてください（「合言葉」の QR をカメラで読むと簡単です）。</p>
+    <input type="text" id="share-url" readonly>
+    <div class="row"><button id="share-copy" type="button">アドレスをコピー</button></div>
     <h3 style="margin-top:18px">AIの声（Google Gemini・無料枠）</h3>
     <p class="note">「通しで聞く」の「声」で AI の声を選ぶと、より自然な読み上げになります（ネットが必要。iPad 2/3 は端末の声のほうが確実です）。<br>
     ① <b>aistudio.google.com</b> を開き「Get API key」→「APIキーを作成」で鍵をコピー<br>
@@ -4413,6 +4425,8 @@
   on($('rd-title-box'), 'click', function () { if (rdCur) renameDoc(rdCur.id); });
   on($('rd-tin'), 'click', titleIntoBody);
   var BM_CODE = "javascript:(function(){var d=document,t=String(window.getSelection?getSelection():'');if(t.length<40){var a=d.querySelector('article')||d.querySelector('main')||d.body,p=a.querySelectorAll('h1,h2,h3,p,li,blockquote'),o=[],i,x;for(i=0;i<p.length;i++){x=(p[i].innerText||p[i].textContent||'').replace(/\\s+/g,' ').replace(/^\\s+|\\s+$/g,'');if(x.length>25&&/[A-Za-z]{3}/.test(x)&&o.indexOf(x)<0)o.push(x);}t=o.join('\\n\\n')||a.innerText||'';}t=t.slice(0,20000);window.open('BASE#rt='+encodeURIComponent(t)+'&rs='+encodeURIComponent(location.href)+'&rtt='+encodeURIComponent(String((d.querySelector('h1')||{}).innerText||d.title).replace(/\\s+/g,' ').slice(0,120)),'_blank');})();".replace('BASE', location.protocol + '//' + location.host + '/tegaki-memo/');
+  var SHARE_URL = location.protocol + '//' + location.host + '/tegaki-memo/#ru=';
+  on($('share-copy'), 'click', function () { copyText(SHARE_URL); $('gas-msg').textContent = 'ショートカット用のアドレスをコピーしました。'; });
   on($('bm-copy'), 'click', function () { copyText(BM_CODE); $('gas-msg').textContent = 'ブックマーク用のコードをコピーしました。'; });
   on($('btn-files'), 'click', function () {
     if (!window.FileShare) { alert('ファイル共有を読み込めませんでした。開き直してください。'); return; }
@@ -4766,7 +4780,7 @@
     "}"
   ].join('\n');
   on($('btn-rd-set'), 'click', function () {
-    $('gas-url').value = gasUrl; $('gas-code').value = GAS_CODE; $('bm-code').value = BM_CODE; $('gas-msg').textContent = '';
+    $('gas-url').value = gasUrl; $('gas-code').value = GAS_CODE; $('bm-code').value = BM_CODE; $('share-url').value = SHARE_URL; $('gas-msg').textContent = '';
     $('gas-dlg').className = '';
   });
   on($('gas-copy'), 'click', function () { copyText(GAS_CODE); $('gas-msg').textContent = 'コードをコピーしました（自動でコピーできない端末では、枠の中を長押ししてコピーしてください）。'; });
@@ -5000,7 +5014,7 @@
 
   /* ---- URL（#k=…）で開かれたとき：カメラアプリでQRを読んだ場合など ---- */
   function keyFromHash() {
-    if (!/[#&]k=/.test(location.hash)) return null;
+    if (!/[#&]k=/.test(location.hash) || /^#ru=/.test(location.hash)) return null;
     var k = keyFromText(location.hash);
     // アドレスに合言葉を残さない
     try { window.history.replaceState(null, '', location.href.split('#')[0]); } catch (e) { location.hash = ''; }
@@ -5042,15 +5056,45 @@
   function readWebPend() {
     var h = location.hash, m = /[#&]rt=([^&]*)/.exec(h);
     if (!m) return null;
+    if (/^#ru=/.test(h)) return null;   // 共有で送られてきたアドレスの中の文字に反応しない
     var g = function (k) { var r = new RegExp('[#&]' + k + '=([^&]*)').exec(h); try { return r ? decodeURIComponent(r[1]) : ''; } catch (e) { return ''; } };
     try { window.history.replaceState(null, '', location.href.split('#')[0]); } catch (e) {}
     return { text: g('rt'), src: g('rs'), title: g('rtt') };
   }
   var webPend = readWebPend();
+  // 共有ボタンから：#ru=記事のアドレス（iPhone のショートカット）／?su=…&st=…&stt=…（Android の共有）
+  function readSharePend() {
+    var h = location.hash, q = location.search, out = null;
+    var dec = function (x) { try { return decodeURIComponent(String(x).replace(/\+/g, ' ')); } catch (e) { return String(x); } };
+    var m = /[#&]ru=([\s\S]*)$/.exec(h);
+    if (m) {
+      var u = m[1]; if (/^https?%3A/i.test(u)) u = dec(u);
+      out = { url: u };
+    } else if (/[?&](su|st)=/.test(q)) {
+      var g = function (k) { var r = new RegExp('[?&]' + k + '=([^&]*)').exec(q); return r ? dec(r[1]) : ''; };
+      var url = g('su'), text = g('st'), title = g('stt');
+      // Android では「題名＋アドレス」が文として届くことが多い
+      var inText = /(https?:\/\/[^\s]+)/.exec(text);
+      if (!url && inText && text.replace(inText[1], '').replace(/\s+/g, '').length < 300) url = inText[1];
+      out = url ? { url: url } : (text ? { text: text, title: title } : null);
+    } else return null;
+    try { window.history.replaceState(null, '', location.href.split('#')[0].split('?')[0]); } catch (e) {}
+    if (out && out.url) out.url = String(out.url).replace(/^\s+|\s+$/g, '');
+    return out && (out.url ? /^https?:\/\/\S+$/.test(out.url) : out.text) ? out : null;
+  }
+  var sharePend = readSharePend();
+  function openSharePend() {
+    if (!sharePend || !KEY) return;
+    var sp = sharePend; sharePend = null;
+    openReader('');
+    if (sp.url) { $('rd-in').value = sp.url; rdFetchUrl(sp.url); } else rdAddDoc(sp.text, sp.title || '', '');
+  }
+  window.addEventListener('hashchange', function () { if (/[#&]ru=/.test(location.hash)) { sharePend = readSharePend(); openSharePend(); } });
   // 単語帳から：#src=英文ID.文の番号（新しく保存した単語）／#find=例文（前に保存した単語）
   function readJump() {
     var h = location.hash, a = /[#&]src=([A-Za-z0-9_-]+)\.(\d+)/.exec(h), f = /[#&]find=([^&]*)/.exec(h);
     if (!a && !f) return null;
+    if (/^#ru=/.test(h)) return null;   // 共有で送られてきたアドレスの中の文字に反応しない
     try { window.history.replaceState(null, '', location.href.split('#')[0]); } catch (e) {}
     var t = ''; try { t = f ? decodeURIComponent(f[1]) : ''; } catch (e) {}
     return a ? { id: a[1], n: Number(a[2]) } : { find: t };
@@ -5106,6 +5150,7 @@
   if (KEY && wantClip) openClip();
   if (KEY && wantReader) openReader('');
   if (KEY && webPend) openWebPend();
+  if (KEY && sharePend) openSharePend();
   if (KEY && jumpPend) { var jp = jumpPend; jumpPend = null; rdJump(jp); }
 
   // オフラインでも開けるように（新しい端末のみ。iOS 9 には Service Worker が無いので何もしない）
