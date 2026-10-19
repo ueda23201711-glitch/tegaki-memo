@@ -3542,6 +3542,7 @@
     });
   }
   function ytMake(vid, cues, title) {
+    if (title && cues.length && /[A-Za-z]{3}/.test(title) && cues[0][1].toLowerCase().indexOf(String(title).toLowerCase().slice(0, 30)) < 0) cues = [[0, String(title).replace(/\s+/g, ' ').slice(0, 200)]].concat(cues);
     if (!cues.length) { alert('時刻つきの字幕が見つかりませんでした。YouTube の「文字起こしを表示」の内容を、時刻ごとコピーして貼り付けてください。'); return; }
     if (cues.length > 1500) cues = cues.slice(0, 1500);
     var text = cueTexts(cues).join('\n'), ids = rdIds();
@@ -3870,6 +3871,9 @@
     text = String(text || '').replace(/\r/g, '').replace(/^\s+|\s+$/g, '');
     if (!text) return;
     if (text.length > 20000) text = text.slice(0, 20000);
+    var tt = String(title || '').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '').replace(/\s+[-|—–:･・]\s+[^-|—–:]{2,40}$/, '');   // 「記事名 - サイト名」のサイト名を外す
+    var norm = function (x) { return String(x).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/^\s+|\s+$/g, ''); };
+    if (tt && /[A-Za-z]{3}/.test(tt) && norm(text.slice(0, 400)).indexOf(norm(tt).slice(0, 40)) < 0) text = tt + '\n\n' + text;
     var ids = rdIds();
     for (var i = 0; i < ids.length; i++) if ((src && rdDocs[ids[i]].src === src && rdDocs[ids[i]].text === text) || rdDocs[ids[i]].text === text) { openRdDoc(ids[i]); return; }
     var id = newId();
@@ -4169,7 +4173,7 @@
   });
   on($('rd-go'), 'click', rdLoad);
   on($('rd-title-box'), 'click', function () { if (rdCur) renameDoc(rdCur.id); });
-  var BM_CODE = "javascript:(function(){var d=document,t=String(window.getSelection?getSelection():'');if(t.length<40){var a=d.querySelector('article')||d.querySelector('main')||d.body,p=a.querySelectorAll('h1,h2,h3,p,li,blockquote'),o=[],i,x;for(i=0;i<p.length;i++){x=(p[i].innerText||p[i].textContent||'').replace(/\\s+/g,' ').replace(/^\\s+|\\s+$/g,'');if(x.length>25&&/[A-Za-z]{3}/.test(x)&&o.indexOf(x)<0)o.push(x);}t=o.join('\\n\\n')||a.innerText||'';}t=t.slice(0,20000);window.open('BASE#rt='+encodeURIComponent(t)+'&rs='+encodeURIComponent(location.href)+'&rtt='+encodeURIComponent(d.title.slice(0,80)),'_blank');})();".replace('BASE', location.protocol + '//' + location.host + '/tegaki-memo/');
+  var BM_CODE = "javascript:(function(){var d=document,t=String(window.getSelection?getSelection():'');if(t.length<40){var a=d.querySelector('article')||d.querySelector('main')||d.body,p=a.querySelectorAll('h1,h2,h3,p,li,blockquote'),o=[],i,x;for(i=0;i<p.length;i++){x=(p[i].innerText||p[i].textContent||'').replace(/\\s+/g,' ').replace(/^\\s+|\\s+$/g,'');if(x.length>25&&/[A-Za-z]{3}/.test(x)&&o.indexOf(x)<0)o.push(x);}t=o.join('\\n\\n')||a.innerText||'';}t=t.slice(0,20000);window.open('BASE#rt='+encodeURIComponent(t)+'&rs='+encodeURIComponent(location.href)+'&rtt='+encodeURIComponent(String((d.querySelector('h1')||{}).innerText||d.title).replace(/\\s+/g,' ').slice(0,120)),'_blank');})();".replace('BASE', location.protocol + '//' + location.host + '/tegaki-memo/');
   on($('bm-copy'), 'click', function () { copyText(BM_CODE); $('gas-msg').textContent = 'ブックマーク用のコードをコピーしました。'; });
   on($('btn-files'), 'click', function () {
     if (!window.FileShare) { alert('ファイル共有を読み込めませんでした。開き直してください。'); return; }
