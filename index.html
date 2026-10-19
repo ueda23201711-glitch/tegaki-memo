@@ -3336,13 +3336,24 @@
   }
   function gmStop() { if (gmAudio) { gmAudio.onended = null; gmAudio.ontimeupdate = null; gmAudio.onerror = null; gmAudio.onloadedmetadata = null; gmAudio.muted = false; try { gmAudio.pause(); } catch (e) {} } }
   function gmRate() { if (gmAudio) { try { gmAudio.defaultPlaybackRate = rdRate / 0.9; gmAudio.playbackRate = rdRate / 0.9; } catch (e) {} } }
+  // Gemini の無料の回数が戻る時刻（アメリカ西海岸の夜0時）をこの端末の時刻で返す
+  function gmResetText() {
+    try {
+      var d = new Date(), la = new Date(d.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+      if (isNaN(la.getTime())) throw 0;
+      var left = 86400 - (la.getHours() * 3600 + la.getMinutes() * 60 + la.getSeconds());
+      var r = new Date(d.getTime() + left * 1000 + 60000);
+      return (r.getDate() !== d.getDate() ? '明日の ' : '今日の ') + r.getHours() + ':' + pad2(r.getMinutes()) + ' ごろ';
+    } catch (x) { return '日本時間の16〜17時ごろ'; }
+  }
   function gmErrText(e) {
     e = String(e || '');
+    if (/^nomodel/.test(e)) return 'AIの声のモデルが Google 側で使えなくなっているようです（回数切れではありません）。' + e.replace(/^nomodel\s*/, '');
     if (e === 'oldscript') return 'Apps Script がまだ古いコードのままです。新しいコードを貼って保存し、「デプロイを管理」で「新バージョン」にしてください';
     if (e === 'nokey') return 'Apps Script に GEMINI_KEY が設定されていません（⚙ 設定の手順を見てください）';
     if (/(^|\s)5\d\d(\s|$)/.test(e)) return 'Google の AI が混み合っています。少しあとでもう一度どうぞ';
     if (/^429 busy/.test(e)) return '混んでいます（1分に3回まで）。少しあとでもう一度どうぞ';
-    if (/^429/.test(e)) return '今日の無料の回数を使い切ったようです';
+    if (/^429/.test(e)) return '今日の無料の回数を使い切ったようです。回数は ' + gmResetText() + 'に戻ります';
     if (e === 'nourl') return '翻訳の設定がありません';
     if (e === 'timeout') return '時間切れ';
     if (e === 'net') return 'Apps Script につながりませんでした。電波の状態を確かめて、もう一度どうぞ';
@@ -3435,7 +3446,7 @@
           var e = r.err;
           if ((/^(429 busy|5\d\d)/.test(e) || e === 'net' || e === 'timeout') && (netTry = (netTry || 0) + 1) <= 4) { show('混んでいるので少し待っています… ' + i + ' / ' + chunks.length); next(30000); return; }
           mkRun = 0; makeButton();
-          show(netTry > 4 ? '混んでいる状態が続いたので止めました（' + i + ' / ' + chunks.length + ' できました）。今日の回数を使い切ったか、Google が混んでいます。しばらくしてから（または明日）もう一度押すと続きから作ります。' : /^429/.test(e) ? '今日の無料の回数はここまでです（' + i + ' / ' + chunks.length + ' できました）。明日もう一度押すと続きから作ります。' : 'AIの声を作れませんでした（' + gmErrText(e) + '）。');
+          show(netTry > 4 ? '混んでいる状態が続いたので止めました（' + i + ' / ' + chunks.length + ' できました）。今日の回数を使い切ったか、Google が混んでいます。しばらくしてから（または明日）もう一度押すと続きから作ります。' : /^429/.test(e) ? '今日の無料の回数はここまでです（' + i + ' / ' + chunks.length + ' できました）。回数は ' + gmResetText() + 'に戻るので、そのあともう一度押すと続きから作ります。' : 'AIの声を作れませんでした（' + gmErrText(e) + '）。');
         }, true);
       }, wait);
     };
@@ -4415,9 +4426,10 @@
     "  var key = PropertiesService.getScriptProperties().getProperty(\"GEMINI_KEY\");",
     "  if (!key) return { ok: false, error: \"nokey\" };",
     "  var models = [\"gemini-3.8-flash-tts\", \"gemini-3.8-flash-lite-tts\", \"gemini-3.1-flash-tts-preview\", \"gemini-2.5-flash-preview-tts\"];",
-    "  var cache = CacheService.getScriptCache(), last = \"\", busy = false;",
+    "  var cache = CacheService.getScriptCache(), last = \"\", busy = false, gone = [];",
     "  for (var i = 0; i < models.length; i++) {",
-    "    if (cache.get(\"off_\" + models[i])) continue;",
+    "    var off = cache.get(\"off_\" + models[i]);",
+    "    if (off) { if (off === \"gone\") gone.push(models[i]); else if (off === \"min\") busy = true; continue; }",
     "    var res = UrlFetchApp.fetch(\"https://generativelanguage.googleapis.com/v1beta/models/\" + models[i] + \":generateContent\", {",
     "      method: \"post\", contentType: \"application/json\", muteHttpExceptions: true,",
     "      headers: { \"x-goog-api-key\": key },",
@@ -4438,14 +4450,15 @@
     "    }",
     "    last = code + \" \" + body.slice(0, 300);",
     "    if (code === 429) {",
-    "      if (/PerDay/i.test(body)) cache.put(\"off_\" + models[i], \"1\", untilReset());   // 1日の分を使い切り：回数が戻る時刻まで飛ばす",
-    "      else { cache.put(\"off_\" + models[i], \"1\", 60); busy = true; }         // 1分の分：1分だけ飛ばす",
+    "      if (/PerDay/i.test(body)) cache.put(\"off_\" + models[i], \"day\", untilReset());   // 1日の分を使い切り：回数が戻る時刻まで飛ばす",
+    "      else { cache.put(\"off_\" + models[i], \"min\", 60); busy = true; }         // 1分の分：1分だけ飛ばす",
     "      continue;",
     "    }",
-    "    if (code === 404 || code === 400) { cache.put(\"off_\" + models[i], \"1\", 21600); continue; }",
+    "    if (code === 404 || code === 400 || code === 403) { cache.put(\"off_\" + models[i], \"gone\", 21600); gone.push(models[i]); continue; }   // モデルが無い・使えない：6時間飛ばす",
     "    if (code >= 500) { busy = true; continue; }   // Google 側が混んでいる：次のモデルへ",
     "    break;",
     "  }",
+    "  if (gone.length === models.length) return { ok: false, error: \"nomodel \" + last.slice(0, 120) };   // どのモデルも使えない（回数切れではない）",
     "  if (!last) return { ok: false, error: busy ? \"429 busy\" : \"429 PerDay（どのモデルも今日の分を使い切りました）\" };",
     "  return { ok: false, error: busy ? \"429 busy \" + last : last };",
     "}",
