@@ -5,7 +5,7 @@
    ・iOS 9（iPad 2/3）でも動くよう ES5 だけで書いています */
 (function () {
   'use strict';
-  var UP = 2 * 1024 * 1024, MAX = 100 * 1024 * 1024;
+  var UP = 8 * 1024 * 1024, ONE = 8 * 1024 * 1024, MAX = 100 * 1024 * 1024;   // 送るのは 8MB ずつ（256KB の倍数）。8MB までは1回で
   var oldIOS = /OS [5-9]_\d.* like Mac OS X/.test(navigator.userAgent);
   var opt = null, ov = null, files = {}, timer = null, upBusy = false, got = {}, jsonpN = 0;
 
@@ -189,7 +189,31 @@
     var fail = function (e) { msg.textContent = '送れませんでした（' + errText(e) + '）。'; msg.style.color = '#8a1f1f'; done(); };
     if (!file.size) { fail('空のファイルは送れません'); return; }
     if (file.size > MAX) { fail('大きすぎます（100MB まで）'); return; }
-    var type = file.type || 'application/octet-stream';
+    var type = file.type || 'application/octet-stream', t0 = now();
+    var finish = function (id) {
+      fill.style.width = '100%';
+      db('POST', '/files', { n: file.name, s: file.size, t: type, id: id, at: { '.sv': 'timestamp' }, d: devName() }, function (err) {
+        msg.textContent = err ? 'ドライブには入りましたが、一覧に載せられませんでした。' : '送りました（' + Math.round((now() - t0) / 1000) + '秒）。';
+        done();
+      });
+    };
+    // 8MB までは1回で送る（Apps Script が古いときは、分けて送る方法に戻す）
+    if (file.size <= ONE) {
+      var fr0 = new FileReader();
+      fr0.onerror = function () { fail('ファイルを読めませんでした'); };
+      fr0.onload = function () {
+        msg.textContent = '送っています…'; fill.style.width = '30%';
+        gasPost({ act: 'one', name: file.name, type: type, data: ab2b64(fr0.result) }, function (r0, e0) {
+          if (r0 && r0.ok && r0.id) { finish(r0.id); return; }
+          if (r0 && r0.error === 'act') { chunked(); return; }
+          fail((r0 && r0.error) || e0);
+        });
+      };
+      fr0.readAsArrayBuffer(file);
+      return;
+    }
+    chunked();
+    function chunked() {
     gasPost({ act: 'up0', name: file.name, type: type, size: file.size }, function (r, e) {
       if (!r || !r.ok) { fail((r && r.error) || e); return; }
       var off = 0;
@@ -203,16 +227,14 @@
             fill.style.width = Math.round(off / file.size * 100) + '%';
             msg.textContent = Math.round(off / file.size * 100) + '%';
             if (!r2.done) { step(); return; }
-            db('POST', '/files', { n: file.name, s: file.size, t: type, id: r2.id, at: { '.sv': 'timestamp' }, d: devName() }, function (err) {
-              msg.textContent = err ? 'ドライブには入りましたが、一覧に載せられませんでした。' : '送りました。';
-              done();
-            });
+            finish(r2.id);
           });
         };
         fr.readAsArrayBuffer(blob);
       };
       step();
     });
+    }
   }
 
   /* ---- 受け取る ---- */
