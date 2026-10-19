@@ -150,6 +150,8 @@
   .rd-hrow span { font-size: 12px; color: #6b7a83; }
   .rd-hrow .rd-ren { float: right; margin: 0 6px 0 0; padding: 4px 9px; font-size: 13px; }
   #rd-title-box { font-weight: 700; font-size: 16px; margin: 2px 0 8px; color: #24363f; cursor: pointer; line-height: 1.4; }
+  #rd-src-box { margin: -4px 0 8px; font-size: 13px; word-break: break-all; }
+  #rd-src-box a { color: #2f6f8f; }
   #rd-title-box .ed { font-weight: 400; font-size: 13px; color: #2f6f8f; margin-left: 6px; white-space: nowrap; }
   .rd-hrow button { float: right; padding: 5px 9px; font-size: 12px; background: #f1f4f6; color: #a3301f; margin-left: 8px; }
   #rd-ctrl { position: -webkit-sticky; position: sticky; top: 0; z-index: 3; background: #f7f9fa; border-bottom: 1px solid #d7dee3; padding: 8px 12px; }
@@ -494,6 +496,8 @@
       </div>
       <div class="rd-wrap">
         <div id="rd-title-box" title="押すと題名を直せます"><span id="rd-title-mark"></span><span id="rd-title"></span><span class="ed">✎ 題名を直す</span></div>
+        <div id="rd-tin-box" class="hidden"><button id="rd-tin" type="button">📝 題名も本文の最初の文にする（読み上げ・訳の対象に）</button></div>
+        <div id="rd-src-box" class="hidden"><a id="rd-src" href="#" target="_blank" rel="noopener"></a></div>
         <p class="note rd-hint" id="rd-hint-p">単語をタップすると意味と発音、<span class="idm-sample">下線</span>は熟語・定型表現です。🔊 でその文を読みます（「🔁 続けて」がオンなら、そこから最後まで）。</p>
         <div id="rd-text"></div>
       </div>
@@ -3877,7 +3881,7 @@
     var ids = rdIds();
     for (var i = 0; i < ids.length; i++) if ((src && rdDocs[ids[i]].src === src && rdDocs[ids[i]].text === text) || rdDocs[ids[i]].text === text) { openRdDoc(ids[i]); return; }
     var id = newId();
-    rdDocs[id] = { title: '🌐 ' + String(title || text).replace(/\s+/g, ' ').slice(0, 60), text: text, at: now() };
+    rdDocs[id] = { title: '🌐 ' + String(tt || title || text).replace(/\s+/g, ' ').slice(0, 120), text: text, at: now() };
     if (src) rdDocs[id].src = String(src).slice(0, 500);
     rdSaveLocal();
     openRdDoc(id, true);
@@ -3903,10 +3907,33 @@
     if (rdCur && rdCur.id === id) showDocTitle();
     renderRdHistory();
   }
+  // 前に取り込んだ記事・動画で、題名が本文に入っていないもの
+  function titleMissing(d) {
+    if (!/^(🌐|🎬) /.test(d.title || '')) return false;
+    var tt = String(d.title).replace(/^(🌐|🎬) /, ''), norm = function (x) { return String(x).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/^\s+|\s+$/g, ''); };
+    if (!/[A-Za-z]{3}/.test(tt)) return false;
+    return norm(String(d.text || '').slice(0, 400)).indexOf(norm(tt).slice(0, 40)) < 0;
+  }
+  function titleIntoBody() {
+    if (!rdCur) return;
+    var id = rdCur.id, d = rdCur.d, tt = String(d.title).replace(/^(🌐|🎬) /, '');
+    if (d.cues) d.cues = [[0, tt]].concat(d.cues);
+    d.text = d.cues ? cueTexts(d.cues).join('\n') : tt + '\n\n' + d.text;
+    delete d.tr; rdSaveLocal();
+    openRdDoc(id, true);
+  }
   function showDocTitle() {
     var el = $('rd-title'); if (!el) return;
     el.textContent = rdCur ? String(rdCur.d.title || '').replace(/^(🌐|🎬) /, '') : '';
     $('rd-title-mark').textContent = rdCur && /^🎬/.test(rdCur.d.title || '') ? '🎬 ' : rdCur && /^🌐/.test(rdCur.d.title || '') ? '🌐 ' : '';
+    // 元のページ・元の動画へのリンク（押すとブラウザで開く）
+    var u = rdCur ? (rdCur.d.src || (rdCur.d.yt ? 'https://www.youtube.com/watch?v=' + rdCur.d.yt : '')) : '';
+    if (u && /^https?:\/\//.test(u)) {
+      $('rd-src').href = u;
+      $('rd-src').textContent = (rdCur.d.yt ? '▶ YouTube で元の動画を見る：' : '🔗 元のページを開く：') + u.replace(/^https?:\/\/(www\.)?/, '').slice(0, 70) + (u.length > 80 ? '…' : '');
+      $('rd-src-box').className = '';
+    } else $('rd-src-box').className = 'hidden';
+    $('rd-tin-box').className = rdCur && titleMissing(rdCur.d) ? '' : 'hidden';
   }
   function rdLoad() {
     var text = $('rd-in').value.replace(/^\s+|\s+$/g, '');
@@ -4173,6 +4200,7 @@
   });
   on($('rd-go'), 'click', rdLoad);
   on($('rd-title-box'), 'click', function () { if (rdCur) renameDoc(rdCur.id); });
+  on($('rd-tin'), 'click', titleIntoBody);
   var BM_CODE = "javascript:(function(){var d=document,t=String(window.getSelection?getSelection():'');if(t.length<40){var a=d.querySelector('article')||d.querySelector('main')||d.body,p=a.querySelectorAll('h1,h2,h3,p,li,blockquote'),o=[],i,x;for(i=0;i<p.length;i++){x=(p[i].innerText||p[i].textContent||'').replace(/\\s+/g,' ').replace(/^\\s+|\\s+$/g,'');if(x.length>25&&/[A-Za-z]{3}/.test(x)&&o.indexOf(x)<0)o.push(x);}t=o.join('\\n\\n')||a.innerText||'';}t=t.slice(0,20000);window.open('BASE#rt='+encodeURIComponent(t)+'&rs='+encodeURIComponent(location.href)+'&rtt='+encodeURIComponent(String((d.querySelector('h1')||{}).innerText||d.title).replace(/\\s+/g,' ').slice(0,120)),'_blank');})();".replace('BASE', location.protocol + '//' + location.host + '/tegaki-memo/');
   on($('bm-copy'), 'click', function () { copyText(BM_CODE); $('gas-msg').textContent = 'ブックマーク用のコードをコピーしました。'; });
   on($('btn-files'), 'click', function () {
