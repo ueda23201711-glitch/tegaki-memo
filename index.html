@@ -450,11 +450,12 @@
   <div class="body" id="rd-body">
     <div id="rd-input" class="rd-wrap">
       <div class="clip-send">
-        <textarea id="rd-in" placeholder="英文を貼り付けてください（Kindle などからコピーした文章）"></textarea>
+        <textarea id="rd-in" placeholder="英文を貼り付けてください（Kindle などからコピーした文章）。英語の記事のアドレス（https://…）を貼ると、そのページの本文を読み込みます"></textarea>
         <div class="row">
           <button id="rd-go" class="primary" type="button">読み込む</button>
           <button id="rd-paste" class="hidden" type="button">📋 コピーした文字を貼り付け</button>
         </div>
+        <p class="note" id="rd-msg"></p>
       </div>
       <div class="yt-in">
         <h3 class="rd-h" style="margin-top:0">🎬 YouTube の動画で読む</h3>
@@ -524,6 +525,15 @@
       <button id="gas-close" type="button">閉じる</button>
     </div>
     <p id="gas-msg" class="note"></p>
+    <h3 style="margin-top:18px">🔖 ブックマークから送る</h3>
+    <p class="note">ウェブの英語の記事を見ているときに、このブックマークを押すと、そのページの本文（文字を選んでいれば選んだ部分）を英文リーダーで開きます。<br>
+    ① 下の「コードをコピー」を押す<br>
+    ② 今見ているこのページをブックマークに追加する（名前は「英文リーダーで読む」など）<br>
+    ③ ブックマークを編集して、アドレス（URL）の欄を全部消し、コピーしたコードを貼り付けて保存<br>
+    iPad・iPhone の Safari：共有ボタン →「ブックマークを追加」→ あとで「ブックマーク」→「編集」でアドレスを貼り替え。<br>
+    パソコンの Chrome：☆ でブックマーク → ブックマークを右クリック →「編集」→ URL に貼り付け。</p>
+    <textarea id="bm-code" readonly style="height:70px"></textarea>
+    <div class="row"><button id="bm-copy" type="button">コードをコピー</button></div>
     <h3 style="margin-top:18px">AIの声（Google Gemini・無料枠）</h3>
     <p class="note">「通しで聞く」の「声」で AI の声を選ぶと、より自然な読み上げになります（ネットが必要。iPad 2/3 は端末の声のほうが確実です）。<br>
     ① <b>aistudio.google.com</b> を開き「Get API key」→「APIキーを作成」で鍵をコピー<br>
@@ -3800,7 +3810,10 @@
     if (!KEY) return;
     api('GET', '/reader', undefined, function (err, data) {
       if (err) return;
-      rdDocs = data || {}; rdSaveLocal();
+      var keep = rdCur && !(data && data[rdCur.id]) ? rdCur : null;
+      rdDocs = data || {};
+      if (keep) rdDocs[keep.id] = keep.d;
+      rdSaveLocal();
       if (!rdCur) renderRdHistory();
     });
     api('GET', '/settings/gas', undefined, function (err, u) {
@@ -3819,9 +3832,39 @@
     $('rd-paste').className = (navigator.clipboard && navigator.clipboard.readText) ? '' : 'hidden';
     renderRdHistory();
   }
+  // 記事のアドレスから本文を取り込む（Apps Script がページを読みに行く）
+  function rdFetchUrl(url) {
+    var ids = rdIds();
+    for (var i = 0; i < ids.length; i++) if (rdDocs[ids[i]].src === url) { $('rd-in').value = ''; openRdDoc(ids[i]); return; }
+    if (!gasUrl) { $('rd-msg').textContent = '記事のアドレスから読み込むには、先に「⚙ 翻訳の設定」が必要です。'; return; }
+    $('rd-msg').textContent = 'ページを読み込んでいます…'; $('rd-go').disabled = true;
+    gasCall({ page: url }, function (data, err) {
+      $('rd-go').disabled = false;
+      if (data && data.ok && data.text) { $('rd-msg').textContent = ''; $('rd-in').value = ''; rdAddDoc(data.text, data.title, url); return; }
+      var e = String((data && data.error) || err || '');
+      $('rd-msg').textContent = (data && data.ok && !data.text ? 'Apps Script が古いコードのままです（「⚙ 翻訳の設定」のコードに貼り替えて「新バージョン」でデプロイしてください）。'
+        : e === 'notext' ? 'このページからは本文を取り出せませんでした（ログインが必要・有料記事など）。'
+        : /^http 4/.test(e) ? 'このページは外から読めないようです（' + e + '）。' : 'ページを読み込めませんでした（' + e.slice(0, 50) + '）。')
+        + ' 本文をコピーして貼り付けるか、「⚙ 翻訳の設定」の「🔖 ブックマークから送る」を使ってください。';
+    });
+  }
+  // 取り込んだ記事を英文として開く（同じページなら前のものを開く）
+  function rdAddDoc(text, title, src) {
+    text = String(text || '').replace(/\r/g, '').replace(/^\s+|\s+$/g, '');
+    if (!text) return;
+    if (text.length > 20000) text = text.slice(0, 20000);
+    var ids = rdIds();
+    for (var i = 0; i < ids.length; i++) if ((src && rdDocs[ids[i]].src === src && rdDocs[ids[i]].text === text) || rdDocs[ids[i]].text === text) { openRdDoc(ids[i]); return; }
+    var id = newId();
+    rdDocs[id] = { title: '🌐 ' + String(title || text).replace(/\s+/g, ' ').slice(0, 60), text: text, at: now() };
+    if (src) rdDocs[id].src = String(src).slice(0, 500);
+    rdSaveLocal();
+    openRdDoc(id, true);
+  }
   function rdLoad() {
     var text = $('rd-in').value.replace(/^\s+|\s+$/g, '');
     if (!text) { alert('英文を入力するか、貼り付けてください。'); return; }
+    if (/^https?:\/\/\S+$/.test(text)) { rdFetchUrl(text); return; }
     $('rd-in').value = '';
     if (text.length > 20000) text = text.slice(0, 20000);
     // 同じ英文が履歴にあればそれを開く（動画のものは除く）
@@ -4082,6 +4125,8 @@
     stopSpeak(); show('scr-list'); renderList();
   });
   on($('rd-go'), 'click', rdLoad);
+  var BM_CODE = "javascript:(function(){var d=document,t=String(window.getSelection?getSelection():'');if(t.length<40){var a=d.querySelector('article')||d.querySelector('main')||d.body,p=a.querySelectorAll('h1,h2,h3,p,li,blockquote'),o=[],i,x;for(i=0;i<p.length;i++){x=(p[i].innerText||p[i].textContent||'').replace(/\\s+/g,' ').replace(/^\\s+|\\s+$/g,'');if(x.length>25&&/[A-Za-z]{3}/.test(x)&&o.indexOf(x)<0)o.push(x);}t=o.join('\\n\\n')||a.innerText||'';}t=t.slice(0,20000);window.open('BASE#rt='+encodeURIComponent(t)+'&rs='+encodeURIComponent(location.href)+'&rtt='+encodeURIComponent(d.title.slice(0,80)),'_blank');})();".replace('BASE', location.protocol + '//' + location.host + '/tegaki-memo/');
+  on($('bm-copy'), 'click', function () { copyText(BM_CODE); $('gas-msg').textContent = 'ブックマーク用のコードをコピーしました。'; });
   on($('btn-files'), 'click', function () {
     if (!window.FileShare) { alert('ファイル共有を読み込めませんでした。開き直してください。'); return; }
     FileShare.open({ key: function () { return KEY; }, db: DB_URL, gas: function () { return gasUrl; } });
@@ -4143,7 +4188,9 @@
     "  var p = e.parameter, out;",
     "  try {",
     "    var sl = p.sl || \"en\", tl = p.tl || \"ja\";",
-    "    if (p.f) {",
+    "    if (p.page) {",
+    "      out = fetchPage(String(p.page));",
+    "    } else if (p.f) {",
     "      out = fileAct(String(p.f), String(p.id || \"\").replace(/[^A-Za-z0-9_-]/g, \"\"), Number(p.part) || 0);",
     "    } else if (p.yt) {",
     "      out = ytCaptions(String(p.yt).replace(/[^A-Za-z0-9_-]/g, \"\").slice(0, 11));",
@@ -4322,6 +4369,39 @@
     "  if (r.getResponseCode() !== 206 && r.getResponseCode() !== 200) return { ok: false, error: \"get \" + r.getResponseCode() };",
     "  return { ok: true, a: Utilities.base64Encode(r.getContent()), n: n, k: part, size: size, type: f.getMimeType(), name: f.getName() };",
     "}",
+    "// ===== ウェブの記事の本文を取り出す（英文リーダーで読む用） =====",
+    "function fetchPage(url) {",
+    "  if (!/^https?:\\/\\//.test(url)) return { ok: false, error: \"url\" };",
+    "  var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true,",
+    "    headers: { \"User-Agent\": \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36\", \"Accept-Language\": \"en-US,en;q=0.9\" } });",
+    "  var code = res.getResponseCode();",
+    "  if (code >= 400) return { ok: false, error: \"http \" + code };",
+    "  var html = res.getContentText();",
+    "  var tm = /<meta[^>]+property=[\"']og:title[\"'][^>]+content=[\"']([^\"']+)/i.exec(html) || /<title[^>]*>([\\s\\S]*?)<\\/title>/i.exec(html);",
+    "  html = html.replace(/<(script|style|noscript|svg|nav|header|footer|aside|form|figure|iframe|button)[\\s\\S]*?<\\/\\1>/gi, \" \");",
+    "  var m = /<article[\\s\\S]*?<\\/article>/i.exec(html) || /<main[\\s\\S]*?<\\/main>/i.exec(html);",
+    "  var blocks = pageBlocks(m ? m[0] : html);",
+    "  if (blocks.length < 3 && m) blocks = pageBlocks(html);",
+    "  var text = blocks.join(\"\\n\\n\").slice(0, 20000);",
+    "  if (text.length < 80) return { ok: false, error: \"notext\" };",
+    "  return { ok: true, title: tm ? cleanHtml(tm[1]).slice(0, 100) : \"\", text: text };",
+    "}",
+    "function pageBlocks(area) {",
+    "  var out = [], re = /<(p|h[1-3]|li|blockquote)(\\s[^>]*)?>([\\s\\S]*?)<\\/\\1>/gi, x;",
+    "  while ((x = re.exec(area))) {",
+    "    var t = cleanHtml(x[3]);",
+    "    if (t.length > 25 && /[A-Za-z]{3}/.test(t) && out.indexOf(t) < 0) out.push(t);",
+    "  }",
+    "  return out;",
+    "}",
+    "function cleanHtml(s) {",
+    "  return String(s || \"\").replace(/<br\\s*\\/?>/gi, \" \").replace(/<[^>]+>/g, \"\").replace(/&nbsp;/g, \" \").replace(/&amp;/g, \"&\")",
+    "    .replace(/&quot;|&ldquo;|&rdquo;/g, '\"').replace(/&#39;|&apos;|&rsquo;|&lsquo;/g, \"'\").replace(/&mdash;/g, \"—\").replace(/&ndash;/g, \"–\")",
+    "    .replace(/&hellip;/g, \"…\").replace(/&lt;/g, \"<\").replace(/&gt;/g, \">\")",
+    "    .replace(/&#(\\d+);/g, function (a, n) { return String.fromCharCode(Number(n)); })",
+    "    .replace(/&#x([0-9a-f]+);/gi, function (a, n) { return String.fromCharCode(parseInt(n, 16)); })",
+    "    .replace(/\\s+/g, \" \").replace(/^\\s+|\\s+$/g, \"\");",
+    "}",
     "function voiceFolder() {",
     "  var props = PropertiesService.getScriptProperties(), id = props.getProperty(\"VOICE_FOLDER\");",
     "  if (id) { try { return DriveApp.getFolderById(id); } catch (e) {} }",
@@ -4378,7 +4458,7 @@
     "}"
   ].join('\n');
   on($('btn-rd-set'), 'click', function () {
-    $('gas-url').value = gasUrl; $('gas-code').value = GAS_CODE; $('gas-msg').textContent = '';
+    $('gas-url').value = gasUrl; $('gas-code').value = GAS_CODE; $('bm-code').value = BM_CODE; $('gas-msg').textContent = '';
     $('gas-dlg').className = '';
   });
   on($('gas-copy'), 'click', function () { copyText(GAS_CODE); $('gas-msg').textContent = 'コードをコピーしました（自動でコピーできない端末では、枠の中を長押ししてコピーしてください）。'; });
@@ -4650,6 +4730,18 @@
   // 一覧を開いている間も時々確認
   setInterval(function () { if (KEY && !cur && $('scr-list').className.indexOf('hidden') < 0) refreshIndex(); }, 30000);
 
+  // ブックマークから送られてきた本文（#rt=本文&rs=元のページ&rtt=題名）
+  function readWebPend() {
+    var h = location.hash, m = /[#&]rt=([^&]*)/.exec(h);
+    if (!m) return null;
+    var g = function (k) { var r = new RegExp('[#&]' + k + '=([^&]*)').exec(h); try { return r ? decodeURIComponent(r[1]) : ''; } catch (e) { return ''; } };
+    try { window.history.replaceState(null, '', location.href.split('#')[0]); } catch (e) {}
+    return { text: g('rt'), src: g('rs'), title: g('rtt') };
+  }
+  var webPend = readWebPend();
+  function openWebPend() { if (!webPend || !KEY) return; var w = webPend; webPend = null; openReader(''); rdAddDoc(w.text, w.title, w.src); }
+  // すでに開いているときに送られてきた場合
+  window.addEventListener('hashchange', function () { if (/[#&]rt=/.test(location.hash)) { webPend = readWebPend(); openWebPend(); } });
   var wantClip = /#clip/.test(location.hash), wantReader = /#reader/.test(location.hash);
   var hashKey = keyFromHash();
   if (!KEY) { if (hashKey) useKey(hashKey); else show('scr-setup'); }
@@ -4660,6 +4752,7 @@
   }
   if (KEY && wantClip) openClip();
   if (KEY && wantReader) openReader('');
+  if (KEY && webPend) openWebPend();
 
   // オフラインでも開けるように（新しい端末のみ。iOS 9 には Service Worker が無いので何もしない）
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
