@@ -4120,7 +4120,7 @@
       var n = maxN + 1, clean = function (s) { return String(s || '').replace(/[\t\n\r]+/g, ' '); };
       lines.push(clean(it.w) + '\t' + clean(it.m) + '\t' + n);
       var b = { words: lines.join('\n'), updated: now() };
-      if (sent) b['tx/' + n] = { v: '例文: ' + sent + (tr ? '\n訳: ' + tr : ''), t: now() };
+      if (sent) b['tx/' + n] = { v: '例文: ' + sent + (tr ? '\n訳: ' + tr : '') + (rdCur && it.si !== undefined ? '\n元の英文: ' + rdCur.id + '.' + it.si : ''), t: now() };
       api('PATCH', '/memovocab', b, function (e2) {
         if (e2) { $('pop-msg').textContent = '保存できませんでした（' + errText(e2) + '）'; $('pop-save').disabled = false; return; }
         $('pop-msg').innerHTML = '';
@@ -4752,6 +4752,51 @@
     return { text: g('rt'), src: g('rs'), title: g('rtt') };
   }
   var webPend = readWebPend();
+  // 単語帳から：#src=英文ID.文の番号（新しく保存した単語）／#find=例文（前に保存した単語）
+  function readJump() {
+    var h = location.hash, a = /[#&]src=([A-Za-z0-9_-]+)\.(\d+)/.exec(h), f = /[#&]find=([^&]*)/.exec(h);
+    if (!a && !f) return null;
+    try { window.history.replaceState(null, '', location.href.split('#')[0]); } catch (e) {}
+    var t = ''; try { t = f ? decodeURIComponent(f[1]) : ''; } catch (e) {}
+    return a ? { id: a[1], n: Number(a[2]) } : { find: t };
+  }
+  var jumpPend = readJump();
+  // その英文を開いて、その文を光らせる
+  function rdShowAt(id, n) {
+    openRdDoc(id);
+    if (n >= 0 && n < rdSents.length) {
+      markSentence(n);
+      setTimeout(function () { var el = $('rd-text').childNodes[n]; if (el && el.scrollIntoView) { try { el.scrollIntoView(true); $('rd-body').scrollTop -= 120; } catch (e) {} } }, 200);
+    }
+  }
+  function rdJump(j, retried) {
+    if (!j || !KEY) return;
+    openReader('');
+    var miss = function () { $('rd-msg').textContent = '元の英文が見つかりませんでした（英文リーダーの「これまでの英文」から消えたのかもしれません）。'; };
+    if (j.id) {
+      if (rdDocs[j.id]) { rdShowAt(j.id, j.n); return; }
+      api('GET', '/reader/' + j.id, undefined, function (err, d) {
+        if (!err && d && d.text) { rdDocs[j.id] = d; rdSaveLocal(); rdShowAt(j.id, j.n); } else miss();
+      });
+      return;
+    }
+    // 例文から探す（「…」で区切られた部分のうち、いちばん長いところ）
+    var parts = String(j.find || '').split(/…|\.\.\./), frag = '';
+    each(parts, function (p) { p = p.replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, ''); if (p.length > frag.length) frag = p; });
+    if (frag.length < 6) { miss(); return; }
+    var low = frag.toLowerCase(), ids = rdIds();
+    for (var i = 0; i < ids.length; i++) {
+      var d = rdDocs[ids[i]];
+      if (String(d.text || '').replace(/\s+/g, ' ').toLowerCase().indexOf(low) < 0) continue;
+      openRdDoc(ids[i]);
+      for (var k = 0; k < rdSents.length; k++) if (rdSents[k].text.replace(/\s+/g, ' ').toLowerCase().indexOf(low) >= 0) { rdShowAt(ids[i], k); return; }
+      return;
+    }
+    if (retried) { miss(); return; }
+    // 端末の中に無ければ、クラウドの履歴を読んでからもう一度
+    api('GET', '/reader', undefined, function (err, data) { if (!err && data) { for (var x in data) rdDocs[x] = data[x]; rdSaveLocal(); } rdJump(j, true); });
+  }
+  window.addEventListener('hashchange', function () { var j = readJump(); if (j) rdJump(j); });
   function openWebPend() { if (!webPend || !KEY) return; var w = webPend; webPend = null; openReader(''); rdAddDoc(w.text, w.title, w.src); }
   // すでに開いているときに送られてきた場合
   window.addEventListener('hashchange', function () { if (/[#&]rt=/.test(location.hash)) { webPend = readWebPend(); openWebPend(); } });
@@ -4766,6 +4811,7 @@
   if (KEY && wantClip) openClip();
   if (KEY && wantReader) openReader('');
   if (KEY && webPend) openWebPend();
+  if (KEY && jumpPend) { var jp = jumpPend; jumpPend = null; rdJump(jp); }
 
   // オフラインでも開けるように（新しい端末のみ。iOS 9 には Service Worker が無いので何もしない）
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
