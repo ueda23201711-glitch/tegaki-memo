@@ -148,6 +148,9 @@
   .rd-hrow { background: #fff; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(31,42,48,.1); cursor: pointer; overflow: hidden; }
   .rd-hrow b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .rd-hrow span { font-size: 12px; color: #6b7a83; }
+  .rd-hrow .rd-ren { float: right; margin: 0 6px 0 0; padding: 4px 9px; font-size: 13px; }
+  #rd-title-box { font-weight: 700; font-size: 16px; margin: 2px 0 8px; color: #24363f; cursor: pointer; line-height: 1.4; }
+  #rd-title-box .ed { font-weight: 400; font-size: 13px; color: #2f6f8f; margin-left: 6px; white-space: nowrap; }
   .rd-hrow button { float: right; padding: 5px 9px; font-size: 12px; background: #f1f4f6; color: #a3301f; margin-left: 8px; }
   #rd-ctrl { position: -webkit-sticky; position: sticky; top: 0; z-index: 3; background: #f7f9fa; border-bottom: 1px solid #d7dee3; padding: 8px 12px; }
   #rd-ctrl button, #rd-ctrl select { margin: 2px 6px 2px 0; }
@@ -490,6 +493,7 @@
         <span id="rd-status" class="note"></span>
       </div>
       <div class="rd-wrap">
+        <div id="rd-title-box" title="押すと題名を直せます"><span id="rd-title-mark"></span><span id="rd-title"></span><span class="ed">✎ 題名を直す</span></div>
         <p class="note rd-hint" id="rd-hint-p">単語をタップすると意味と発音、<span class="idm-sample">下線</span>は熟語・定型表現です。🔊 でその文を読みます（「🔁 続けて」がオンなら、そこから最後まで）。</p>
         <div id="rd-text"></div>
       </div>
@@ -3465,7 +3469,7 @@
   function fixCues(d) {
     var changed = false;
     each(d.cues, function (c) { var t = stripDur(c[1]); if (t !== c[1]) { c[1] = t; changed = true; } });
-    if (changed) { d.text = cueTexts(d.cues).join('\n'); d.title = '🎬 ' + (d.cues[0] ? d.cues[0][1].slice(0, 56) : ''); delete d.tr; rdSaveLocal(); }
+    if (changed) { d.text = cueTexts(d.cues).join('\n'); if (!d.named) d.title = '🎬 ' + (d.cues[0] ? d.cues[0][1].slice(0, 56) : ''); delete d.tr; rdSaveLocal(); }
     return changed;
   }
   function cueTexts(cues) { var a = []; each(cues, function (c) { a.push(c[1]); }); return a; }
@@ -3528,7 +3532,7 @@
       if (data && data.ok && data.cues && data.cues.length) {
         var lines = []; each(data.cues, function (c) { lines.push(fmtSec(c[0]) + (c[0] % 1 ? '.' + Math.round((c[0] % 1) * 10) : '') + '\n' + c[1]); });
         $('yt-msg').textContent = data.auto ? '自動字幕を取ってきました（句読点がないので、YouTube の区切りのままです）。' : '字幕を取ってきました。';
-        ytMake(vid, parseCues(lines.join('\n')));
+        ytMake(vid, parseCues(lines.join('\n')), data.title);
         return;
       }
       var e = String((data && data.error) || err || '');
@@ -3537,13 +3541,13 @@
       $('yt-msg').textContent = msg + ' 「文字起こしを表示」の内容を貼り付けて、もう一度押してください。';
     });
   }
-  function ytMake(vid, cues) {
+  function ytMake(vid, cues, title) {
     if (!cues.length) { alert('時刻つきの字幕が見つかりませんでした。YouTube の「文字起こしを表示」の内容を、時刻ごとコピーして貼り付けてください。'); return; }
     if (cues.length > 1500) cues = cues.slice(0, 1500);
     var text = cueTexts(cues).join('\n'), ids = rdIds();
     for (var i = 0; i < ids.length; i++) if (rdDocs[ids[i]].yt === vid && rdDocs[ids[i]].text === text) { $('yt-in').value = ''; openRdDoc(ids[i]); return; }
     var id = newId();
-    rdDocs[id] = { title: '🎬 ' + cues[0][1].slice(0, 56), text: text, at: now(), yt: vid, cues: cues };
+    rdDocs[id] = { title: '🎬 ' + (title ? String(title).slice(0, 80) : cues[0][1].slice(0, 56)), text: text, at: now(), yt: vid, cues: cues };
     rdSaveLocal();
     $('yt-in').value = ''; $('yt-url').value = '';
     openRdDoc(id, true);
@@ -3812,7 +3816,9 @@
         delete rdDocs[id]; rdSaveLocal(); renderRdHistory();
         var bd = {}; bd['reader/' + id] = null; api('PATCH', '', bd, function () {});
       });
-      row.appendChild(del); row.appendChild(b); row.appendChild(sp);
+      var ren = document.createElement('button'); ren.type = 'button'; ren.textContent = '✎'; ren.title = '題名を直す'; ren.className = 'rd-ren';
+      on(ren, 'click', function (e) { e.stopPropagation(); renameDoc(id); });
+      row.appendChild(del); row.appendChild(ren); row.appendChild(b); row.appendChild(sp);
       on(row, 'click', function () { openRdDoc(id); });
       box.appendChild(row);
     });
@@ -3872,6 +3878,32 @@
     rdSaveLocal();
     openRdDoc(id, true);
   }
+  // 貼り付けた英文の題名：最初の文（長ければ途中まで）
+  function autoTitle(text) {
+    var t = String(text || '').replace(/\s+/g, ' ').replace(/^\s+/, '');
+    var m = /^(.{12,80}?[.!?])(\s|$)/.exec(t);
+    t = m ? m[1] : t;
+    return t.length > 60 ? t.slice(0, 58).replace(/\s+\S*$/, '') + '…' : t;
+  }
+  // 題名を直す（端末とクラウドの両方）
+  function renameDoc(id) {
+    var d = rdDocs[id]; if (!d) return;
+    var mark = /^(🌐|🎬) /.exec(d.title || ''), cur = String(d.title || '').replace(/^(🌐|🎬) /, '');
+    var t = window.prompt('この英文の題名', cur);
+    if (t === null) return;
+    t = t.replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '').slice(0, 80);
+    if (!t) t = autoTitle(d.text);
+    d.title = (mark ? mark[0] : '') + t; d.named = 1;
+    rdSaveLocal();
+    if (KEY) { var b = {}; b['reader/' + id + '/title'] = d.title; b['reader/' + id + '/named'] = 1; api('PATCH', '', b, function () {}); }
+    if (rdCur && rdCur.id === id) showDocTitle();
+    renderRdHistory();
+  }
+  function showDocTitle() {
+    var el = $('rd-title'); if (!el) return;
+    el.textContent = rdCur ? String(rdCur.d.title || '').replace(/^(🌐|🎬) /, '') : '';
+    $('rd-title-mark').textContent = rdCur && /^🎬/.test(rdCur.d.title || '') ? '🎬 ' : rdCur && /^🌐/.test(rdCur.d.title || '') ? '🌐 ' : '';
+  }
   function rdLoad() {
     var text = $('rd-in').value.replace(/^\s+|\s+$/g, '');
     if (!text) { alert('英文を入力するか、貼り付けてください。'); return; }
@@ -3882,7 +3914,7 @@
     var ids = rdIds();
     for (var i = 0; i < ids.length; i++) if (rdDocs[ids[i]].text === text) { openRdDoc(ids[i]); return; }
     var id = newId();
-    rdDocs[id] = { title: text.replace(/\s+/g, ' ').slice(0, 60), text: text, at: now() };
+    rdDocs[id] = { title: autoTitle(text), text: text, at: now() };
     rdSaveLocal();
     openRdDoc(id, true);
   }
@@ -3903,7 +3935,7 @@
     var list = d.cues ? cueTexts(d.cues) : splitSentences(d.text);
     rdSents = [];
     each(list, function (t) { rdSents.push({ text: t, toks: tokenize(t), idioms: [] }); });
-    renderRd();
+    renderRd(); showDocTitle();
     $('rd-body').scrollTop = 0;
     if (d.yt && d.cues) ytOpen(d); else ytClose();
     loadPhrases(function () {
@@ -4136,6 +4168,7 @@
     stopSpeak(); show('scr-list'); renderList();
   });
   on($('rd-go'), 'click', rdLoad);
+  on($('rd-title-box'), 'click', function () { if (rdCur) renameDoc(rdCur.id); });
   var BM_CODE = "javascript:(function(){var d=document,t=String(window.getSelection?getSelection():'');if(t.length<40){var a=d.querySelector('article')||d.querySelector('main')||d.body,p=a.querySelectorAll('h1,h2,h3,p,li,blockquote'),o=[],i,x;for(i=0;i<p.length;i++){x=(p[i].innerText||p[i].textContent||'').replace(/\\s+/g,' ').replace(/^\\s+|\\s+$/g,'');if(x.length>25&&/[A-Za-z]{3}/.test(x)&&o.indexOf(x)<0)o.push(x);}t=o.join('\\n\\n')||a.innerText||'';}t=t.slice(0,20000);window.open('BASE#rt='+encodeURIComponent(t)+'&rs='+encodeURIComponent(location.href)+'&rtt='+encodeURIComponent(d.title.slice(0,80)),'_blank');})();".replace('BASE', location.protocol + '//' + location.host + '/tegaki-memo/');
   on($('bm-copy'), 'click', function () { copyText(BM_CODE); $('gas-msg').textContent = 'ブックマーク用のコードをコピーしました。'; });
   on($('btn-files'), 'click', function () {
@@ -4244,6 +4277,7 @@
     "// YouTube の字幕（英語）を時刻つきで取ってくる。1) 字幕ファイル 2) 文字起こし の順に試す",
     "function ytCaptions(id) {",
     "  var html = UrlFetchApp.fetch(\"https://www.youtube.com/watch?v=\" + id + \"&hl=en\", { muteHttpExceptions: true, headers: { \"Accept-Language\": \"en-US,en;q=0.9\" } }).getContentText();",
+    "  var tm = /<meta name=\"title\" content=\"([^\"]*)\"/.exec(html) || /<title>([^<]*)<\\/title>/.exec(html), vtitle = tm ? cleanHtml(tm[1]).replace(/ - YouTube$/, \"\") : \"\";",
     "  var err = \"\";",
     "  var tracks = jsonAfter(html, '\"captionTracks\":');",
     "  if (tracks && tracks.length) {",
@@ -4261,7 +4295,7 @@
     "          var t = ev.segs.map(function (x) { return x.utf8 || \"\"; }).join(\"\").replace(/\\s+/g, \" \").trim();",
     "          if (t) cues.push([Math.round((ev.tStartMs || 0) / 100) / 10, t]);",
     "        });",
-    "        if (cues.length) return { ok: true, cues: cues, lang: pick.languageCode, auto: pick.kind === \"asr\" };",
+    "        if (cues.length) return { ok: true, cues: cues, lang: pick.languageCode, auto: pick.kind === \"asr\", title: vtitle };",
     "      }",
     "      err = \"timedtext \" + r.getResponseCode();",
     "    } catch (e) { err = String(e); }",
@@ -4285,7 +4319,7 @@
     "          for (var k in o) walk(o[k]);",
     "        };",
     "        walk(JSON.parse(res.getContentText()));",
-    "        if (cues2.length) return { ok: true, cues: cues2, via: \"transcript\" };",
+    "        if (cues2.length) return { ok: true, cues: cues2, via: \"transcript\", title: vtitle };",
     "      }",
     "      err += \" / transcript \" + res.getResponseCode();",
     "    }",
