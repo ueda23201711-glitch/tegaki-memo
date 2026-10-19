@@ -3228,15 +3228,20 @@
   function useGemini() { return /^gm:/.test(rdVoiceName) && !!gasUrl && !gmOff; }
   function gmVoice() { return /^gm:/.test(rdVoiceName) ? rdVoiceName.slice(3) : 'Kore'; }
   function gmNote(t) { $('fl-note').textContent = t || '単語をタップすると止まって意味が出ます（単語帳にも保存できます）。続きは「▶ 続きから」。'; $('rd-status').textContent = t || ''; }
+  // 音声の中身から種類を判断（Gemini は WAV、Azure は MP3）
+  function audMime(b64) {
+    try { var h = atob(String(b64).slice(0, 8)); if (h.slice(0, 3) === 'ID3' || (h.charCodeAt(0) === 255 && (h.charCodeAt(1) & 224) === 224)) return 'audio/mpeg'; } catch (e) {}
+    return 'audio/wav';
+  }
   function gmSrc(b64) {
     try {
       if (window.Blob && window.URL && URL.createObjectURL && window.Uint8Array) {
         var bin = atob(b64), u = new Uint8Array(bin.length);
         for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
-        return URL.createObjectURL(new Blob([u], { type: 'audio/wav' }));
+        return URL.createObjectURL(new Blob([u], { type: audMime(b64) }));
       }
     } catch (e) {}
-    return 'data:audio/wav;base64,' + b64;
+    return 'data:' + audMime(b64) + ';base64,' + b64;
   }
   /* ---- 端末の中の声の保存（どちらのアプリでも共通） ---- */
   var VC_NAME = 'voice-cache-v1', VC_IDX = 'vcache_idx';
@@ -3297,7 +3302,7 @@
       if (window.caches && window.Blob && window.Uint8Array && window.Response) {
         var bin = atob(b64), u = new Uint8Array(bin.length);
         for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
-        caches.open(VC_NAME).then(function (c) { return c.put(vcUrl(k), new Response(new Blob([u], { type: 'audio/wav' }))); })
+        caches.open(VC_NAME).then(function (c) { return c.put(vcUrl(k), new Response(new Blob([u], { type: audMime(b64) }))); })
           .then(function () {}, function () {});
         return;
       }
@@ -4550,7 +4555,7 @@
     "    var r = tts(text, voice);",
     "    if (!r.ok) return r;",
     "    bytes = Utilities.base64Decode(r.a);",
-    "    folder.createFile(Utilities.newBlob(bytes, \"audio/wav\", name));",
+    "    folder.createFile(Utilities.newBlob(bytes, r.m === \"azure\" ? \"audio/mpeg\" : \"audio/wav\", name));",
     "    voiceNameAdd(name);",
     "    if (pre) return { ok: true, made: true, m: r.m };",
     "  }",
@@ -4767,7 +4772,7 @@
     "  var ssml = \"<speak version='1.0' xml:lang='\" + lang + \"'><voice name='\" + name + \"'>\" + esc + \"</voice></speak>\";",
     "  var res = UrlFetchApp.fetch(\"https://\" + region + \".tts.speech.microsoft.com/cognitiveservices/v1\", {",
     "    method: \"post\", muteHttpExceptions: true, contentType: \"application/ssml+xml\", payload: ssml,",
-    "    headers: { \"Ocp-Apim-Subscription-Key\": key.trim(), \"X-Microsoft-OutputFormat\": \"riff-24khz-16bit-mono-pcm\", \"User-Agent\": \"eibun-reader\" }",
+    "    headers: { \"Ocp-Apim-Subscription-Key\": key.trim(), \"X-Microsoft-OutputFormat\": \"audio-24khz-48kbitrate-mono-mp3\", \"User-Agent\": \"eibun-reader\" }",
     "  });",
     "  var code = res.getResponseCode(), body = \"\";",
     "  if (code === 200) return { ok: true, a: Utilities.base64Encode(res.getBlob().getBytes()), m: \"azure\" };",
