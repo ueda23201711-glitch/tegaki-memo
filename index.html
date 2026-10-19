@@ -148,6 +148,8 @@
   .rd-hrow { background: #fff; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(31,42,48,.1); cursor: pointer; overflow: hidden; }
   .rd-hrow b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .rd-hrow span { font-size: 12px; color: #6b7a83; }
+  .rd-hrow .rd-badge { margin-left: 10px; color: #2f6f8f; font-weight: 600; }
+  #mk-banner { background: #e6f1f6; color: #24363f; border-radius: 10px; padding: 8px 12px; margin: 8px 12px 0; font-size: 13px; }
   .rd-hrow .rd-ren { float: right; margin: 0 6px 0 0; padding: 4px 9px; font-size: 13px; }
   #rd-title-box { font-weight: 700; font-size: 16px; margin: 2px 0 8px; color: #24363f; cursor: pointer; line-height: 1.4; }
   #rd-src-box { margin: -4px 0 8px; font-size: 13px; word-break: break-all; }
@@ -453,6 +455,7 @@
     <button id="btn-rd-set" type="button" title="翻訳の設定">⚙︎<span class="wide"> 翻訳の設定</span></button>
   </div>
   <div class="body" id="rd-body">
+    <div id="mk-banner" class="hidden"></div>
     <div id="rd-input" class="rd-wrap">
       <div class="clip-send">
         <textarea id="rd-in" placeholder="英文を貼り付けてください（Kindle などからコピーした文章）。英語の記事のアドレス（https://…）を貼ると、そのページの本文を読み込みます"></textarea>
@@ -3274,12 +3277,12 @@
       });
     } catch (e) {}
   }
-  function gmFetch(text, cb, quick) {
-    var key = gmVoice() + '|' + text;
+  function gmFetch(text, cb, quick, vOver) {
+    var key = (vOver || gmVoice()) + '|' + text;
     if (gmCache[key]) { cb(gmCache[key]); return; }
     if (gmWait[key]) { gmWait[key].push(cb); return; }
     gmWait[key] = [cb];
-    var voice = gmVoice(), vk = vcHash(voice + '|' + text);
+    var voice = vOver || gmVoice(), vk = vcHash(voice + '|' + text);
     vcGet(vk, function (src) {
       if (src) { var r0 = { src: src, saved: true, local: true }; gmCache[key] = r0; var l0 = gmWait[key]; delete gmWait[key]; each(l0, function (f) { f(r0); }); return; }
       fromNet();
@@ -3420,46 +3423,130 @@
   }
 
   /* ---- この英文の AI の声を先に全部作って保存しておく（1分3回・1日の回数の範囲で） ---- */
-  var mkRun = 0;
+  /* ---- AIの声を作って保存（英文ごとの作業。ほかの英文を開いても続ける） ---- */
+  var mkRun = 0, mkJob = null, mkQueue = [];   // mkJob = {id, title, voice, chunks, i, made, had, netTry, run}
+  function docSents(d) { return d.cues ? cueTexts(d.cues) : splitSentences(d.text); }
+  // まとまり（再生と同じ区切り：600文字・8文まで）
+  function chunkTexts(list) {
+    var out = [], k = 0;
+    while (k < list.length) {
+      var a = k, len = 0, t = [];
+      while (k < list.length && (k === a || (len + list[k].length <= 600 && k - a < 8))) { len += list[k].length + 1; t.push(list[k]); k++; }
+      out.push(t.join(' '));
+    }
+    return out;
+  }
+  function docTitle(id) { var d = rdDocs[id]; return d ? String(d.title || '').replace(/^(🌐|🎬) /, '').slice(0, 30) : ''; }
+  // この端末に入っている数（英文 d・声 voice）
+  function docLocal(d, voice) {
+    var idx = vcIdx(), ch = chunkTexts(docSents(d)), have = 0;
+    each(ch, function (t) { if (idx[vcHash(voice + '|' + t)]) have++; });
+    return { have: have, n: ch.length };
+  }
+  function vcCount() {
+    if (!rdCur || !/^gm:/.test(rdVoiceName)) return { have: 0, n: 0 };
+    return docLocal(rdCur.d, gmVoice());
+  }
   function makeButton() {
     $('rd-make').className = gasUrl && /^gm:/.test(rdVoiceName) ? '' : 'hidden';
-    if (!mkRun) {
+    var b = $('rd-make'), here = rdCur && mkJob && mkJob.id === rdCur.id, waiting = rdCur && inQueue(rdCur.id);
+    if (here) { b.textContent = '■ 作るのを止める（' + mkJob.i + ' / ' + mkJob.chunks.length + '）'; b.title = ''; }
+    else if (mkJob || waiting) { b.textContent = waiting ? '🎙 順番待ち → こちらを先に' : '🎙 こちらを優先して作る'; b.title = '「' + (mkJob ? docTitle(mkJob.id) : '') + '」の声づくりを一時停止して、この英文を先に作ります（終わったら元の作業を再開）'; }
+    else {
       var c = vcCount();
-      $('rd-make').textContent = '🎙 AIの声を作って保存' + (c.n ? '（📱 ' + c.have + ' / ' + c.n + '）' : '');
-      $('rd-make').title = c.n ? 'この英文の声（' + gmVoice() + '）のうち、この端末に入っているのは ' + c.have + ' / ' + c.n + ' まとまり' : '';
+      b.textContent = '🎙 AIの声を作って保存' + (c.n ? '（📱 ' + c.have + ' / ' + c.n + '）' : '');
+      b.title = c.n ? 'この英文の声（' + gmVoice() + '）のうち、この端末に入っているのは ' + c.have + ' / ' + c.n + ' まとまり' : '';
     }
+    mkBanner();
   }
-  // この英文の AI の声のうち、この端末に入っているまとまりの数
-  function vcCount() {
-    if (!rdSents.length || !/^gm:/.test(rdVoiceName)) return { have: 0, n: 0 };
-    var idx = vcIdx(), voice = gmVoice(), chunks = gmChunks(0), have = 0;
-    each(chunks, function (c) { if (idx[vcHash(voice + '|' + c.text)]) have++; });
-    return { have: have, n: chunks.length };
+  function inQueue(id) { for (var i = 0; i < mkQueue.length; i++) if (mkQueue[i].id === id) return true; return false; }
+  // 画面の上の「作成中」の表示（ほかの英文や一覧を見ているとき）
+  function mkBanner() {
+    var el = $('mk-banner'); if (!el) return;
+    if (!mkJob || (rdCur && rdCur.id === mkJob.id)) { el.className = 'hidden'; }
+    else {
+      el.className = '';
+      el.textContent = '🎙 「' + docTitle(mkJob.id) + '」の AI の声を作成中 ' + mkJob.i + ' / ' + mkJob.chunks.length + (mkQueue.length ? '（ほかに ' + mkQueue.length + ' 件が順番待ち）' : '');
+    }
+    if (!rdCur) each(rdIds(), function (id) { var bd = $('mkb-' + id); if (bd) bd.textContent = docBadge(id); });   // 一覧を見ているときだけ
   }
+  // 一覧の印
+  function docBadge(id) {
+    var d = rdDocs[id]; if (!d) return '';
+    if (mkJob && mkJob.id === id) return '🎙 作成中 ' + mkJob.i + '/' + mkJob.chunks.length;
+    if (inQueue(id)) return '⏸ 順番待ち';
+    if (!/^gm:/.test(rdVoiceName)) return '';
+    var v = gmVoice(), c = docLocal(d, v);
+    if (c.n && c.have === c.n) return '📱 AIの声（' + v + '）この端末に全部';
+    if (d.ai && d.ai[v]) return '💾 AIの声（' + v + '）作成済み' + (c.have ? '・📱 ' + c.have + '/' + c.n : '');
+    if (c.have) return '📱 ' + c.have + '/' + c.n;
+    return '';
+  }
+  function mkShow(job, t) { if (rdCur && rdCur.id === job.id) $('rd-status').textContent = t; }
   function makeAll() {
-    if (mkRun) { mkRun = 0; makeButton(); $('rd-status').textContent = '作るのを止めました。もう一度押すと続きから作ります。'; return; }
-    var run = mkRun = now(), chunks = gmChunks(0), i = 0, made = 0, had = 0, voice = gmVoice(), netTry = 0;
-    $('rd-make').textContent = '■ 作るのを止める';
-    var show = function (t) { if (mkRun === run || !mkRun) $('rd-status').textContent = t; };
-    var next = function (wait) {
-      if (mkRun !== run) return;
-      if (i >= chunks.length) { mkRun = 0; makeButton(); show('この英文の AI の声（' + voice + '）をすべて保存しました（AI が新しく作った ' + made + ' ・ドライブなどにあった ' + had + '）。この端末にも入れたので、すぐ再生できます。ほかの端末でも回数を使わずに聞けます。'); return; }
-      setTimeout(function () {
-        if (mkRun !== run) return;
-        show('AIの声をこの端末に入れています… ' + i + ' / ' + chunks.length + '（ドライブから取り込んだ ' + had + ' ・AI が新しく作った ' + made + '）');
-        var known = !!gmCache[voice + '|' + chunks[i].text];
-        gmFetch(chunks[i].text, function (r) {
-          if (mkRun !== run) return;
-          if (!r.err) { netTry = 0; if (known || r.local || r.saved) { had++; i++; next(0); } else { made++; i++; next(21000); } return; }
-          var e = r.err;
-          if ((/^(429 busy|5\d\d)/.test(e) || e === 'net' || e === 'timeout') && (netTry = (netTry || 0) + 1) <= 4) { show('混んでいるので少し待っています… ' + i + ' / ' + chunks.length); next(30000); return; }
-          mkRun = 0; makeButton();
-          show(netTry > 4 ? '混んでいる状態が続いたので止めました（' + i + ' / ' + chunks.length + ' できました）。今日の回数を使い切ったか、Google が混んでいます。しばらくしてから（または明日）もう一度押すと続きから作ります。' : /^429/.test(e) ? '今日の無料の回数はここまでです（' + i + ' / ' + chunks.length + ' できました）。回数は ' + gmResetText() + 'に戻るので、そのあともう一度押すと続きから作ります。' : 'AIの声を作れませんでした（' + gmErrText(e) + '）。');
-        }, true);
-      }, wait);
-    };
-    next(0);
+    if (!rdCur) return;
+    var id = rdCur.id;
+    if (mkJob && mkJob.id === id) { stopJob('作るのを止めました。もう一度押すと続きから作ります。'); return; }
+    for (var q = 0; q < mkQueue.length; q++) if (mkQueue[q].id === id) { mkQueue.splice(q, 1); break; }
+    if (mkJob) { mkJob.run = 0; mkQueue.unshift(mkJob); }   // 今の作業は一時停止して、あとで再開
+    startJob(id, gmVoice());
   }
+  function stopJob(msg) {
+    var job = mkJob; if (!job) return;
+    job.run = 0; mkJob = null; mkRun = 0;
+    mkShow(job, msg || '');
+    resumeNext();
+    makeButton();
+  }
+  function resumeNext() {
+    if (mkJob || !mkQueue.length) return;
+    var j = mkQueue.shift();
+    if (!rdDocs[j.id]) { resumeNext(); return; }
+    mkJob = j; j.run = mkRun = now(); j.netTry = 0;
+    setTimeout(function () { stepJob(j); }, 500);
+    makeButton();
+  }
+  function startJob(id, voice) {
+    var d = rdDocs[id]; if (!d) return;
+    var j = { id: id, voice: voice, chunks: chunkTexts(docSents(d)), i: 0, made: 0, had: 0, netTry: 0, run: now() };
+    mkJob = j; mkRun = j.run;
+    makeButton();
+    stepJob(j);
+  }
+  function stepJob(j, wait) {
+    if (mkJob !== j || !j.run) return;
+    var run = j.run;
+    setTimeout(function () {
+      if (mkJob !== j || j.run !== run) return;
+      if (j.i >= j.chunks.length) {
+        var d = rdDocs[j.id];
+        if (d) { d.ai = d.ai || {}; d.ai[j.voice] = 1; rdSaveLocal(); if (KEY) { var b = {}; b['reader/' + j.id + '/ai/' + j.voice] = 1; api('PATCH', '', b, function () {}); } }
+        mkJob = null; mkRun = 0;
+        mkShow(j, 'この英文の AI の声（' + j.voice + '）をすべて保存しました（AI が新しく作った ' + j.made + ' ・ドライブなどにあった ' + j.had + '）。この端末にも入れたので、すぐ再生できます。ほかの端末でも回数を使わずに聞けます。');
+        resumeNext(); makeButton(); renderIfList();
+        return;
+      }
+      mkShow(j, 'AIの声をこの端末に入れています… ' + j.i + ' / ' + j.chunks.length + '（ドライブから取り込んだ ' + j.had + ' ・AI が新しく作った ' + j.made + '）');
+      makeButton();
+      var text = j.chunks[j.i], known = !!gmCache[j.voice + '|' + text];
+      gmFetch(text, function (r) {
+        if (mkJob !== j || j.run !== run) return;
+        if (!r.err) { j.netTry = 0; if (known || r.local || r.saved) { j.had++; j.i++; stepJob(j, 0); } else { j.made++; j.i++; stepJob(j, 21000); } return; }
+        var e = r.err;
+        if ((/^(429 busy|5\d\d)/.test(e) || e === 'net' || e === 'timeout') && (j.netTry = (j.netTry || 0) + 1) <= 4) { mkShow(j, '混んでいるので少し待っています… ' + j.i + ' / ' + j.chunks.length); stepJob(j, 30000); return; }
+        // 続けられない（回数切れなど）：順番待ちも止める
+        var msg = j.netTry > 4 ? '混んでいる状態が続いたので止めました（' + j.i + ' / ' + j.chunks.length + ' できました）。今日の回数を使い切ったか、Google が混んでいます。しばらくしてから（または明日）もう一度押すと続きから作ります。'
+          : /^429/.test(e) ? '今日の無料の回数はここまでです（' + j.i + ' / ' + j.chunks.length + ' できました）。回数は ' + gmResetText() + 'に戻るので、そのあともう一度押すと続きから作ります。' : 'AIの声を作れませんでした（' + gmErrText(e) + '）。';
+        if (mkQueue.length && /^429/.test(e)) msg += '（順番待ちだった ' + mkQueue.length + ' 件も止めました）';
+        if (/^429/.test(e)) mkQueue = [];
+        mkJob = null; mkRun = 0;
+        mkShow(j, msg);
+        if (!rdCur || rdCur.id !== j.id) { var el = $('mk-banner'); if (el) { el.className = ''; el.textContent = '🎙 「' + docTitle(j.id) + '」：' + msg; } }
+        resumeNext(); makeButton(); renderIfList();
+      }, true, j.voice);
+    }, wait || 0);
+  }
+  function renderIfList() { if (!rdCur) renderRdHistory(); }
 
   /* ---- 🎬 YouTube の動画で読む ---- */
   var ytPlayer = null, ytReady = false, ytWait = [], ytTimer = null, ytLoop = false, ytLoopIdx = -1, ytVid = '';
@@ -3823,7 +3910,8 @@
       });
       var ren = document.createElement('button'); ren.type = 'button'; ren.textContent = '✎'; ren.title = '題名を直す'; ren.className = 'rd-ren';
       on(ren, 'click', function (e) { e.stopPropagation(); renameDoc(id); });
-      row.appendChild(del); row.appendChild(ren); row.appendChild(b); row.appendChild(sp);
+      var bd = document.createElement('span'); bd.className = 'rd-badge'; bd.id = 'mkb-' + id; bd.textContent = docBadge(id);
+      row.appendChild(del); row.appendChild(ren); row.appendChild(b); row.appendChild(sp); row.appendChild(bd);
       on(row, 'click', function () { openRdDoc(id); });
       box.appendChild(row);
     });
@@ -3958,7 +4046,6 @@
   }
   function openRdDoc(id, isNew) {
     var d = rdDocs[id]; if (!d) return;
-    if (rdCur && rdCur.id !== id) mkRun = 0;
     stopSpeak();
     rdCur = { id: id, d: d };
     $('rd-input').className = 'hidden'; $('rd-view').className = '';
