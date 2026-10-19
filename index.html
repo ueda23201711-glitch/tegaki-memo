@@ -371,6 +371,7 @@
       <div id="tool-row">
         <button id="btn-clip" type="button">📋 共有クリップ</button>
         <button id="btn-reader" type="button">📖 英文リーダー</button>
+        <button id="btn-files" type="button">📎 ファイル共有</button>
       </div>
       <div id="folder-bar">
         <span id="fb-path"></span>
@@ -530,7 +531,8 @@
     ③ Apps Script の左の ⚙「プロジェクトの設定」→ 下の「スクリプト プロパティを追加」→ プロパティ <b>GEMINI_KEY</b>、値に鍵 →「保存」<br>
     ④「デプロイ」→「デプロイを管理」→ ✏ → バージョン「新バージョン」→「デプロイ」（アドレスは変わりません）<br>
     ⑤ 下の「AIの声をテスト」（許可を聞かれたら「詳細」→「安全ではないページに移動」→「許可」）<br>
-    作った声は、ご自分の Google ドライブの「英文リーダーの声（AI）」フォルダに保存され、どの端末からでも回数を使わずに聞き直せます。</p>
+    作った声は、ご自分の Google ドライブの「英文リーダーの声（AI）」フォルダに保存され、どの端末からでも回数を使わずに聞き直せます。<br>
+    「📎 ファイル共有」で送ったファイルは、ドライブの「手書きメモ・英文リーダーの共有ファイル」フォルダに入ります（このコードが必要です）。</p>
     <div class="row"><button id="gm-test" type="button">AIの声をテスト</button></div>
     <p id="gm-msg" class="note"></p>
   </div>
@@ -738,6 +740,7 @@
           </div>
           <div id="fl-text"></div>
         </div>
+<script src="fileshare.js"></script>
 <script>
 (function () {
   'use strict';
@@ -4074,6 +4077,10 @@
     stopSpeak(); show('scr-list'); renderList();
   });
   on($('rd-go'), 'click', rdLoad);
+  on($('btn-files'), 'click', function () {
+    if (!window.FileShare) { alert('ファイル共有を読み込めませんでした。開き直してください。'); return; }
+    FileShare.open({ key: function () { return KEY; }, db: DB_URL, gas: function () { return gasUrl; } });
+  });
   on($('rd-paste'), 'click', function () {
     navigator.clipboard.readText().then(function (t) { if (t) $('rd-in').value = t; }, function () { alert('貼り付けできませんでした。入力欄を長押しして「ペースト」を選んでください。'); });
   });
@@ -4131,7 +4138,9 @@
     "  var p = e.parameter, out;",
     "  try {",
     "    var sl = p.sl || \"en\", tl = p.tl || \"ja\";",
-    "    if (p.yt) {",
+    "    if (p.f) {",
+    "      out = fileAct(String(p.f), String(p.id || \"\").replace(/[^A-Za-z0-9_-]/g, \"\"), Number(p.part) || 0);",
+    "    } else if (p.yt) {",
     "      out = ytCaptions(String(p.yt).replace(/[^A-Za-z0-9_-]/g, \"\").slice(0, 11));",
     "    } else if (p.tts) {",
     "      out = ttsSaved(String(p.tts).slice(0, 1500), String(p.v || \"Kore\").replace(/[^A-Za-z]/g, \"\"), p.pre === \"1\", Number(p.part) || 0);",
@@ -4243,6 +4252,67 @@
     "// 「使い切ったので飛ばす」の印を消す（エディタでこの関数を選んで ▷ 実行）",
     "function resetSkip() {",
     "  CacheService.getScriptCache().removeAll([\"off_gemini-3.8-flash-tts\", \"off_gemini-3.8-flash-lite-tts\", \"off_gemini-3.1-flash-tts-preview\", \"off_gemini-2.5-flash-preview-tts\"]);",
+    "}",
+    "// ===== 📎 ファイル共有：ドライブの「共有ファイル」フォルダに入れる・取り出す =====",
+    "function shareFolder() {",
+    "  var props = PropertiesService.getScriptProperties(), id = props.getProperty(\"SHARE_FOLDER\");",
+    "  if (id) { try { return DriveApp.getFolderById(id); } catch (e) {} }",
+    "  var f = DriveApp.createFolder(\"手書きメモ・英文リーダーの共有ファイル\");",
+    "  props.setProperty(\"SHARE_FOLDER\", f.getId());",
+    "  return f;",
+    "}",
+    "// 共有フォルダの中のファイルだけを扱う（ほかのファイルは触らない）",
+    "function inShare(id) {",
+    "  var fid = shareFolder().getId(), it = DriveApp.getFileById(id).getParents();",
+    "  while (it.hasNext()) if (it.next().getId() === fid) return true;",
+    "  return false;",
+    "}",
+    "// ファイルを送る（2MB ずつ。ドライブの「再開可能なアップロード」を使う）",
+    "function doPost(e) {",
+    "  var out;",
+    "  try {",
+    "    var b = JSON.parse(e.postData.contents);",
+    "    if (b.act === \"up0\") {",
+    "      var res = UrlFetchApp.fetch(\"https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id\", {",
+    "        method: \"post\", contentType: \"application/json; charset=UTF-8\", muteHttpExceptions: true,",
+    "        headers: { Authorization: \"Bearer \" + ScriptApp.getOAuthToken(), \"X-Upload-Content-Type\": b.type || \"application/octet-stream\", \"X-Upload-Content-Length\": String(b.size) },",
+    "        payload: JSON.stringify({ name: String(b.name || \"file\").slice(0, 200), parents: [shareFolder().getId()] })",
+    "      });",
+    "      var h = res.getHeaders(), loc = h[\"Location\"] || h[\"location\"];",
+    "      if (!loc) throw new Error(\"upload start \" + res.getResponseCode() + \" \" + res.getContentText().slice(0, 200));",
+    "      var up = Utilities.getUuid();",
+    "      CacheService.getScriptCache().put(\"up_\" + up, loc, 21600);",
+    "      out = { ok: true, up: up };",
+    "    } else if (b.act === \"upc\") {",
+    "      var loc2 = CacheService.getScriptCache().get(\"up_\" + b.up);",
+    "      if (!loc2) throw new Error(\"upload expired\");",
+    "      var bytes = Utilities.base64Decode(b.data), end = Number(b.off) + bytes.length - 1;",
+    "      var r2 = UrlFetchApp.fetch(loc2, { method: \"put\", muteHttpExceptions: true, contentType: b.type || \"application/octet-stream\",",
+    "        headers: { \"Content-Range\": \"bytes \" + b.off + \"-\" + end + \"/\" + b.total }, payload: bytes });",
+    "      var code = r2.getResponseCode();",
+    "      if (code === 308) out = { ok: true, done: false };",
+    "      else if (code === 200 || code === 201) out = { ok: true, done: true, id: JSON.parse(r2.getContentText()).id };",
+    "      else throw new Error(\"upload \" + code + \" \" + r2.getContentText().slice(0, 200));",
+    "    } else out = { ok: false, error: \"act\" };",
+    "  } catch (err) { out = { ok: false, error: String(err) }; }",
+    "  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);",
+    "}",
+    "// 受け取る（3MB ずつ）・リンクを作る・削除する",
+    "function fileAct(act, id, part) {",
+    "  if (!id || !inShare(id)) return { ok: false, error: \"notshared\" };",
+    "  var f = DriveApp.getFileById(id);",
+    "  if (act === \"del\") { f.setTrashed(true); return { ok: true }; }",
+    "  if (act === \"link\") {",
+    "    f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);",
+    "    return { ok: true, url: \"https://drive.google.com/uc?export=download&id=\" + id };",
+    "  }",
+    "  var size = f.getSize(), CH = 3 * 1024 * 1024, n = Math.max(1, Math.ceil(size / CH));",
+    "  if (!size) return { ok: true, a: \"\", n: 1, k: 0, size: 0, type: f.getMimeType(), name: f.getName() };",
+    "  var from = part * CH, to = Math.min(size, from + CH) - 1;",
+    "  var r = UrlFetchApp.fetch(\"https://www.googleapis.com/drive/v3/files/\" + id + \"?alt=media\", { muteHttpExceptions: true,",
+    "    headers: { Authorization: \"Bearer \" + ScriptApp.getOAuthToken(), Range: \"bytes=\" + from + \"-\" + to } });",
+    "  if (r.getResponseCode() !== 206 && r.getResponseCode() !== 200) return { ok: false, error: \"get \" + r.getResponseCode() };",
+    "  return { ok: true, a: Utilities.base64Encode(r.getContent()), n: n, k: part, size: size, type: f.getMimeType(), name: f.getName() };",
     "}",
     "function voiceFolder() {",
     "  var props = PropertiesService.getScriptProperties(), id = props.getProperty(\"VOICE_FOLDER\");",
