@@ -1003,10 +1003,11 @@
     renderItems();
   }
 
+  var thinOK = false;   // 一覧の小さな絵を作るときは、1 ドットより細い線も許す（太く見えないように）
   function strokeStyle(c, st, s) {
     var k = s * dpr;
     c.lineCap = 'round'; c.lineJoin = 'round';
-    c.lineWidth = Math.max(1, st.w * k);
+    c.lineWidth = Math.max(thinOK ? 0.4 : 1, st.w * k);
     if (st.t === 'eraser') { c.globalCompositeOperation = 'destination-out'; c.strokeStyle = '#000'; c.fillStyle = '#000'; c.globalAlpha = 1; }
     else {
       c.globalCompositeOperation = st.t === 'hl' ? 'multiply' : 'source-over';
@@ -1023,7 +1024,7 @@
       var base = st.w * k;
       for (var j = 2; j < p.length; j += 2) {
         var pr = (st.r[j / 2 - 1] + st.r[j / 2]) / 200;
-        c.lineWidth = Math.max(1, base * (0.35 + 1.1 * pr));
+        c.lineWidth = Math.max(thinOK ? 0.4 : 1, base * (0.35 + 1.1 * pr));
         c.beginPath(); c.moveTo(p[j - 2] * k, p[j - 1] * k); c.lineTo(p[j] * k, p[j + 1] * k); c.stroke();
       }
       c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
@@ -1058,7 +1059,7 @@
   function makeThumb(n) {
     var saveDpr = 0;
     try {
-      var c = document.createElement('canvas'), tw = 200, th = Math.round(200 * A4_H / PAGE_W);
+      var c = document.createElement('canvas'), tw = 400, th = Math.round(400 * A4_H / PAGE_W);   // 一覧で太く見えないよう、大きめに作る
       c.width = tw; c.height = th;
       var x = c.getContext('2d'); saveDpr = dpr;
       var h0 = n.h || A4_H, k = Math.min(tw / PAGE_W, th / h0);
@@ -1066,9 +1067,9 @@
       // 消しゴムが白地まで消さないよう、線だけ別に描いてから白地に重ねる
       var c2 = document.createElement('canvas'); c2.width = pw; c2.height = ph;
       var x2 = c2.getContext('2d');
-      dpr = 1;
+      dpr = 1; thinOK = true;
       each(visible(n.strokes), function (st) { pathStroke(x2, st, k); });
-      dpr = saveDpr;
+      dpr = saveDpr; thinOK = false;
       x.fillStyle = '#f3f5f6'; x.fillRect(0, 0, tw, th);
       x.fillStyle = '#fff'; x.fillRect(ox, 0, pw, ph);
       x.save(); x.translate(ox, 0);
@@ -1077,7 +1078,7 @@
       x.drawImage(c2, 0, 0);
       x.restore();
       return c.toDataURL('image/jpeg', 0.6);
-    } catch (e) { if (saveDpr) dpr = saveDpr; return ''; }
+    } catch (e) { if (saveDpr) dpr = saveDpr; thinOK = false; return ''; }
   }
 
   /* ---- 入力 ---- */
@@ -1197,7 +1198,7 @@
     if (!cur) return;
     cur.updated = now();
     var old = index[cur.id] || {};
-    index[cur.id] = { title: cur.title, updated: cur.updated, thumb: makeThumb(cur) };
+    index[cur.id] = { title: cur.title, updated: cur.updated, thumb: makeThumb(cur), tv: 2 };
     if (old.f) { index[cur.id].f = old.f; index[cur.id].fm = old.fm || 0; }
     dirty[cur.id] = true; curIsNew = false;
     saveIndexLocal(); saveDirtyLocal(); cacheNote(cur);
@@ -1219,6 +1220,10 @@
     updateUndoButtons();
     if (!isNew) pullCurrent(true);
     startPoll();
+    // 前の作り方の一覧の絵（線が太く見える）を作り直す
+    if (!isNew && index[id] && index[id].tv !== 2 && (cur.strokes || []).length && (!cur.bg || (imgEls[cur.bg] && imgEls[cur.bg].complete))) {
+      var th2 = makeThumb(cur); if (th2) { index[id].thumb = th2; index[id].tv = 2; saveIndexLocal(); }
+    }
   }
   function pullCurrent(force) {
     if (!cur || dirty[cur.id] || drawing || dragging || gest) return;
