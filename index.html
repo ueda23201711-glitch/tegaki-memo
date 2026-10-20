@@ -148,6 +148,15 @@
   .rd-hrow { background: #fff; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(31,42,48,.1); cursor: pointer; overflow: hidden; }
   .rd-hrow b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .rd-hrow span { font-size: 12px; color: #6b7a83; }
+  .rd-selbtn { font-size: 13px; padding: 4px 10px; margin-left: 10px; font-weight: 400; vertical-align: middle; }
+  #rd-selbar { position: -webkit-sticky; position: sticky; top: 0; z-index: 5; background: #e6f1f6; border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; }
+  #rd-selbar span { font-weight: 700; margin-right: 6px; }
+  #rd-selbar button { padding: 6px 10px; font-size: 13px; margin: 2px 4px 2px 0; }
+  #rd-selbar button.danger { background: #a3301f; color: #fff; }
+  #rd-selbar button:disabled { opacity: .4; }
+  .rd-hrow .rd-chk { float: left; width: 22px; height: 22px; margin: 0 10px 0 0; border: 2px solid #8aa0ab; border-radius: 6px; text-align: center; line-height: 18px; font-weight: 700; color: #fff; }
+  .rd-hrow.sel { background: #fff4e5; }
+  .rd-hrow.sel .rd-chk { background: #a3301f; border-color: #a3301f; }
   .rd-hrow .rd-badge { margin-left: 10px; color: #2f6f8f; font-weight: 600; }
   #rd-cv-box { font-size: 13px; color: #2f6f8f; margin: 0 0 8px; line-height: 1.6; }
   #rd-cv-box button { padding: 3px 9px; font-size: 13px; margin: 2px 6px 2px 0; }
@@ -476,7 +485,11 @@
         <p class="note">字幕は、アドレスだけ入れて押せば自動で取ってきます（英語の字幕がある動画）。取れないときの貼り付け方（パソコンが簡単です）：YouTube で動画を開き、説明欄の「…もっと見る」→ いちばん下の「文字起こしを表示」→ 右に出た文字起こしをドラッグで最後まで選んでコピーして、上に貼り付けます（時刻も一緒に）。字幕ファイル（.srt / .vtt）の中身でも大丈夫です。</p>
       </div>
       <p class="note">保存した単語・熟語は <a href="/kiku-memo/" target="_blank">📚 メモ単語帳</a> で学習できます（iPad 2/3 は <a href="/kiku-memo/ipad.html" target="_blank">こちら</a>）。</p>
-      <h3 id="rd-hist-h" class="rd-h">これまでの英文</h3>
+      <h3 id="rd-hist-h" class="rd-h">これまでの英文 <button id="rd-sel" type="button" class="rd-selbtn">☑ 選んで削除</button></h3>
+      <div id="rd-selbar" class="hidden"><span id="rd-selcount">0 件を選択</span>
+        <button id="rd-selall" type="button">すべて選ぶ</button>
+        <button id="rd-seldel" type="button" class="danger">選んだものを削除</button>
+        <button id="rd-selend" type="button">やめる</button></div>
       <div id="rd-hist"></div>
     </div>
     <div id="rd-view" class="hidden">
@@ -4100,11 +4113,41 @@
   /* ---- 画面 ---- */
   function rdSaveLocal() { lsSet('memo_reader', JSON.stringify(rdDocs)); }
   function rdIds() { var a = []; for (var k in rdDocs) if (rdDocs[k] && rdDocs[k].text) a.push(k); a.sort(function (x, y) { return (rdDocs[y].at || 0) - (rdDocs[x].at || 0); }); return a; }
+  // 選んで削除：rdSel = {id: 1}（選んでいないときは null）
+  var rdSel = null;
+  function delDocs(ids) {
+    var b = {};
+    each(ids, function (id) {
+      if (mkJob && mkJob.id === id) stopJob('');
+      for (var q = mkQueue.length - 1; q >= 0; q--) if (mkQueue[q].id === id) mkQueue.splice(q, 1);
+      delete rdDocs[id]; b['reader/' + id] = null;
+    });
+    rdSaveLocal();
+    if (KEY && ids.length) api('PATCH', '', b, function () {});
+  }
+  on($('rd-sel'), 'click', function (e) { e.stopPropagation(); rdSel = {}; renderRdHistory(); });
+  on($('rd-selend'), 'click', function () { rdSel = null; renderRdHistory(); });
+  on($('rd-selall'), 'click', function () {
+    var ids = rdIds().slice(0, 40), all = true;
+    each(ids, function (id) { if (!rdSel[id]) all = false; });
+    rdSel = {}; if (!all) each(ids, function (id) { rdSel[id] = 1; });
+    renderRdHistory();
+  });
+  on($('rd-seldel'), 'click', function () {
+    var ids = []; for (var id in rdSel) if (rdDocs[id]) ids.push(id);
+    if (!ids.length) return;
+    if (!window.confirm('選んだ ' + ids.length + ' 件の英文を削除しますか？（ほかの端末からも消えます。作った AI の声はドライブに残ります）')) return;
+    delDocs(ids); rdSel = null; renderRdHistory();
+  });
   function renderRdHistory() {
     cvLoad();
     var box = $('rd-hist'); box.innerHTML = '';
     var ids = rdIds();
     $('rd-hist-h').style.display = ids.length ? '' : 'none';
+    if (rdSel && !ids.length) rdSel = null;
+    $('rd-selbar').className = rdSel ? '' : 'hidden';
+    $('rd-sel').className = rdSel ? 'rd-selbtn hidden' : 'rd-selbtn';
+    if (rdSel) { var nSel = 0; for (var sx in rdSel) if (rdDocs[sx]) nSel++; else delete rdSel[sx]; $('rd-selcount').textContent = nSel + ' 件を選択'; $('rd-seldel').disabled = !nSel; }
     each(ids.slice(0, 40), function (id) {
       var d = rdDocs[id];
       var row = document.createElement('div'); row.className = 'rd-hrow';
@@ -4120,6 +4163,14 @@
       var ren = document.createElement('button'); ren.type = 'button'; ren.textContent = '✎'; ren.title = '題名を直す'; ren.className = 'rd-ren';
       on(ren, 'click', function (e) { e.stopPropagation(); renameDoc(id); });
       var bd = document.createElement('span'); bd.className = 'rd-badge'; bd.id = 'mkb-' + id; bd.textContent = docBadge(id);
+      if (rdSel) {
+        var ck = document.createElement('span'); ck.className = 'rd-chk'; ck.textContent = rdSel[id] ? '✓' : '';
+        if (rdSel[id]) row.className += ' sel';
+        row.appendChild(ck); row.appendChild(b); row.appendChild(sp); row.appendChild(bd);
+        on(row, 'click', function () { if (rdSel[id]) delete rdSel[id]; else rdSel[id] = 1; renderRdHistory(); });
+        box.appendChild(row);
+        return;
+      }
       row.appendChild(del); row.appendChild(ren); row.appendChild(b); row.appendChild(sp); row.appendChild(bd);
       on(row, 'click', function () { openRdDoc(id); });
       box.appendChild(row);
