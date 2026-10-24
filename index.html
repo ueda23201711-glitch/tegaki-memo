@@ -5114,12 +5114,17 @@
     if (!rdCur) return;
     var id = rdCur.id, d = rdCur.d, fx = fixBreaks(d.text);
     if (!fx.n) return;
-    if (!window.confirm(fx.n + ' か所の、途中で切れた文をつなぎます。日本語訳は作り直します（その部分の AI の声も作り直しになります）。よろしいですか？')) return;
-    d.text = fx.text; delete d.tr; delete d.ns; delete d.bm; delete d.bmP;
+    if (!window.confirm(fx.n + ' か所の、途中で切れた文をつなぎます。つないだ文だけ日本語訳と AI の声を作り直します（ほかの文の訳と声はそのまま使います）。よろしいですか？')) return;
+    // 変わらなかった文の訳はそのまま使う（つないだ文だけ訳し直す）
+    var oldS = splitSentences(d.text), keep = {};
+    if (d.tr && d.tr.length === oldS.length) each(oldS, function (t, k) { if (d.tr[k]) keep[t] = d.tr[k]; });
+    var newS = splitSentences(fx.text), tr = [], miss = 0;
+    each(newS, function (t) { var x = keep[t] || ''; if (!x) miss++; tr.push(x); });
+    d.text = fx.text; d.tr = tr; if (miss) d.trPart = 1; else delete d.trPart; delete d.ns; delete d.bm; delete d.bmP;
     rdSaveLocal();
-    if (KEY) { var b = {}; b['reader/' + id + '/text'] = d.text; b['reader/' + id + '/tr'] = null; b['reader/' + id + '/bm'] = null; b['reader/' + id + '/bmP'] = null; api('PATCH', '', b, function () {}); }
+    if (KEY) { var b = {}; b['reader/' + id + '/text'] = d.text; b['reader/' + id + '/tr'] = d.tr; b['reader/' + id + '/trPart'] = d.trPart || null; b['reader/' + id + '/bm'] = null; b['reader/' + id + '/bmP'] = null; api('PATCH', '', b, function () {}); }
     openRdDoc(id, true);
-    $('rd-status').textContent = fx.n + ' か所をつなぎました。日本語訳を作り直しています…';
+    $('rd-status').textContent = fx.n + ' か所をつなぎました。つないだ文の日本語訳を作っています…';
   });
   var BM_CODE = "javascript:(function(){var d=document,t=String(window.getSelection?getSelection():'');if(t.length<40){var a=d.querySelector('article')||d.querySelector('main')||d.body,p=a.querySelectorAll('h1,h2,h3,p,li,blockquote'),o=[],i,x;for(i=0;i<p.length;i++){x=(p[i].innerText||p[i].textContent||'').replace(/\\s+/g,' ').replace(/^\\s+|\\s+$/g,'');if(x.length>25&&/[A-Za-z]{3}/.test(x)&&o.indexOf(x)<0)o.push(x);}t=o.join('\\n\\n')||a.innerText||'';}t=t.slice(0,20000);window.open('BASE#rt='+encodeURIComponent(t)+'&rs='+encodeURIComponent(location.href)+'&rtt='+encodeURIComponent(String((d.querySelector('h1')||{}).innerText||d.title).replace(/\\s+/g,' ').slice(0,120)),'_blank');})();".replace('BASE', location.protocol + '//' + location.host + '/tegaki-memo/');
   var SHARE_URL = location.protocol + '//' + location.host + '/tegaki-memo/#ru=';
