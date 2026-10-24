@@ -512,7 +512,7 @@
         <div class="row"><label class="bk-file">🖼 スクリーンショットを選ぶ（まとめて）<input id="bk-files" type="file" multiple accept="image/*"></label></div>
         <p class="note" id="bk-count"></p>
         <div id="bk-crop" class="hidden">
-          <p class="note"><b>読み取る範囲</b>：下の1枚目の画像の上で、本文の部分をドラッグして囲んでください（ページ上の題名や下のページ番号・ボタンは外す）。全部の画像に同じ範囲を使います。</p>
+          <p class="note"><b>読み取る範囲</b>：下の1枚目の画像の上で、本文の部分をドラッグして囲んでください（ページ上の本の題名の帯や、下のページ番号・ボタンは外す）。本文の文字にかからないよう、まわりに少し余白を残して囲むのがコツです。全部の画像に同じ範囲を使います。見開き（2段）の画面でも、左の段 → 右の段の順に読み取ります。</p>
           <canvas id="bk-cv"></canvas>
           <div class="row"><button id="bk-full" type="button">画像全体を使う</button> <span class="note" id="bk-cropinfo"></span></div>
         </div>
@@ -4365,6 +4365,28 @@
     x.drawImage(im, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
     return cv;
   }
+  // 2段組み（見開き）なら、真ん中の白いすき間で左右に分ける（左の段 → 右の段の順に読む）
+  function bkSplit(cv) {
+    try {
+      var w = Math.min(1000, cv.width), h = Math.max(1, Math.round(cv.height * w / cv.width)), t = document.createElement('canvas');
+      t.width = w; t.height = h; var x = t.getContext('2d'); x.drawImage(cv, 0, 0, w, h);
+      var px = x.getImageData(0, 0, w, h).data, best = null, run = null;
+      for (var c = Math.round(w * 0.3); c <= Math.round(w * 0.7); c++) {
+        var dark = 0;
+        for (var r = 0; r < h; r++) { var i = (r * w + c) * 4; if (px[i] + px[i + 1] + px[i + 2] < 600) dark++; }
+        if (dark <= h * 0.004) { if (!run) run = { a: c, b: c }; else run.b = c; }
+        else { if (run && (!best || run.b - run.a > best.b - best.a)) best = run; run = null; }
+      }
+      if (run && (!best || run.b - run.a > best.b - best.a)) best = run;
+      if (!best || best.b - best.a < w * 0.012) return [cv];
+      // 左右どちらにも文字がある（片側だけの空白ではない）ことを確かめる
+      var ink = function (a, b) { var n = 0; for (var c2 = a; c2 < b; c2 += 2) for (var r2 = 0; r2 < h; r2 += 2) { var j = (r2 * w + c2) * 4; if (px[j] + px[j + 1] + px[j + 2] < 600) n++; } return n; };
+      if (ink(0, best.a) < h * 0.5 || ink(best.b, w) < h * 0.5) return [cv];
+      var mid = Math.round((best.a + best.b) / 2 * cv.width / w), out = [];
+      each([[0, mid], [mid, cv.width]], function (r3) { var c3 = document.createElement('canvas'); c3.width = r3[1] - r3[0]; c3.height = cv.height; c3.getContext('2d').drawImage(cv, r3[0], 0, c3.width, cv.height, 0, 0, c3.width, cv.height); out.push(c3); });
+      return out;
+    } catch (e) { return [cv]; }
+  }
   function tessBase() { return location.href.replace(/[#?].*$/, '').replace(/[^\/]*$/, '') + 'vendor/tesseract/'; }
   function loadTess(cb) {
     if (window.Tesseract) { cb(true); return; }
@@ -4414,7 +4436,8 @@
       var finish = function () {
         each(workers, function (w) { try { w.terminate(); } catch (e) {} });
         if (run !== bkRun) return;
-        bkPages = pages; bkEnd();
+        bkPages = []; each(pages, function (cols) { each(cols || [], function (c) { bkPages.push(c); }); });   // 段ごとに1ページとして扱う
+        bkEnd();
         bkMsg('読み取りが終わりました（' + files.length + ' 枚' + (failed ? '・読めなかった画像 ' + failed + ' 枚' : '') + '）。章の区切りを確かめてください。');
         bkAnalyze();
       };
@@ -4423,16 +4446,22 @@
         if (next >= files.length) { if (done >= files.length) finish(); return; }
         var k = next++;
         loadImg(files[k], function (im, u) {
-          if (!im) { failed++; pages[k] = []; done++; work(w); return; }
-          var cv = bkCanvas(im); URL.revokeObjectURL(u);
-          w.recognize(cv, {}, { blocks: true, text: false }).then(function (r) {
-            if (run !== bkRun) return;
-            pages[k] = pageParas(r.data); done++;
+          if (!im) { failed++; pages[k] = [[]]; done++; work(w); return; }
+          var cvs = bkSplit(bkCanvas(im)), got = []; URL.revokeObjectURL(u);
+          var one = function (ci) {
+            if (ci >= cvs.length) { pages[k] = got; done++; step(); return; }
+            w.recognize(cvs[ci], {}, { blocks: true, text: false }).then(function (r) {
+              if (run !== bkRun) return;
+              got.push(pageParas(r.data)); one(ci + 1);
+            }, function () { failed++; pages[k] = got; done++; work(w); });
+          };
+          var step = function () {
             var el = (now() - t0) / done, left = Math.round(el * (files.length - done) / 1000 / nW);
             $('bk-pfill').style.width = Math.round(done * 100 / files.length) + '%';
             bkMsg('読み取り中… ' + done + ' / ' + files.length + ' 枚（残り約 ' + (left >= 90 ? Math.round(left / 60) + ' 分' : left + ' 秒') + '）');
             work(w);
-          }, function () { failed++; pages[k] = []; done++; work(w); });
+          };
+          one(0);
         });
       };
       for (var i = 0; i < nW; i++) {
