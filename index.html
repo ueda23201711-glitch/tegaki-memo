@@ -4144,7 +4144,7 @@
     var d = rdCur.d, i = curPos();
     d.bm = i; d.bmAt = now(); d.bmP = pctOf(i, rdSents.length);
     rdSaveLocal();
-    if (KEY) { var b = {}; b['reader/' + rdCur.id + '/bm'] = i; b['reader/' + rdCur.id + '/bmAt'] = d.bmAt; b['reader/' + rdCur.id + '/bmP'] = d.bmP; api('PATCH', '', b, function () {}); }
+    if (KEY) { var b = {}; b['reader/' + rdCur.id + '/bm'] = i; b['reader/' + rdCur.id + '/bmAt'] = d.bmAt; b['reader/' + rdCur.id + '/bmP'] = d.bmP; api('PATCH', '', b, function () {}); var b2 = {}; b2['readerbm/' + (d.book || rdCur.id)] = { id: rdCur.id, i: i, p: d.bmP, at: d.bmAt }; api('PATCH', '', b2, function () {}); }   // しおりの小さなデータは別に送る（届かなくても本体は保存される）
     if (d.book) markBookBm(rdCur.id);
     $('rd-status').textContent = '🔖 しおりを挟みました（' + d.bmP + '%・' + (i + 1) + ' 文目）。次に開いたときに「↩ しおりへ」で戻れます。';
     progUpdate();
@@ -4152,7 +4152,7 @@
   // 本：しおりは本ごとに1つ（ほかの章のしおりは外す）
   function markBookBm(id) {
     var d = rdDocs[id], b = {};
-    each(bookChapters(d.book), function (c) { if (c !== id && typeof rdDocs[c].bm === 'number') { delete rdDocs[c].bm; b['reader/' + c + '/bm'] = null; } });
+    each(bookChapters(d.book), function (c) { if (c !== id && typeof rdDocs[c].bm === 'number') { delete rdDocs[c].bm; delete rdDocs[c].bmP; b['reader/' + c + '/bm'] = null; b['reader/' + c + '/bmP'] = null; } });
     rdSaveLocal();
     if (KEY) { for (var x in b) { api('PATCH', '', b, function () {}); break; } }
   }
@@ -4643,7 +4643,7 @@
     var b = document.createElement('b'); b.textContent = (rdOpenBook[bk] ? '▼ ' : '▶ ') + '📚 ' + (d0.bookTitle || '') + '（' + chs.length + ' 章）';
     var sp = document.createElement('span'), bmAt = -1;
     each(chs, function (c, k) { if (typeof rdDocs[c].bm === 'number') bmAt = k; });
-    sp.textContent = fmtClipTime(d0.at) + (bmAt >= 0 ? '　🔖 第' + (bmAt + 1) + '章 ' + (rdDocs[chs[bmAt]].bmP || 0) + '%' : '');
+    sp.textContent = fmtClipTime(d0.at) + (bmAt >= 0 ? '　🔖 しおり：第' + (bmAt + 1) + '章「' + String(rdDocs[chs[bmAt]].chTitle || '').slice(0, 30) + '」の ' + (rdDocs[chs[bmAt]].bmP || 0) + '%' : '');
     if (rdSel) {
       var all = true; each(chs, function (c) { if (!rdSel[c]) all = false; });
       var ck = document.createElement('span'); ck.className = 'rd-chk'; ck.textContent = all ? '✓' : ''; if (all) row.className += ' sel';
@@ -4743,6 +4743,23 @@
     if (text) { $('rd-in').value = text; rdLoad(); }
     else rdShowInput();
   }
+  // ほかの端末で挟んだしおりを取り込む（本ごと・英文ごとに1つの小さなデータ）
+  function rdSyncBm() {
+    if (!KEY) return;
+    api('GET', '/readerbm', undefined, function (err, all) {
+      if (err || !all) return;
+      var ch = false;
+      for (var k in all) {
+        var x = all[k], d = x && rdDocs[x.id];
+        if (!d || typeof x.i !== 'number' || (d.bmAt || 0) >= (x.at || 0)) continue;
+        if (d.book) each(bookChapters(d.book), function (c) { if (c !== x.id) { delete rdDocs[c].bm; delete rdDocs[c].bmP; } });
+        d.bm = x.i; d.bmP = x.p; d.bmAt = x.at; ch = true;
+      }
+      if (!ch) return;
+      rdSaveLocal();
+      if (!rdCur) renderRdHistory(); else progUpdate();
+    });
+  }
   /* ---- ほかの端末で増えた英文を読み込む ---- */
   var rdSyncAt = 0, rdSyncBusy = false;
   function syncMsg(t) { var m = $('rd-sync-msg'); if (m) m.textContent = t || ''; }
@@ -4750,6 +4767,7 @@
   function rdSyncNew(force) {
     if (!KEY || rdSyncBusy || (!force && now() - rdSyncAt < 15000)) return;
     rdSyncAt = now(); rdSyncBusy = true;
+    rdSyncBm();
     var x = new XMLHttpRequest();
     try { x.open('GET', DB_URL + '/memos/' + KEY + '/reader.json?shallow=true', true); } catch (e) { rdSyncBusy = false; return; }
     x.timeout = 15000;
@@ -4789,7 +4807,7 @@
       syncMsg('最新にしました（' + (n > 0 ? n + ' 件増えました' : n < 0 ? -n + ' 件減りました' : '増えた英文はありません') + '）。');
     });
   });
-  document.addEventListener('visibilitychange', function () { if (!document.hidden) rdSyncNew(true); });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { rdSyncNew(true); if (rdCur) rdSyncBm(); } });
   setInterval(function () { if (!document.hidden && !rdCur && $('rd-hist') && $('rd-hist').offsetWidth > 0) rdSyncNew(false); }, 30000);
   function rdShowInput() {
     stopSpeak(); ytClose(); rdCur = null;
