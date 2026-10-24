@@ -3273,7 +3273,18 @@
       else if (fe) { var y = fe.offsetTop - box.clientHeight * 0.3; if (Math.abs(box.scrollTop - y) > box.clientHeight * 0.25) box.scrollTop = Math.max(0, y); }
       return;
     }
-    if (k >= 0) { var el = $('rd-text').childNodes[k]; if (el && el.scrollIntoView) { try { el.scrollIntoView(false); } catch (e) {} } }
+    if (k >= 0) centerSent($('rd-text').childNodes[k]);
+  }
+  // 読んでいる文（英文と訳）を、上のボタンと下のバーの間の真ん中に
+  function centerSent(el) {
+    if (!el) return;
+    try {
+      var body = $('rd-body'), br = body.getBoundingClientRect(), er = el.getBoundingClientRect();
+      var top = $('rd-ctrl').getBoundingClientRect().bottom, pg = $('rd-prog'), bottom = br.bottom;
+      if (pg && pg.className !== 'hidden') bottom = Math.min(bottom, pg.getBoundingClientRect().top);
+      var room = bottom - top, want = er.height < room - 16 ? top + (room - er.height) / 2 : top + 8;
+      body.scrollTop = Math.max(0, body.scrollTop + (er.top - want));
+    } catch (e) { try { el.scrollIntoView(false); } catch (e2) {} }
   }
 
   /* ---- AIの声（Gemini を Apps Script 経由で）。文をいくつかまとめて音声にし、先読みしておく ---- */
