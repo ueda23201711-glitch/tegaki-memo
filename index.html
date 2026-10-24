@@ -199,6 +199,27 @@
   body.fl-only #rd-flow { position: static; overflow: visible; min-height: 100vh; }
   body.fl-only #fl-ctrl { display: none; }
   body.fl-only #fl-text { padding-top: 24px; padding-bottom: 30vh; }
+  .bk-file { display: inline-block; background: #e6eef2; border-radius: 10px; padding: 9px 14px; cursor: pointer; font-weight: 600; }
+  .bk-file input { display: none; }
+  #bk-title { width: 100%; box-sizing: border-box; font-size: 16px; padding: 9px 10px; border: 1px solid #c9d2d8; border-radius: 8px; margin: 4px 0 8px; }
+  #bk-cv { max-width: 100%; border: 1px solid #c9d2d8; cursor: crosshair; touch-action: none; display: block; }
+  #bk-pbar { height: 8px; background: #e1e8ec; border-radius: 4px; overflow: hidden; margin-top: 8px; }
+  #bk-pfill { height: 100%; width: 0; background: #2f6f8f; }
+  #bk-heads { max-height: 50vh; overflow-y: auto; border: 1px solid #d7dee3; border-radius: 8px; background: #fff; }
+  .bk-h { padding: 7px 10px; border-bottom: 1px solid #eef1f3; cursor: pointer; font-size: 14px; }
+  .bk-h.on { background: #e6f1f6; font-weight: 700; }
+  .bk-h .n { color: #6b7a83; font-size: 12px; margin-left: 6px; font-weight: 400; }
+  .rd-hrow.rd-book { background: #f4f0e6; }
+  .rd-hrow.rd-ch { margin-left: 18px; }
+  #rd-prog { position: fixed; left: 0; right: 0; bottom: 0; z-index: 65; background: rgba(36,54,63,.94); color: #fff; padding: 0 10px 6px; padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px)); font-size: 13px; }
+  #rd-prog button { padding: 4px 10px; font-size: 13px; margin: 6px 6px 0 0; background: #e6eef2; color: #1f2a30; }
+  #rd-prog #pg-go { background: #f4c46a; }
+  #pg-bar { position: relative; height: 5px; margin: 0 -10px 2px; background: rgba(255,255,255,.2); cursor: pointer; }
+  #pg-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #7cc4e4; }
+  #pg-mark { position: absolute; top: -3px; width: 3px; height: 11px; background: #f4c46a; display: none; }
+  #pg-text { display: inline-block; margin: 6px 10px 0 0; font-weight: 600; }
+  body.fl-only #rd-prog { display: none !important; }
+  #rd-text { padding-bottom: 70px; }
   #fl-exit { position: fixed; right: 14px; bottom: 14px; z-index: 70; width: 46px; height: 46px; border-radius: 50%; border: 0; background: rgba(36,54,63,.55); padding: 0; }
   #fl-exit::before, #fl-exit::after { content: ""; position: absolute; left: 12px; top: 22px; width: 22px; height: 2px; background: #fff; -webkit-transform: rotate(45deg); transform: rotate(45deg); }
   #fl-exit::after { -webkit-transform: rotate(-45deg); transform: rotate(-45deg); }
@@ -483,6 +504,26 @@
         <div class="row"><button id="yt-go" class="primary" type="button">動画といっしょに読み込む</button></div>
         <p class="note" id="yt-msg"></p>
         <p class="note">字幕は、アドレスだけ入れて押せば自動で取ってきます（英語の字幕がある動画）。取れないときの貼り付け方（パソコンが簡単です）：YouTube で動画を開き、説明欄の「…もっと見る」→ いちばん下の「文字起こしを表示」→ 右に出た文字起こしをドラッグで最後まで選んでコピーして、上に貼り付けます（時刻も一緒に）。字幕ファイル（.srt / .vtt）の中身でも大丈夫です。</p>
+      </div>
+      <div class="yt-in hidden" id="bk-in">
+        <h3 class="rd-h" style="margin-top:0">📚 画像から本を作る（パソコン向け）</h3>
+        <p class="note">Kindle などのページのスクリーンショットをまとめて選ぶと、この端末の中で英文を読み取り（画像はどこにも送りません）、章ごとの英文にして保存します。保存した本は、ほかの端末（iPad 2/3 も）でも読めます。買った本を自分で勉強するためだけに使ってください。</p>
+        <input id="bk-title" type="text" placeholder="本の題名（例：Animal Farm）">
+        <div class="row"><label class="bk-file">🖼 スクリーンショットを選ぶ（まとめて）<input id="bk-files" type="file" multiple accept="image/*"></label></div>
+        <p class="note" id="bk-count"></p>
+        <div id="bk-crop" class="hidden">
+          <p class="note"><b>読み取る範囲</b>：下の1枚目の画像の上で、本文の部分をドラッグして囲んでください（ページ上の題名や下のページ番号・ボタンは外す）。全部の画像に同じ範囲を使います。</p>
+          <canvas id="bk-cv"></canvas>
+          <div class="row"><button id="bk-full" type="button">画像全体を使う</button> <span class="note" id="bk-cropinfo"></span></div>
+        </div>
+        <div class="row"><button id="bk-go" class="primary hidden" type="button">読み取りを始める</button> <button id="bk-stop" class="hidden" type="button">止める</button></div>
+        <div id="bk-pbar" class="hidden"><div id="bk-pfill"></div></div>
+        <p class="note" id="bk-msg"></p>
+        <div id="bk-review" class="hidden">
+          <p class="note"><b>章の区切りを確かめてください</b>：✓ の付いた行から新しい章になります。押すと付けたり外したりできます（目次の行などは外してください）。</p>
+          <div id="bk-heads"></div>
+          <div class="row"><button id="bk-save" class="primary" type="button">この章分けで本にする</button> <button id="bk-cancel" type="button">やめる</button></div>
+        </div>
       </div>
       <p class="note">保存した単語・熟語は <a href="/kiku-memo/" target="_blank">📚 メモ単語帳</a> で学習できます（iPad 2/3 は <a href="/kiku-memo/ipad.html" target="_blank">こちら</a>）。</p>
       <h3 id="rd-hist-h" class="rd-h">これまでの英文 <button id="rd-sel" type="button" class="rd-selbtn">☑ 選んで削除</button></h3>
@@ -786,6 +827,12 @@
 </div>
 
 <script src="vendor/qrcode.js"></script>
+        <div id="rd-prog" class="hidden"><div id="pg-bar"><div id="pg-fill"></div><div id="pg-mark"></div></div>
+          <span id="pg-text"></span>
+          <button id="pg-prev" type="button" class="hidden">◀ 前の章</button>
+          <button id="pg-bm" type="button" title="今の文にしおりを挟む">🔖 しおり</button>
+          <button id="pg-go" type="button" class="hidden"></button>
+          <button id="pg-next" type="button" class="hidden">次の章 ▶</button></div>
         <button id="fl-exit" class="hidden" type="button" aria-hidden="true" tabindex="-1"></button>
         <div id="rd-flow" class="hidden">
           <div id="fl-ctrl">
@@ -3217,7 +3264,7 @@
     step(i);
   }
   function markSentence(k) {
-    rdIdx = k;
+    rdIdx = k; progSoon();
     each($('rd-text').childNodes, function (el, i) { if (el.id !== 'rd-flow') el.className = 'rd-sent' + (i === k ? ' now' : ''); });
     if (flOpen) {
       each(flEls, function (el, i) { el.className = 'fl-s' + (i === k ? ' now' : k >= 0 && i < k ? ' done' : ''); });
@@ -3964,6 +4011,7 @@
   var flOpen = false, flEls = [], flSize = Number(lsGet('memo_fl_size') || 22);
   function openFlow() {
     if (!rdCur || !rdSents.length) return;
+    var startAt = rdIdx > 0 ? rdIdx : topVisible();   // 今見ている文から
     stopSpeak();
     var box = $('fl-text'); box.innerHTML = ''; flEls = [];
     var paras = String(rdCur.d.text || '').replace(/\r/g, '').split(/\n\s*\n|\n/), k = 0;
@@ -3990,7 +4038,7 @@
     $('fl-rate').value = String(rdRate);
     fillVoices();
     flOpen = true; $('rd-flow').className = ''; $('rd-flow').scrollTop = 0;
-    var start = rdIdx > 0 ? rdIdx : 0; rdIdx = start; markSentence(start > 0 ? start : -1); rdIdx = start;
+    var start = startAt > 0 ? startAt : 0; rdIdx = start; markSentence(start > 0 ? start : -1); rdIdx = start;
     playLabel();
   }
   // 文を単語に分けて並べる（単語をタップ：止めて辞書。単語以外：再生中なら止める／止まっていればその文から）
@@ -4029,6 +4077,103 @@
     if (onOff) window.scrollTo(0, el ? Math.max(0, el.offsetTop - 16) : 0);
     else { window.scrollTo(0, 0); $('rd-flow').scrollTop = el ? Math.max(0, el.offsetTop - $('fl-ctrl').offsetHeight - 16) : 0; }
   }
+  /* ---- 今の位置（全体の何%）としおり ---- */
+  // 今の文：読み上げ中ならその文、そうでなければ画面のいちばん上に見えている文
+  function topVisible() {
+    var els, top;
+    if (flOpen) { els = flEls; top = flOnly ? 0 : $('fl-ctrl').getBoundingClientRect().bottom; }
+    else { els = $('rd-text').childNodes; top = $('rd-ctrl').getBoundingClientRect().bottom; }
+    var sc = flOpen ? (flOnly ? document.documentElement : $('rd-flow')) : $('rd-body');
+    if (flOnly ? window.pageYOffset + window.innerHeight >= document.documentElement.scrollHeight - 4 : sc.scrollTop > 0 && sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 4) return els.length - 1;   // いちばん下まで来た
+    for (var i = 0; i < els.length; i++) { var r = els[i].getBoundingClientRect(); if (r.bottom > top + 4) return i; }
+    return els.length ? els.length - 1 : 0;
+  }
+  function curPos() { return rdSpeaking && rdIdx >= 0 ? rdIdx : topVisible(); }
+  function pctOf(i, n) { return n > 1 ? Math.round(i * 100 / (n - 1)) : 100; }
+  // 本の章（同じ本の英文を章の順に）
+  function bookChapters(b) {
+    var a = []; for (var k in rdDocs) if (rdDocs[k] && rdDocs[k].book === b && rdDocs[k].text) a.push(k);
+    a.sort(function (x, y) { return (rdDocs[x].ch || 0) - (rdDocs[y].ch || 0); });
+    return a;
+  }
+  function docNs(d) { return d.ns || (d.ns = (d.cues ? d.cues.length : splitSentences(d.text).length)); }
+  function progUpdate() {
+    var box = $('rd-prog'); if (!box) return;
+    var vis = rdCur && rdSents.length > 1 && (flOpen || $('rd-view').offsetWidth > 0);
+    if (!vis) { if (box.className !== 'hidden') box.className = 'hidden'; return; }
+    box.className = '';
+    var d = rdCur.d, n = rdSents.length, i = Math.max(0, Math.min(n - 1, curPos())), p = pctOf(i, n), t = p + '%（' + (i + 1) + ' / ' + n + ' 文）';
+    $('pg-fill').style.width = p + '%';
+    if (d.book) {
+      var chs = bookChapters(d.book), at = chs.indexOf(rdCur.id), before = 0, all = 0;
+      each(chs, function (c, k) { var m = docNs(rdDocs[c]); if (k < at) before += m; all += m; });
+      t = '第' + (at + 1) + '章 ' + (at + 1) + '/' + chs.length + '・章の ' + p + '%・本全体の ' + pctOf(before + i, all) + '%';
+      $('pg-prev').className = at > 0 ? '' : 'hidden';
+      $('pg-next').className = at >= 0 && at < chs.length - 1 ? '' : 'hidden';
+    } else { $('pg-prev').className = 'hidden'; $('pg-next').className = 'hidden'; }
+    $('pg-text').textContent = '📍 ' + t;
+    var bm = d.bm;
+    if (typeof bm === 'number' && bm < n) {
+      $('pg-mark').style.display = 'block'; $('pg-mark').style.left = pctOf(bm, n) + '%';
+      $('pg-go').className = bm === i ? 'hidden' : ''; $('pg-go').textContent = '↩ しおりへ（' + pctOf(bm, n) + '%）';
+      $('pg-bm').textContent = bm === i ? '🔖 ここにしおり' : '🔖 しおりをここに';
+    } else { $('pg-mark').style.display = 'none'; $('pg-go').className = 'hidden'; $('pg-bm').textContent = '🔖 しおり'; }
+  }
+  var progTimer = null;
+  function progSoon() { if (progTimer) return; progTimer = setTimeout(function () { progTimer = null; progUpdate(); }, 250); }
+  document.addEventListener('scroll', progSoon, true);
+  window.addEventListener('resize', progSoon);
+  setInterval(progUpdate, 2000);
+  function setBookmark() {
+    if (!rdCur) return;
+    var d = rdCur.d, i = curPos();
+    d.bm = i; d.bmAt = now(); d.bmP = pctOf(i, rdSents.length);
+    rdSaveLocal();
+    if (KEY) { var b = {}; b['reader/' + rdCur.id + '/bm'] = i; b['reader/' + rdCur.id + '/bmAt'] = d.bmAt; b['reader/' + rdCur.id + '/bmP'] = d.bmP; api('PATCH', '', b, function () {}); }
+    if (d.book) markBookBm(rdCur.id);
+    $('rd-status').textContent = '🔖 しおりを挟みました（' + d.bmP + '%・' + (i + 1) + ' 文目）。次に開いたときに「↩ しおりへ」で戻れます。';
+    progUpdate();
+  }
+  // 本：しおりは本ごとに1つ（ほかの章のしおりは外す）
+  function markBookBm(id) {
+    var d = rdDocs[id], b = {};
+    each(bookChapters(d.book), function (c) { if (c !== id && typeof rdDocs[c].bm === 'number') { delete rdDocs[c].bm; b['reader/' + c + '/bm'] = null; } });
+    rdSaveLocal();
+    if (KEY) { for (var x in b) { api('PATCH', '', b, function () {}); break; } }
+  }
+  // その文へ移る（読み上げ中ならそこから続ける）
+  function gotoSent(i) {
+    if (!rdCur || i < 0 || i >= rdSents.length) return;
+    var was = rdSpeaking;
+    if (was) stopSpeak();
+    markSentence(i);
+    if (flOpen) {
+      var fe = flEls[i];
+      if (fe) { if (flOnly) window.scrollTo(0, Math.max(0, fe.offsetTop - 40)); else $('rd-flow').scrollTop = Math.max(0, fe.offsetTop - $('fl-ctrl').offsetHeight - 40); }
+    } else {
+      var el = $('rd-text').childNodes[i];
+      if (el) { try { el.scrollIntoView(true); $('rd-body').scrollTop -= $('rd-ctrl').offsetHeight + 8; } catch (e) {} }
+    }
+    if (was) playFrom(i);
+    progUpdate();
+  }
+  function openChapter(id, at) {
+    var fl = flOpen;
+    if (fl) closeFlow();
+    openRdDoc(id);
+    if (at >= 0) setTimeout(function () { gotoSent(at); }, 50);
+    if (fl) setTimeout(openFlow, 80);
+  }
+  on($('pg-bm'), 'click', setBookmark);
+  on($('pg-go'), 'click', function () { if (rdCur && typeof rdCur.d.bm === 'number') gotoSent(rdCur.d.bm); });
+  on($('pg-next'), 'click', function () { if (!rdCur || !rdCur.d.book) return; var c = bookChapters(rdCur.d.book), k = c.indexOf(rdCur.id); if (k >= 0 && k < c.length - 1) openChapter(c[k + 1], -1); });
+  on($('pg-prev'), 'click', function () { if (!rdCur || !rdCur.d.book) return; var c = bookChapters(rdCur.d.book), k = c.indexOf(rdCur.id); if (k > 0) openChapter(c[k - 1], -1); });
+  // バーを押すと、その位置へ
+  on($('pg-bar'), 'click', function (e) {
+    if (!rdCur) return;
+    var r = $('pg-bar').getBoundingClientRect(), f = (e.clientX - r.left) / Math.max(1, r.width);
+    gotoSent(Math.max(0, Math.min(rdSents.length - 1, Math.round(f * (rdSents.length - 1)))));
+  });
   function closeFlow() {
     if (flOnly) setFlOnly(false); stopSpeak(); flOpen = false; $('rd-flow').className = 'hidden'; markSentence(-1); }
   function fillVoices() { fillVoiceSel($('fl-voice')); fillVoiceSel($('rd-voice')); }
@@ -4111,7 +4256,11 @@
   }
 
   /* ---- 画面 ---- */
-  function rdSaveLocal() { lsSet('memo_reader', JSON.stringify(rdDocs)); }
+  function rdSaveLocal() {
+    if (lsSet('memo_reader', JSON.stringify(rdDocs))) return;
+    var lite = {}; for (var k in rdDocs) { var d = rdDocs[k]; if (d && d.book) { var c = {}; for (var f in d) if (f !== 'tr') c[f] = d[f]; lite[k] = c; } else lite[k] = d; }
+    lsSet('memo_reader', JSON.stringify(lite));
+  }
   function rdIds() { var a = []; for (var k in rdDocs) if (rdDocs[k] && rdDocs[k].text) a.push(k); a.sort(function (x, y) { return (rdDocs[y].at || 0) - (rdDocs[x].at || 0); }); return a; }
   // 選んで削除：rdSel = {id: 1}（選んでいないときは null）
   var rdSel = null;
@@ -4139,6 +4288,313 @@
     if (!window.confirm('選んだ ' + ids.length + ' 件の英文を削除しますか？（ほかの端末からも消えます。作った AI の声はドライブに残ります）')) return;
     delDocs(ids); rdSel = null; renderRdHistory();
   });
+  /* ---- 📚 画像から本を作る（この端末の中で OCR） ---- */
+  var bkFiles = [], bkCrop = null, bkRun = 0, bkPages = null, bkParas = null, bkHeadOn = null;
+  var canOcr = !!(window.Worker && window.WebAssembly && window.Promise && window.FileReader && document.createElement('canvas').getContext);
+  if (canOcr) $('bk-in').className = 'yt-in';
+  function bkMsg(t) { $('bk-msg').textContent = t; }
+  function natCmp(a, b) {   // 「スクリーンショット (12).png」を数の順に
+    var ra = String(a).toLowerCase().match(/\d+|\D+/g) || [], rb = String(b).toLowerCase().match(/\d+|\D+/g) || [];
+    for (var i = 0; i < Math.min(ra.length, rb.length); i++) {
+      if (ra[i] === rb[i]) continue;
+      var na = /^\d/.test(ra[i]), nb = /^\d/.test(rb[i]);
+      if (na && nb) return Number(ra[i]) - Number(rb[i]);
+      return ra[i] < rb[i] ? -1 : 1;
+    }
+    return ra.length - rb.length;
+  }
+  function loadImg(file, cb) {
+    var u = URL.createObjectURL(file), im = new Image();
+    im.onload = function () { cb(im, u); }; im.onerror = function () { URL.revokeObjectURL(u); cb(null); };
+    im.src = u;
+  }
+  on($('bk-files'), 'change', function () {
+    var fs = [], list = $('bk-files').files;
+    for (var i = 0; i < list.length; i++) if (/^image\//.test(list[i].type) || /\.(png|jpe?g|webp|bmp|gif)$/i.test(list[i].name)) fs.push(list[i]);
+    // 撮った順（同じ時刻なら名前の数の順）
+    fs.sort(function (a, b) { var n = natCmp(a.name, b.name); return n || (a.lastModified || 0) - (b.lastModified || 0); });
+    var byName = fs.slice(), byTime = fs.slice().sort(function (a, b) { return (a.lastModified || 0) - (b.lastModified || 0) || natCmp(a.name, b.name); });
+    // 名前に番号が付いていれば名前の順、なければ撮った時刻の順
+    bkFiles = /\d/.test(fs.length ? fs[0].name : '') ? byName : byTime;
+    $('bk-count').textContent = bkFiles.length ? bkFiles.length + ' 枚を選びました（' + bkFiles[0].name + ' 〜 ' + bkFiles[bkFiles.length - 1].name + '）' : '';
+    $('bk-review').className = 'hidden'; bkMsg('');
+    if (!bkFiles.length) { $('bk-crop').className = 'hidden'; $('bk-go').className = 'primary hidden'; return; }
+    bkCrop = null;
+    loadImg(bkFiles[0], function (im, u) {
+      if (!im) { bkMsg('1枚目の画像を開けませんでした。'); return; }
+      bkCropSetup(im); URL.revokeObjectURL(u);
+      $('bk-crop').className = ''; $('bk-go').className = 'primary';
+    });
+  });
+  // 範囲を囲む
+  var bkIm = null;
+  function bkCropSetup(im) {
+    bkIm = im;
+    var cv = $('bk-cv'), w = Math.min(im.width, 900), h = Math.round(im.height * w / im.width);
+    cv.width = w; cv.height = h; bkCropDraw();
+  }
+  function bkCropDraw() {
+    var cv = $('bk-cv'), x = cv.getContext('2d');
+    x.drawImage(bkIm, 0, 0, cv.width, cv.height);
+    if (bkCrop) {
+      x.fillStyle = 'rgba(0,0,0,.45)';
+      var L = bkCrop.x * cv.width, T = bkCrop.y * cv.height, W = bkCrop.w * cv.width, H = bkCrop.h * cv.height;
+      x.fillRect(0, 0, cv.width, T); x.fillRect(0, T + H, cv.width, cv.height - T - H); x.fillRect(0, T, L, H); x.fillRect(L + W, T, cv.width - L - W, H);
+      x.strokeStyle = '#e8830c'; x.lineWidth = 3; x.strokeRect(L, T, W, H);
+    }
+    $('bk-cropinfo').textContent = bkCrop ? '囲んだ範囲を読み取ります' : '（囲まなければ画像全体を読み取ります）';
+  }
+  (function () {
+    var cv = $('bk-cv'), st = null;
+    var pt = function (e) { var r = cv.getBoundingClientRect(), t = e.touches ? e.touches[0] : e; return { x: Math.max(0, Math.min(1, (t.clientX - r.left) / r.width)), y: Math.max(0, Math.min(1, (t.clientY - r.top) / r.height)) }; };
+    var down = function (e) { e.preventDefault(); st = pt(e); };
+    var move = function (e) { if (!st) return; e.preventDefault(); var p = pt(e); bkCrop = { x: Math.min(st.x, p.x), y: Math.min(st.y, p.y), w: Math.abs(p.x - st.x), h: Math.abs(p.y - st.y) }; bkCropDraw(); };
+    var up = function () { if (bkCrop && (bkCrop.w < 0.05 || bkCrop.h < 0.05)) bkCrop = null; st = null; bkCropDraw(); };
+    on(cv, 'mousedown', down); on(cv, 'mousemove', move); on(window, 'mouseup', function () { if (st) up(); });
+    on(cv, 'touchstart', down); on(cv, 'touchmove', move); on(cv, 'touchend', up);
+  })();
+  on($('bk-full'), 'click', function () { bkCrop = null; bkCropDraw(); });
+  window.__bk = function () { return { crop: bkCrop, pages: bkPages, paras: bkParas, on: bkHeadOn }; };   // 確認用
+  // 1枚を読み取り用の画像に（範囲を切り出し、小さい文字は拡大）
+  function bkCanvas(im) {
+    var c = bkCrop || { x: 0, y: 0, w: 1, h: 1 };
+    var sx = Math.round(c.x * im.width), sy = Math.round(c.y * im.height), sw = Math.max(1, Math.round(c.w * im.width)), sh = Math.max(1, Math.round(c.h * im.height));
+    var k = sw < 1100 ? 2 : sw > 2600 ? 2600 / sw : 1;
+    var cv = document.createElement('canvas'); cv.width = Math.round(sw * k); cv.height = Math.round(sh * k);
+    var x = cv.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, cv.width, cv.height);
+    x.drawImage(im, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+    return cv;
+  }
+  function tessBase() { return location.href.replace(/[#?].*$/, '').replace(/[^\/]*$/, '') + 'vendor/tesseract/'; }
+  function loadTess(cb) {
+    if (window.Tesseract) { cb(true); return; }
+    var sc = document.createElement('script'); sc.src = 'vendor/tesseract/tesseract.min.js';
+    sc.onload = function () { cb(!!window.Tesseract); }; sc.onerror = function () { cb(false); };
+    document.head.appendChild(sc);
+  }
+  // 読み取った1ページ → 段落 [{t, h（文字の高さ）, n（行数）}]。文字の大きさが変わるところでも分ける（見出しと本文）
+  var UI_LINE = /^(page \d+( of \d+)?\b.*|loc(ation)?\.? ?\d+( of \d+)?\b.*|.{0,40}\b\d{1,3} ?%\s*$|.*\b\d+ (mins?|minutes?|hrs?|hours?) left in (chapter|book)\b.*|learning reading speed.*|.*read.?amazon.*|.*kindle.?(library|cloud reader).*)$/i;
+  function pageParas(data) {
+    var out = [];
+    each(data.blocks || [], function (bl) {
+      each(bl.paragraphs || [], function (pg) {
+        var cur = null;
+        each(pg.lines || [], function (ln) {
+          var t = String(ln.text || '').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, ''), h = ln.bbox.y1 - ln.bbox.y0;
+          if (!t || UI_LINE.test(t)) return;   // 「Page 12 of 300」「35%」などの画面の文字
+          if (cur && h < cur.h0 * 1.3 && h > cur.h0 * 0.6) { cur.ls.push(t); cur.hs.push(h); return; }   // 大きさが大きく変わったら別の段落（見出し・ページの題名）
+          cur = { ls: [t], hs: [h], h0: h }; out.push(cur);
+        });
+      });
+    });
+    var res = [];
+    each(out, function (c) { c.hs.sort(function (a, b) { return a - b; }); res.push({ t: joinLines(c.ls), h: c.hs[Math.floor(c.hs.length / 2)], n: c.ls.length }); });
+    return res;
+  }
+  function joinLines(ls) {
+    var t = '';
+    each(ls, function (l) {
+      if (!t) { t = l; return; }
+      if (/[A-Za-z]-$/.test(t) && /^[a-z]/.test(l)) t = t.slice(0, -1) + l;   // 行の終わりで分かれた単語
+      else t += ' ' + l;
+    });
+    return t;
+  }
+  on($('bk-go'), 'click', function () {
+    if (!bkFiles.length) return;
+    if (!$('bk-title').value.replace(/\s+/g, '')) { bkMsg('先に本の題名を入れてください。'); $('bk-title').focus(); return; }
+    var run = bkRun = now(), files = bkFiles.slice(), pages = new Array(files.length), done = 0, t0 = now(), workers = [], next = 0, failed = 0;
+    $('bk-go').className = 'primary hidden'; $('bk-stop').className = ''; $('bk-pbar').className = ''; $('bk-review').className = 'hidden';
+    bkMsg('読み取りの準備をしています（初回は読み取り用のデータ約 3MB を読み込みます）…');
+    loadTess(function (okT) {
+      if (run !== bkRun) return;
+      if (!okT) { bkMsg('読み取りの部品を読み込めませんでした。ネットにつながっているか確かめてください。'); bkEnd(); return; }
+      var base = tessBase(), nW = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 2) - 1)), ready = 0;
+      var opts = { workerPath: base + 'worker.min.js', corePath: base, langPath: base, gzip: true };
+      var finish = function () {
+        each(workers, function (w) { try { w.terminate(); } catch (e) {} });
+        if (run !== bkRun) return;
+        bkPages = pages; bkEnd();
+        bkMsg('読み取りが終わりました（' + files.length + ' 枚' + (failed ? '・読めなかった画像 ' + failed + ' 枚' : '') + '）。章の区切りを確かめてください。');
+        bkAnalyze();
+      };
+      var work = function (w) {
+        if (run !== bkRun) return;
+        if (next >= files.length) { if (done >= files.length) finish(); return; }
+        var k = next++;
+        loadImg(files[k], function (im, u) {
+          if (!im) { failed++; pages[k] = []; done++; work(w); return; }
+          var cv = bkCanvas(im); URL.revokeObjectURL(u);
+          w.recognize(cv, {}, { blocks: true, text: false }).then(function (r) {
+            if (run !== bkRun) return;
+            pages[k] = pageParas(r.data); done++;
+            var el = (now() - t0) / done, left = Math.round(el * (files.length - done) / 1000 / nW);
+            $('bk-pfill').style.width = Math.round(done * 100 / files.length) + '%';
+            bkMsg('読み取り中… ' + done + ' / ' + files.length + ' 枚（残り約 ' + (left >= 90 ? Math.round(left / 60) + ' 分' : left + ' 秒') + '）');
+            work(w);
+          }, function () { failed++; pages[k] = []; done++; work(w); });
+        });
+      };
+      for (var i = 0; i < nW; i++) {
+        Tesseract.createWorker('eng', 1, opts).then(function (w) {
+          if (run !== bkRun) { w.terminate(); return; }
+          workers.push(w); ready++;
+          if (ready === 1) bkMsg('読み取り中… 0 / ' + files.length + ' 枚');
+          work(w);
+        }, function (e) { if (run === bkRun && !workers.length) { bkMsg('読み取りを始められませんでした（' + String(e && e.message || e).slice(0, 60) + '）。'); bkEnd(); } });
+      }
+      bkStopFn = function () { each(workers, function (w) { try { w.terminate(); } catch (e) {} }); };
+    });
+  });
+  var bkStopFn = null;
+  function bkEnd() { $('bk-stop').className = 'hidden'; $('bk-go').className = bkFiles.length ? 'primary' : 'primary hidden'; $('bk-pbar').className = 'hidden'; }
+  on($('bk-stop'), 'click', function () { bkRun = 0; if (bkStopFn) bkStopFn(); bkEnd(); bkMsg('止めました。'); });
+
+  // ---- 本としてまとめる ----
+  var JUNK = /^(\d{1,4}|page \d+( of \d+)?.{0,20}|loc(ation)?\.? ?\d+( of \d+)?.{0,20}|.{0,30}\b\d{1,3} ?%|.*\b\d+ (mins?|minutes?|hrs?|hours?) left in (chapter|book)\b.*|learning reading speed.*|.*read\.amazon.*|.*kindle (library|cloud reader).*)$/i;
+  function normT(t) { return String(t).toLowerCase().replace(/[^a-z]+/g, ''); }
+  function isEnd(t) { return /[.!?…"”’)\]:;]$/.test(t); }
+  function bkAnalyze() {
+    var pages = bkPages || [], hs = [];
+    each(pages, function (pg) { each(pg || [], function (p) { if (p.n >= 2) hs.push(p.h); }); });
+    hs.sort(function (a, b) { return a - b; });
+    var bodyH = hs.length ? hs[Math.floor(hs.length / 2)] : 20;
+    // ページの上・下に何度も出る行（本の題名・章の題名）
+    var edge = {};
+    each(pages, function (pg) {
+      if (!pg || !pg.length) return;
+      var seen = {};
+      each([pg[0], pg[pg.length - 1]], function (p) { if (p.t.length < 80) { var k = normT(p.t.replace(/\d+/g, '')); if (k && !seen[k]) { seen[k] = 1; edge[k] = (edge[k] || 0) + 1; } } });
+    });
+    var nPg = 0; each(pages, function (pg) { if (pg && pg.length) nPg++; });
+    var paras = [];
+    each(pages, function (pg) {
+      var list = pg || [], kept = 0;
+      each(list, function (p, pi) {
+        var t = p.t, big = p.h >= bodyH * 1.3, atEdge = pi === 0 || pi === list.length - 1;
+        if (JUNK.test(t) && !(big && /^\d{1,3}$/.test(t))) return;   // ページ番号など（大きな数字は章の番号として残す）
+        var k = normT(t.replace(/\d+/g, ''));
+        if (atEdge && t.length < 80 && k && edge[k] >= 3 && edge[k] >= nPg * 0.15) return;   // 毎ページの上下の行
+        if (atEdge && t.length < 60 && p.n === 1 && p.h < bodyH * 0.65) return;   // 上下の小さな文字（ページの題名など）
+        // ページの最初の段落が、前のページの終わりと同じ（重なって写った分）
+        var nt = t.toLowerCase().replace(/\s+/g, ' ');
+        if (kept < 2) for (var q = Math.max(0, paras.length - 3); q < paras.length; q++) if (paras[q].t.toLowerCase().replace(/\s+/g, ' ') === nt) return;
+        var last = paras[paras.length - 1], firstHere = kept === 0;
+        kept++;
+        // ページの境目で切れた文をつなぐ
+        if (firstHere && last && !last.head && !isEnd(last.t) && !big && t.length > 0) {
+          last.t = /[A-Za-z]-$/.test(last.t) && /^[a-z]/.test(t) ? last.t.slice(0, -1) + t : last.t + ' ' + t;
+          return;
+        }
+        var short = t.length <= 70 && t.split(' ').length <= 10;
+        var head = short && !/[,]$/.test(t) && (big || /^(chapter|part|book|prologue|epilogue|introduction|preface|foreword|afterword|acknowledg)/i.test(t) || /^[IVXLC]{1,6}\.?$/.test(t) || (/^\d{1,3}\.?$/.test(t) && big));
+        paras.push({ t: t, head: head, big: big });
+      });
+    });
+    // 続けて並んだ見出しはまとめる（「Chapter 1」＋「The Beginning」。2行目は短い行なら見出しでなくても）
+    for (var i = paras.length - 1; i > 0; i--) {
+      var a = paras[i - 1], c = paras[i];
+      if (a.head && a.t.length < 40 && (c.head || (c.t.length <= 60 && !isEnd(c.t) && c.t.split(' ').length <= 10))) { a.t = a.t + ': ' + c.t; a.big = a.big || c.big; paras.splice(i, 1); }
+    }
+    bkParas = paras;
+    // 最初の ✓：本文が 300 文字以上続く見出しだけ（目次の行は外す）
+    bkHeadOn = {};
+    each(paras, function (p, pi) {
+      if (!p.head) return;
+      var len = 0; for (var q = pi + 1; q < paras.length && !paras[q].head; q++) len += paras[q].t.length;
+      if (len >= 300) bkHeadOn[pi] = 1;
+    });
+    bkReview();
+  }
+  function bkReview() {
+    var box = $('bk-heads'); box.innerHTML = '';
+    var cand = 0;
+    each(bkParas, function (p, pi) {
+      if (!p.head && !(p.t.length <= 60 && !isEnd(p.t))) return;   // 見出しの候補（短い行）だけ並べる
+      cand++;
+      var row = document.createElement('div'); row.className = 'bk-h' + (bkHeadOn[pi] ? ' on' : '');
+      var len = 0; for (var q = pi + 1; q < bkParas.length && !bkHeadOn[q]; q++) len += bkParas[q].t.length;
+      row.textContent = (bkHeadOn[pi] ? '✓ ' : '　 ') + p.t;
+      var n = document.createElement('span'); n.className = 'n'; n.textContent = bkHeadOn[pi] ? '（約 ' + Math.round(len / 1000) + ' 千字）' : ''; row.appendChild(n);
+      on(row, 'click', function () { if (bkHeadOn[pi]) delete bkHeadOn[pi]; else bkHeadOn[pi] = 1; bkReview(); });
+      box.appendChild(row);
+    });
+    if (!cand) { var e = document.createElement('div'); e.className = 'bk-h'; e.textContent = '見出しが見つかりませんでした。約 1 万 5 千字ごとに区切って保存します。'; box.appendChild(e); }
+    $('bk-review').className = '';
+  }
+  on($('bk-cancel'), 'click', function () { $('bk-review').className = 'hidden'; bkParas = null; bkMsg(''); });
+  on($('bk-save'), 'click', function () {
+    var paras = bkParas || [], title = $('bk-title').value.replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '').slice(0, 80) || 'Book';
+    var chs = [], cur = null, any = false;
+    for (var k in bkHeadOn) { any = true; break; }
+    each(paras, function (p, pi) {
+      if (any && bkHeadOn[pi]) { cur = { name: p.t.slice(0, 80), ps: [p.t] }; chs.push(cur); return; }
+      if (!cur) { cur = { name: any ? 'はじめの部分' : 'Part 1', ps: [] }; chs.push(cur); }
+      cur.ps.push(p.t);
+    });
+    // 長すぎる章は分ける（1つの英文は 1 万 8 千字まで）
+    var out = [];
+    each(chs, function (c) {
+      var text = c.ps.join('\n\n');
+      if (!text.replace(/\s+/g, '')) return;
+      if (c.name === 'はじめの部分' && text.length < 200) return;   // 表紙・目次などの短い部分
+      if (text.length <= 18000 && any) { out.push({ name: c.name, text: text }); return; }
+      var parts = [], buf = [];
+      each(c.ps, function (p) { if (buf.length && buf.join('\n\n').length + p.length > (any ? 15000 : 15000)) { parts.push(buf.join('\n\n')); buf = []; } buf.push(p); });
+      if (buf.length) parts.push(buf.join('\n\n'));
+      each(parts, function (t, pi) { out.push({ name: any ? c.name + '（' + (pi + 1) + '/' + parts.length + '）' : 'Part ' + (out.length + 1), text: t }); });
+    });
+    if (!out.length) { bkMsg('本文が見つかりませんでした。読み取る範囲を囲み直してください。'); return; }
+    var book = 'b' + newId(), at = now(), b = {}, first = null, total = 0;
+    each(out, function (c, ci) {
+      var id = newId() + ci;
+      rdDocs[id] = { title: '📚 ' + title + ' — ' + c.name, text: c.text, at: at - ci, book: book, bookTitle: title, ch: ci + 1, chN: out.length, chTitle: c.name, ns: splitSentences(c.text).length };
+      total += c.text.length;
+      b['reader/' + id] = rdDocs[id];
+      if (!first) first = id;
+    });
+    rdSaveLocal();
+    if (KEY) api('PATCH', '', b, function (err) { if (err) bkMsg('クラウドに保存できませんでした（' + errText(err) + '）。この端末には保存してあります。'); });
+    $('bk-review').className = 'hidden'; bkParas = null; bkPages = null; bkFiles = []; $('bk-files').value = ''; $('bk-crop').className = 'hidden'; $('bk-go').className = 'primary hidden'; $('bk-count').textContent = '';
+    bkMsg('「' + title + '」を ' + out.length + ' 章（約 ' + Math.round(total / 1000) + ' 千字）で保存しました。スクリーンショットは削除して大丈夫です。');
+    rdOpenBook[book] = 1;
+    openRdDoc(first, true);
+  });
+  var rdOpenBook = {};
+  function bookRow(bk) {
+    var chs = bookChapters(bk), d0 = rdDocs[chs[0]], row = document.createElement('div'); row.className = 'rd-hrow rd-book';
+    var b = document.createElement('b'); b.textContent = (rdOpenBook[bk] ? '▼ ' : '▶ ') + '📚 ' + (d0.bookTitle || '') + '（' + chs.length + ' 章）';
+    var sp = document.createElement('span'), bmAt = -1;
+    each(chs, function (c, k) { if (typeof rdDocs[c].bm === 'number') bmAt = k; });
+    sp.textContent = fmtClipTime(d0.at) + (bmAt >= 0 ? '　🔖 第' + (bmAt + 1) + '章 ' + (rdDocs[chs[bmAt]].bmP || 0) + '%' : '');
+    if (rdSel) {
+      var all = true; each(chs, function (c) { if (!rdSel[c]) all = false; });
+      var ck = document.createElement('span'); ck.className = 'rd-chk'; ck.textContent = all ? '✓' : ''; if (all) row.className += ' sel';
+      row.appendChild(ck); row.appendChild(b); row.appendChild(sp);
+      on(row, 'click', function () { each(chs, function (c) { if (all) delete rdSel[c]; else rdSel[c] = 1; }); renderRdHistory(); });
+      return row;
+    }
+    var del = document.createElement('button'); del.type = 'button'; del.textContent = '削除'; del.className = 'danger';
+    on(del, 'click', function (e) { e.stopPropagation(); if (!window.confirm('「' + d0.bookTitle + '」（' + chs.length + ' 章）を削除しますか？')) return; delDocs(chs); renderRdHistory(); });
+    var ren = document.createElement('button'); ren.type = 'button'; ren.textContent = '✎'; ren.title = '本の題名を直す'; ren.className = 'rd-ren';
+    on(ren, 'click', function (e) {
+      e.stopPropagation();
+      var t = window.prompt('本の題名', d0.bookTitle || ''); if (t === null) return;
+      t = t.replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '').slice(0, 80); if (!t) return;
+      var up = {};
+      each(chs, function (c) { var x = rdDocs[c]; x.bookTitle = t; x.title = '📚 ' + t + ' — ' + (x.chTitle || ''); up['reader/' + c + '/bookTitle'] = t; up['reader/' + c + '/title'] = x.title; });
+      rdSaveLocal(); if (KEY) api('PATCH', '', up, function () {}); renderRdHistory();
+    });
+    row.appendChild(del); row.appendChild(ren);
+    if (bmAt >= 0) {
+      var go = document.createElement('button'); go.type = 'button'; go.textContent = '↩ 続きから'; go.className = 'rd-ren';
+      on(go, 'click', function (e) { e.stopPropagation(); openChapter(chs[bmAt], rdDocs[chs[bmAt]].bm); });
+      row.appendChild(go);
+    }
+    row.appendChild(b); row.appendChild(sp);
+    on(row, 'click', function () { if (rdOpenBook[bk]) delete rdOpenBook[bk]; else rdOpenBook[bk] = 1; renderRdHistory(); });
+    return row;
+  }
   function renderRdHistory() {
     cvLoad();
     var box = $('rd-hist'); box.innerHTML = '';
@@ -4148,11 +4604,24 @@
     $('rd-selbar').className = rdSel ? '' : 'hidden';
     $('rd-sel').className = rdSel ? 'rd-selbtn hidden' : 'rd-selbtn';
     if (rdSel) { var nSel = 0; for (var sx in rdSel) if (rdDocs[sx]) nSel++; else delete rdSel[sx]; $('rd-selcount').textContent = nSel + ' 件を選択'; $('rd-seldel').disabled = !nSel; }
-    each(ids.slice(0, 40), function (id) {
+    // 本の章は本ごとに1行にまとめ、押すと章が並ぶ
+    var rows = [], seenB = {};
+    each(ids, function (id) {
       var d = rdDocs[id];
-      var row = document.createElement('div'); row.className = 'rd-hrow';
-      var b = document.createElement('b'); b.textContent = d.title || d.text.slice(0, 50);
-      var sp = document.createElement('span'); sp.textContent = fmtClipTime(d.at);
+      if (!d.book) { rows.push(id); return; }
+      if (seenB[d.book]) return;
+      seenB[d.book] = 1; rows.push('B:' + d.book);
+      if (rdOpenBook[d.book]) each(bookChapters(d.book), function (c) { rows.push(c); });
+    });
+    var shown = 0;
+    each(rows, function (id) {
+      if (shown >= 40 && !(rdDocs[id] && rdDocs[id].book)) return;
+      shown++;
+      if (id.indexOf('B:') === 0) { box.appendChild(bookRow(id.slice(2))); return; }
+      var d = rdDocs[id];
+      var row = document.createElement('div'); row.className = 'rd-hrow' + (d.book ? ' rd-ch' : '');
+      var b = document.createElement('b'); b.textContent = d.book ? '第' + d.ch + '章　' + (d.chTitle || '') : (d.title || d.text.slice(0, 50));
+      var sp = document.createElement('span'); sp.textContent = (d.book ? '' : fmtClipTime(d.at)) + (typeof d.bm === 'number' && d.bmP !== undefined ? '　🔖 ' + d.bmP + '%' : '');
       var del = document.createElement('button'); del.type = 'button'; del.textContent = '削除'; del.className = 'danger';
       on(del, 'click', function (e) {
         e.stopPropagation();
@@ -4301,7 +4770,7 @@
     var d = rdDocs[id]; if (!d || !KEY) return;
     var b = {}; b['reader/' + id] = d; api('PATCH', '', b, function () {});
     // 古い履歴は50件まで
-    var ids = rdIds();
+    var ids = [], all = rdIds(); each(all, function (x) { if (!rdDocs[x].book) ids.push(x); });
     if (ids.length > 50) { var b2 = {}; for (var i = 50; i < ids.length; i++) { b2['reader/' + ids[i]] = null; delete rdDocs[ids[i]]; } rdSaveLocal(); api('PATCH', '', b2, function () {}); }
   }
   function openRdDoc(id, isNew) {
@@ -4314,7 +4783,9 @@
     rdSents = [];
     each(list, function (t) { rdSents.push({ text: t, toks: tokenize(t), idioms: [] }); });
     renderRd(); showDocTitle(); cvBox(); cvLoad();
-    $('rd-body').scrollTop = 0;
+    $('rd-body').scrollTop = 0; rdIdx = -1;
+    if (typeof d.bm === 'number' && d.bm > 0 && d.bm < rdSents.length) setTimeout(function () { if (rdCur && rdCur.id === id) $('rd-status').textContent = '🔖 しおりがあります（' + pctOf(d.bm, rdSents.length) + '%）。下の「↩ しおりへ」で続きから読めます。'; }, 0);
+    progSoon();
     if (d.yt && d.cues) ytOpen(d); else ytClose();
     loadPhrases(function () {
       if (!rdCur || rdCur.id !== id) return;
