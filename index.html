@@ -4731,6 +4731,7 @@
       if (keep) rdDocs[keep.id] = keep.d;
       rdSaveLocal();
       if (!rdCur) renderRdHistory();
+      setTimeout(backfillSrc, 1500);
     });
     api('GET', '/settings/gas', undefined, function (err, u) {
       if (!err && typeof u === 'string' && u !== gasUrl) { gasUrl = u; lsSet('memo_gas', u); }
@@ -5127,6 +5128,36 @@
       translateOne(ex, function (j) { saveVocab(it0, ex, j || ''); });
     } else saveVocab(it0, ex || full, ex === full && rdCur && rdCur.d.tr ? rdCur.d.tr[it0.si] : '');
   });
+  // 単語帳での「本・英文ごと」の名前：本なら本の題名、ほかは英文の題名
+  function srcLabel(d) {
+    if (!d) return '';
+    var t = d.book ? (d.bookTitle || '') : String(d.title || '').replace(/^(🌐|🎬|📚) /, '');
+    return t.replace(/[\t\n\r]+/g, ' ').replace(/^\s+|\s+$/g, '').slice(0, 60);
+  }
+  // 前に保存した単語に出典を付ける（メモの「元の英文: ID.番号」から）。この端末で一度だけ
+  function backfillSrc() {
+    if (!KEY || lsGet('memo_vsrc_done')) return;
+    api('GET', '/memovocab/words', undefined, function (err, words) {
+      if (err || typeof words !== 'string') { if (!err) lsSet('memo_vsrc_done', '1'); return; }
+      var lines = words.replace(/\s+$/, '').split('\n'), need = false;
+      each(lines, function (ln) { var p = ln.split('\t'); if (p.length === 3) need = true; });
+      if (!need) { lsSet('memo_vsrc_done', '1'); return; }
+      api('GET', '/memovocab/tx', undefined, function (e2, tx) {
+        if (e2) return;
+        tx = tx || {};
+        var ch = 0, miss = 0;
+        lines = lines.map(function (ln) {
+          var p = ln.split('\t'); if (p.length !== 3) return ln;
+          var m = tx[p[2]] && /元の英文: ([A-Za-z0-9_-]+)\./.exec(String(tx[p[2]].v || ''));
+          var d = m ? rdDocs[m[1]] : null, l = srcLabel(d);
+          if (!l) { if (m) miss++; return ln; }
+          ch++; return ln + '\t' + l;
+        });
+        if (!ch) { if (!miss) lsSet('memo_vsrc_done', '1'); return; }
+        api('PATCH', '/memovocab', { words: lines.join('\n'), updated: now() }, function (e3) { if (!e3 && !miss) lsSet('memo_vsrc_done', '1'); });
+      });
+    });
+  }
   function saveVocab(it, sent, tr) {
     $('pop-save').disabled = true; $('pop-msg').textContent = '保存中…';
     api('GET', '/memovocab/words', undefined, function (err, words) {
@@ -5139,9 +5170,10 @@
       });
       if (dup) { $('pop-msg').textContent = 'すでに メモ単語帳に入っています。'; return; }
       var n = maxN + 1, clean = function (s) { return String(s || '').replace(/[\t\n\r]+/g, ' '); };
-      lines.push(clean(it.w) + '\t' + clean(it.m) + '\t' + n);
+      var srcL = rdCur ? srcLabel(rdCur.d) : '';
+      lines.push(clean(it.w) + '\t' + clean(it.m) + '\t' + n + (srcL ? '\t' + clean(srcL) : ''));
       var b = { words: lines.join('\n'), updated: now() };
-      if (sent) b['tx/' + n] = { v: '例文: ' + sent + (tr ? '\n訳: ' + tr : '') + (rdCur && it.si !== undefined ? '\n元の英文: ' + rdCur.id + '.' + it.si : ''), t: now() };
+      if (sent) b['tx/' + n] = { v: '例文: ' + sent + (tr ? '\n訳: ' + tr : '') + (rdCur && it.si !== undefined ? '\n元の英文: ' + rdCur.id + '.' + it.si : '') + (srcL ? '\n出典: ' + (rdCur.d.book ? '📚 ' + srcL + (rdCur.d.chTitle ? ' — ' + rdCur.d.chTitle : '') : srcL) : ''), t: now() };
       api('PATCH', '/memovocab', b, function (e2) {
         if (e2) { $('pop-msg').textContent = '保存できませんでした（' + errText(e2) + '）'; $('pop-save').disabled = false; return; }
         $('pop-msg').innerHTML = '';
