@@ -512,6 +512,7 @@
       <div class="yt-in hidden" id="bk-in">
         <h3 class="rd-h" style="margin-top:0">📚 画像から本を作る（パソコン向け）</h3>
         <p class="note">Kindle などのページのスクリーンショットをまとめて選ぶと、この端末の中で英文を読み取り（画像はどこにも送りません）、章ごとの英文にして保存します。保存した本は、ほかの端末（iPad 2/3 も）でも読めます。買った本を自分で勉強するためだけに使ってください。</p>
+        <select id="bk-append" class="hidden" style="width:100%; font-size:15px; padding:7px; border-radius:8px; border:1px solid #c9d2d8; margin:4px 0 6px;"></select>
         <input id="bk-title" type="text" placeholder="本の題名（例：Animal Farm）">
         <div class="row"><label class="bk-file">🖼 スクリーンショットを選ぶ（まとめて）<input id="bk-files" type="file" multiple accept="image/*"></label></div>
         <p class="note" id="bk-count"></p>
@@ -535,6 +536,7 @@
       <div id="rd-selbar" class="hidden"><span id="rd-selcount">0 件を選択</span>
         <button id="rd-selall" type="button">すべて選ぶ</button>
         <button id="rd-seldel" type="button" class="danger">選んだものを削除</button>
+        <button id="rd-selmerge" type="button" class="hidden">📚 選んだ本を1冊にまとめる</button>
         <button id="rd-selend" type="button">やめる</button></div>
       <div id="rd-hist"></div>
     </div>
@@ -4364,10 +4366,75 @@
     if (!window.confirm('選んだ ' + ids.length + ' 件の英文を削除しますか？（ほかの端末からも消えます。作った AI の声はドライブに残ります）')) return;
     delDocs(ids); rdSel = null; renderRdHistory();
   });
+  /* ---- 本をまとめる・続きを足す ---- */
+  function allBooks() {   // [{id, title, at（作った時刻）, chs}]（新しい順）
+    var m = {}, out = [];
+    for (var k in rdDocs) { var d = rdDocs[k]; if (!d || !d.book || !d.text) continue; var b = m[d.book] || (m[d.book] = { id: d.book, title: d.bookTitle || '', at: 0 }); b.at = Math.max(b.at, d.at || 0); }
+    for (var x in m) { m[x].chs = bookChapters(x); out.push(m[x]); }
+    out.sort(function (a, b) { return b.at - a.at; });
+    return out;
+  }
+  // 章をこの順で1冊に（番号・題名を付け直してクラウドにも）
+  function setBookChapters(bookId, title, ids) {
+    var up = {}, bm = null;
+    each(ids, function (id, k) {
+      var d = rdDocs[id]; if (!d) return;
+      if (typeof d.bm === 'number' && (!bm || (d.bmAt || 0) > (bm.at || 0))) bm = { id: id, at: d.bmAt || 0 };
+      d.book = bookId; d.bookTitle = title; d.ch = k + 1; d.chN = ids.length; d.title = '📚 ' + title + ' — ' + (d.chTitle || '');
+      each(['book', 'bookTitle', 'ch', 'chN', 'title'], function (f) { up['reader/' + id + '/' + f] = d[f]; });
+    });
+    // しおりは、いちばん新しいものを1つだけ残す
+    each(ids, function (id) { var d = rdDocs[id]; if (d && typeof d.bm === 'number' && (!bm || id !== bm.id)) { delete d.bm; delete d.bmP; up['reader/' + id + '/bm'] = null; up['reader/' + id + '/bmP'] = null; } });
+    rdSaveLocal();
+    if (KEY) {
+      api('PATCH', '', up, function () {});
+      if (bm) { var d2 = rdDocs[bm.id], b2 = {}; b2['readerbm/' + bookId] = { id: bm.id, i: d2.bm, p: d2.bmP, at: d2.bmAt || now() }; api('PATCH', '', b2, function () {}); }
+    }
+  }
+  function selBooks() {   // 選んだ英文が入っている本（作った順＝古い順）と、本以外を選んでいるか
+    var m = {}, other = false;
+    for (var id in rdSel) { var d = rdDocs[id]; if (!d) continue; if (d.book) m[d.book] = 1; else other = true; }
+    var list = []; each(allBooks(), function (b) { if (m[b.id]) list.push(b); });
+    list.reverse();
+    return { list: list, other: other };
+  }
+  on($('rd-selmerge'), 'click', function () {
+    var sb = selBooks(), list = sb.list;
+    if (list.length < 2) return;
+    var names = []; each(list, function (b, i) { names.push((i + 1) + '. ' + b.title + '（' + b.chs.length + ' 章）'); });
+    var ord = window.prompt('この順番で1冊にまとめます（上が本の最初）：\n' + names.join('\n') + '\n\n順番を変えるときは、番号を並べ替えてください（例：2 1 3）', (function () { var a = []; each(list, function (b, i) { a.push(i + 1); }); return a.join(' '); })());
+    if (ord === null) return;
+    var nums = String(ord).match(/\d+/g) || [], seq = [], used = {};
+    each(nums, function (n) { n = Number(n) - 1; if (list[n] && !used[n]) { used[n] = 1; seq.push(list[n]); } });
+    each(list, function (b, i) { if (!used[i]) seq.push(b); });   // 書き忘れた本は最後に
+    var base = String(seq[0].title).replace(/\s*[#＃]\s*\d+\s*$/, '').replace(/\s*[（(]?\s*(part|vol\.?|volume|book)?\s*\d+\s*[)）]?\s*$/i, '');
+    var title = window.prompt('まとめた本の題名', base || seq[0].title);
+    if (title === null) return;
+    title = title.replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '').slice(0, 80) || seq[0].title;
+    var ids = []; each(seq, function (b) { each(b.chs, function (c) { ids.push(c); }); });
+    var target = seq[0].id;
+    setBookChapters(target, title, ids);
+    if (KEY) { var del = {}; each(seq, function (b) { if (b.id !== target) del['readerbm/' + b.id] = null; }); api('PATCH', '', del, function () {}); }
+    rdSel = null; rdOpenBook = {}; rdOpenBook[target] = 1;
+    renderRdHistory();
+    syncMsg('「' + title + '」（' + ids.length + ' 章）にまとめました。');
+  });
+  // 画像から本を作る：前に作った本の続きとして足す
+  function bkAppendOpts() {
+    var sel = $('bk-append'); if (!sel) return;
+    var books = allBooks(), cur = sel.value;
+    sel.innerHTML = '';
+    var o0 = document.createElement('option'); o0.value = ''; o0.textContent = '📗 新しい本として作る'; sel.appendChild(o0);
+    each(books, function (b) { var o = document.createElement('option'); o.value = b.id; o.textContent = '➕ 「' + b.title + '」（' + b.chs.length + ' 章）の続きとして足す'; sel.appendChild(o); });
+    sel.value = cur; if (sel.value !== cur) sel.value = '';
+    sel.className = books.length ? '' : 'hidden';
+    $('bk-title').className = sel.value ? 'hidden' : '';
+  }
   /* ---- 📚 画像から本を作る（この端末の中で OCR） ---- */
   var bkFiles = [], bkCrop = null, bkRun = 0, bkPages = null, bkParas = null, bkHeadOn = null;
   var canOcr = !!(window.Worker && window.WebAssembly && window.Promise && window.FileReader && document.createElement('canvas').getContext);
   if (canOcr) $('bk-in').className = 'yt-in';
+  on($('bk-append'), 'change', bkAppendOpts);
   function bkMsg(t) { $('bk-msg').textContent = t; }
   function natCmp(a, b) {   // 「スクリーンショット (12).png」を数の順に
     var ra = String(a).toLowerCase().match(/\d+|\D+/g) || [], rb = String(b).toLowerCase().match(/\d+|\D+/g) || [];
@@ -4516,7 +4583,7 @@
   }
   on($('bk-go'), 'click', function () {
     if (!bkFiles.length) return;
-    if (!$('bk-title').value.replace(/\s+/g, '')) { bkMsg('先に本の題名を入れてください。'); $('bk-title').focus(); return; }
+    if (!$('bk-append').value && !$('bk-title').value.replace(/\s+/g, '')) { bkMsg('先に本の題名を入れてください。'); $('bk-title').focus(); return; }
     var run = bkRun = now(), files = bkFiles.slice(), pages = new Array(files.length), done = 0, t0 = now(), workers = [], next = 0, failed = 0;
     $('bk-go').className = 'primary hidden'; $('bk-stop').className = ''; $('bk-pbar').className = ''; $('bk-review').className = 'hidden';
     bkMsg('読み取りの準備をしています（初回は読み取り用のデータ約 3MB を読み込みます）…');
@@ -4652,6 +4719,8 @@
   on($('bk-cancel'), 'click', function () { $('bk-review').className = 'hidden'; bkParas = null; bkMsg(''); });
   on($('bk-save'), 'click', function () {
     var paras = bkParas || [], title = $('bk-title').value.replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '').slice(0, 80) || 'Book';
+    var appendTo = $('bk-append').value, before = appendTo ? bookChapters(appendTo) : [];
+    if (appendTo && before.length) title = rdDocs[before[0]].bookTitle || title; else appendTo = '';
     var chs = [], cur = null, any = false;
     for (var k in bkHeadOn) { any = true; break; }
     each(paras, function (p, pi) {
@@ -4672,18 +4741,25 @@
       each(parts, function (t, pi) { out.push({ name: any ? c.name + '（' + (pi + 1) + '/' + parts.length + '）' : 'Part ' + (out.length + 1), text: t }); });
     });
     if (!out.length) { bkMsg('本文が見つかりませんでした。読み取る範囲を囲み直してください。'); return; }
-    var book = 'b' + newId(), at = now(), b = {}, first = null, total = 0;
+    var book = appendTo || 'b' + newId(), at = now(), b = {}, first = null, total = 0, newIds = [];
     each(out, function (c, ci) {
       var id = newId() + ci;
       rdDocs[id] = { title: '📚 ' + title + ' — ' + c.name, text: c.text, at: at - ci, book: book, bookTitle: title, ch: ci + 1, chN: out.length, chTitle: c.name, ns: splitSentences(c.text).length };
       total += c.text.length;
-      b['reader/' + id] = rdDocs[id];
+      newIds.push(id);
       if (!first) first = id;
     });
+    // 続きとして足すとき：前の章のあとに番号を付け直す（1回の保存で送る）
+    if (appendTo) {
+      var allIds = before.concat(newIds);
+      each(allIds, function (cid, k) { var d = rdDocs[cid]; d.ch = k + 1; d.chN = allIds.length; d.title = '📚 ' + title + ' — ' + (d.chTitle || ''); });
+      each(before, function (cid) { b['reader/' + cid + '/chN'] = allIds.length; });
+    }
+    each(newIds, function (cid) { b['reader/' + cid] = rdDocs[cid]; });
     rdSaveLocal();
     if (KEY) api('PATCH', '', b, function (err) { if (err) bkMsg('クラウドに保存できませんでした（' + errText(err) + '）。この端末には保存してあります。'); });
     $('bk-review').className = 'hidden'; bkParas = null; bkPages = null; bkFiles = []; $('bk-files').value = ''; $('bk-crop').className = 'hidden'; $('bk-go').className = 'primary hidden'; $('bk-count').textContent = '';
-    bkMsg('「' + title + '」を ' + out.length + ' 章（約 ' + Math.round(total / 1000) + ' 千字）で保存しました。スクリーンショットは削除して大丈夫です。');
+    bkMsg((appendTo ? '「' + title + '」の続きとして ' + out.length + ' 章（約 ' + Math.round(total / 1000) + ' 千字）を足しました（全部で ' + (before.length + out.length) + ' 章）。' : '「' + title + '」を ' + out.length + ' 章（約 ' + Math.round(total / 1000) + ' 千字）で保存しました。') + 'スクリーンショットは削除して大丈夫です。');
     rdOpenBook[book] = 1;
     openRdDoc(first, true);
   });
@@ -4730,7 +4806,9 @@
     if (rdSel && !ids.length) rdSel = null;
     $('rd-selbar').className = rdSel ? '' : 'hidden';
     $('rd-sel').className = rdSel ? 'rd-selbtn hidden' : 'rd-selbtn';
-    if (rdSel) { var nSel = 0; for (var sx in rdSel) if (rdDocs[sx]) nSel++; else delete rdSel[sx]; $('rd-selcount').textContent = nSel + ' 件を選択'; $('rd-seldel').disabled = !nSel; }
+    if (rdSel) { var nSel = 0; for (var sx in rdSel) if (rdDocs[sx]) nSel++; else delete rdSel[sx]; $('rd-selcount').textContent = nSel + ' 件を選択'; $('rd-seldel').disabled = !nSel;
+      var sbk = selBooks(); $('rd-selmerge').className = allBooks().length >= 2 ? '' : 'hidden'; $('rd-selmerge').disabled = sbk.list.length < 2 || sbk.other; }
+    bkAppendOpts();
     // 本の章は本ごとに1行にまとめ、押すと章が並ぶ
     var rows = [], seenB = {};
     each(ids, function (id) {
