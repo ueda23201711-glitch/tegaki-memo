@@ -4397,16 +4397,32 @@
   // 読み取った1ページ → 段落 [{t, h（文字の高さ）, n（行数）}]。文字の大きさが変わるところでも分ける（見出しと本文）
   var UI_LINE = /^(page \d+( of \d+)?\b.*|loc(ation)?\.? ?\d+( of \d+)?\b.*|.{0,40}\b\d{1,3} ?%\s*$|.*\b\d+ (mins?|minutes?|hrs?|hours?) left in (chapter|book)\b.*|learning reading speed.*|.*read.?amazon.*|.*kindle.?(library|cloud reader).*)$/i;
   function pageParas(data) {
-    var out = [];
+    // 段落ごとの行（文字・大きさ・上の位置）。行の間隔のふつうの値（ページの中央値）も調べる
+    var groups = [], pitches = [];
     each(data.blocks || [], function (bl) {
       each(bl.paragraphs || [], function (pg) {
-        var cur = null;
+        var g = [];
         each(pg.lines || [], function (ln) {
-          var t = String(ln.text || '').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, ''), h = ln.bbox.y1 - ln.bbox.y0;
+          var t = String(ln.text || '').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '');
           if (!t || UI_LINE.test(t)) return;   // 「Page 12 of 300」「35%」などの画面の文字
-          if (cur && h < cur.h0 * 1.3 && h > cur.h0 * 0.6) { cur.ls.push(t); cur.hs.push(h); return; }   // 大きさが大きく変わったら別の段落（見出し・ページの題名）
-          cur = { ls: [t], hs: [h], h0: h }; out.push(cur);
+          var y = ln.bbox.y0, h = ln.bbox.y1 - ln.bbox.y0;
+          if (g.length) pitches.push(y - g[g.length - 1].y);
+          g.push({ t: t, h: h, y: y });
         });
+        if (g.length) groups.push(g);
+      });
+    });
+    pitches.sort(function (a, b) { return a - b; });
+    var pitch = pitches.length >= 4 ? pitches[Math.floor(pitches.length / 2)] : 0;
+    var out = [];
+    each(groups, function (g) {
+      var cur = null, prev = null;
+      each(g, function (l) {
+        // 大きさが大きく変わったら（見出し・ページの題名）、または行の間がふつうより大きく空いていたら（段落の間の空き）別の段落
+        var gap = prev && pitch ? (l.y - prev.y) > pitch * 1.45 : false;
+        if (cur && l.h < cur.h0 * 1.3 && l.h > cur.h0 * 0.6 && !gap) { cur.ls.push(l.t); cur.hs.push(l.h); }
+        else { cur = { ls: [l.t], hs: [l.h], h0: l.h }; out.push(cur); }
+        prev = l;
       });
     });
     var res = [];
@@ -4438,7 +4454,8 @@
         if (run !== bkRun) return;
         bkPages = []; each(pages, function (cols) { each(cols || [], function (c) { bkPages.push(c); }); });   // 段ごとに1ページとして扱う
         bkEnd();
-        bkMsg('読み取りが終わりました（' + files.length + ' 枚' + (failed ? '・読めなかった画像 ' + failed + ' 枚' : '') + '）。章の区切りを確かめてください。');
+        var nch = 0; each(bkPages, function (pg) { each(pg, function (x) { nch += x.t.length; }); });
+        bkMsg('読み取りが終わりました（' + files.length + ' 枚' + (bkPages.length > files.length ? '・見開きを分けて ' + bkPages.length + ' ページ' : '') + '・約 ' + Math.round(nch / 100) / 10 + ' 千字' + (failed ? '・読めなかった画像 ' + failed + ' 枚' : '') + '）。章の区切りを確かめてください。');
         bkAnalyze();
       };
       var work = function (w) {
