@@ -528,7 +528,8 @@
         </div>
       </div>
       <p class="note">保存した単語・熟語は <a href="/kiku-memo/" target="_blank">📚 メモ単語帳</a> で学習できます（iPad 2/3 は <a href="/kiku-memo/ipad.html" target="_blank">こちら</a>）。</p>
-      <h3 id="rd-hist-h" class="rd-h">これまでの英文 <button id="rd-sel" type="button" class="rd-selbtn">☑ 選んで削除</button></h3>
+      <h3 id="rd-hist-h" class="rd-h">これまでの英文 <button id="rd-sync" type="button" class="rd-selbtn" title="ほかの端末で追加・変更した英文を読み込む">🔄 最新にする</button> <button id="rd-sel" type="button" class="rd-selbtn">☑ 選んで削除</button></h3>
+      <p class="note" id="rd-sync-msg"></p>
       <div id="rd-selbar" class="hidden"><span id="rd-selcount">0 件を選択</span>
         <button id="rd-selall" type="button">すべて選ぶ</button>
         <button id="rd-seldel" type="button" class="danger">選んだものを削除</button>
@@ -4741,11 +4742,59 @@
     if (text) { $('rd-in').value = text; rdLoad(); }
     else rdShowInput();
   }
+  /* ---- ほかの端末で増えた英文を読み込む ---- */
+  var rdSyncAt = 0, rdSyncBusy = false;
+  function syncMsg(t) { var m = $('rd-sync-msg'); if (m) m.textContent = t || ''; }
+  // 軽い確認：英文の ID の一覧だけを取り、まだない英文だけを読み込む
+  function rdSyncNew(force) {
+    if (!KEY || rdSyncBusy || (!force && now() - rdSyncAt < 15000)) return;
+    rdSyncAt = now(); rdSyncBusy = true;
+    var x = new XMLHttpRequest();
+    try { x.open('GET', DB_URL + '/memos/' + KEY + '/reader.json?shallow=true', true); } catch (e) { rdSyncBusy = false; return; }
+    x.timeout = 15000;
+    x.onreadystatechange = function () {
+      if (x.readyState !== 4) return;
+      var ids = null;
+      if (x.status === 200) { try { ids = JSON.parse(x.responseText) || {}; } catch (e) {} }
+      if (!ids) { rdSyncBusy = false; return; }
+      var add = []; for (var id in ids) if (!rdDocs[id]) add.push(id);
+      if (!add.length) { rdSyncBusy = false; return; }
+      var left = add.length, got = 0;
+      each(add, function (nid) {
+        api('GET', '/reader/' + nid, undefined, function (err, d) {
+          if (!err && d && d.text) { rdDocs[nid] = d; got++; }
+          if (--left) return;
+          rdSyncBusy = false;
+          if (!got) return;
+          rdSaveLocal();
+          if (!rdCur) { renderRdHistory(); syncMsg('🆕 ほかの端末で追加した英文を ' + got + ' 件読み込みました。'); }
+        });
+      });
+    };
+    x.send();
+  }
+  on($('rd-sync'), 'click', function (e) {
+    e.stopPropagation();
+    if (!KEY) return;
+    syncMsg('読み込んでいます…');
+    api('GET', '/reader', undefined, function (err, data) {
+      if (err) { syncMsg('読み込めませんでした（' + errText(err) + '）。'); return; }
+      var before = rdIds().length, keep = rdCur && !(data && data[rdCur.id]) ? rdCur : null;
+      rdDocs = data || {};
+      if (keep) rdDocs[keep.id] = keep.d;
+      rdSaveLocal(); rdSyncAt = now();
+      if (!rdCur) renderRdHistory();
+      var n = rdIds().length - before;
+      syncMsg('最新にしました（' + (n > 0 ? n + ' 件増えました' : n < 0 ? -n + ' 件減りました' : '増えた英文はありません') + '）。');
+    });
+  });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) rdSyncNew(true); });
+  setInterval(function () { if (!document.hidden && !rdCur && $('rd-hist') && $('rd-hist').offsetWidth > 0) rdSyncNew(false); }, 30000);
   function rdShowInput() {
     stopSpeak(); ytClose(); rdCur = null;
     $('rd-input').className = ''; $('rd-view').className = 'hidden';
     $('rd-paste').className = (navigator.clipboard && navigator.clipboard.readText) ? '' : 'hidden';
-    renderRdHistory();
+    renderRdHistory(); syncMsg(''); rdSyncNew(true);
   }
   // 記事のアドレスから本文を取り込む（Apps Script がページを読みに行く）
   function rdFetchUrl(url) {
