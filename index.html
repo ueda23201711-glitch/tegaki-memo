@@ -157,6 +157,8 @@
   .rd-hrow .rd-chk { float: left; width: 22px; height: 22px; margin: 0 10px 0 0; border: 2px solid #8aa0ab; border-radius: 6px; text-align: center; line-height: 18px; font-weight: 700; color: #fff; }
   .rd-hrow.sel { background: #fff4e5; }
   .rd-hrow.sel .rd-chk { background: #a3301f; border-color: #a3301f; }
+  .w.saved { background: #fff1c2; border-radius: 3px; box-shadow: 0 0 0 1px #f3dc8a inset; }
+  .saved-sample { background: #fff1c2; border-radius: 3px; padding: 0 3px; }
   .rd-hrow .rd-badge { margin-left: 10px; color: #2f6f8f; font-weight: 600; }
   #rd-fix-box { margin: 0 0 8px; }
   #rd-fix-box button { font-size: 13px; padding: 5px 10px; }
@@ -562,7 +564,7 @@
         <div id="rd-cv-box" class="hidden"></div>
         <div id="rd-fix-box" class="hidden"><button id="rd-fix" type="button"></button></div>
         <div id="rd-src-box" class="hidden"><a id="rd-src" href="#" target="_blank" rel="noopener"></a></div>
-        <p class="note rd-hint" id="rd-hint-p">単語をタップすると意味と発音、<span class="idm-sample">下線</span>は熟語・定型表現です。🔊 でその文を読みます（「🔁 続けて」がオンなら、そこから最後まで）。</p>
+        <p class="note rd-hint" id="rd-hint-p">単語をタップすると意味と発音、<span class="idm-sample">下線</span>は熟語・定型表現、<span class="saved-sample">黄色</span>はメモ単語帳に保存済みの単語です。🔊 でその文を読みます（「🔁 続けて」がオンなら、そこから最後まで）。</p>
         <div id="rd-text"></div>
       </div>
     </div>
@@ -4056,14 +4058,62 @@
     var start = startAt > 0 ? startAt : 0; rdIdx = start; markSentence(start > 0 ? start : -1); rdIdx = start;
     playLabel();
   }
+  /* ---- 単語帳に保存済みの単語に色を付ける ---- */
+  var vSet = {}, vPhr = [];   // vSet[単語] = 1、vPhr = [['look','at'], …]
+  (function () { try { vBuild(JSON.parse(lsGet('memo_vset') || '[]')); } catch (e) {} })();
+  function vBuild(list) {
+    vSet = {}; vPhr = [];
+    each(list, function (w) { w = String(w || '').toLowerCase().replace(/^\s+|\s+$/g, ''); if (!w) return; if (/\s/.test(w)) vPhr.push(w.split(/\s+/)); else vSet[w] = 1; });
+  }
+  function vLoad() {
+    if (!KEY) return;
+    api('GET', '/memovocab/words', undefined, function (err, words) {
+      if (err || typeof words !== 'string') return;
+      var list = []; each(words.split('\n'), function (ln) { var w = ln.split('\t')[0]; if (w) list.push(w); });
+      lsSet('memo_vset', JSON.stringify(list)); vBuild(list);
+      if (rdCur) renderRd();
+    });
+  }
+  function vAdd(w) { w = String(w || '').toLowerCase(); if (/\s/.test(w)) vPhr.push(w.split(/\s+/)); else vSet[w] = 1; var list = []; for (var k in vSet) list.push(k); each(vPhr, function (p) { list.push(p.join(' ')); }); lsSet('memo_vset', JSON.stringify(list)); }
+  // 語形の違い（-s・-ed・-ing など）も同じ単語として見る
+  function vHas(w) {
+    w = String(w || '').toLowerCase().replace(/’/g, "'");
+    if (vSet[w]) return true;
+    var c = [w.replace(/'s$/, ''), w.replace(/s$/, ''), w.replace(/es$/, ''), w.replace(/ies$/, 'y'), w.replace(/ed$/, ''), w.replace(/d$/, ''), w.replace(/ied$/, 'y'), w.replace(/ing$/, ''), w.replace(/ing$/, 'e'), w.replace(/([a-z])\1(ed|ing)$/, '$1'), w.replace(/er$/, ''), w.replace(/est$/, ''), w.replace(/ly$/, '')];
+    for (var i = 0; i < c.length; i++) if (c[i] !== w && c[i].length > 1 && vSet[c[i]]) return true;
+    return false;
+  }
+  // 文の単語のうち、保存済みのもの（熟語は続いた単語の並びで）
+  function vMarks(toks) {
+    var m = {};
+    each(toks, function (t, i) { if (vHas(t.w)) m[i] = 1; });
+    each(vPhr, function (p) {
+      for (var i = 0; i + p.length <= toks.length; i++) {
+        var okp = true;
+        for (var j = 0; j < p.length && okp; j++) { var a = toks[i + j].w.toLowerCase(); if (a !== p[j] && !(j === 0 && vHasOne(a, p[j]))) okp = false; }
+        if (okp) for (var q = 0; q < p.length; q++) m[i + q] = 1;
+      }
+    });
+    return m;
+  }
+  // 通しで聞く画面：作り直さずに色だけ付け直す（再生を止めない）
+  function vRefreshFlow() {
+    each(flEls, function (el, k) {
+      var st = rdSents[k]; if (!st) return;
+      var vm = vMarks(st.toks), ws = [], i;
+      for (i = 0; i < el.childNodes.length; i++) if (el.childNodes[i].className && /(^|\s)w(\s|$)/.test(el.childNodes[i].className)) ws.push(el.childNodes[i]);
+      each(ws, function (w, ti) { w.className = w.className.replace(/\s*saved/g, '') + (vm[ti] ? ' saved' : ''); });
+    });
+  }
+  function vHasOne(a, b) { var save = vSet; vSet = {}; vSet[b] = 1; var r = vHas(a); vSet = save; return r; }
   // 文を単語に分けて並べる（単語をタップ：止めて辞書。単語以外：再生中なら止める／止まっていればその文から）
   var flPlayAt = -1;
   function flFill(sp, si) {
-    var st = rdSents[si], idAt = {}, pos = 0;
+    var st = rdSents[si], idAt = {}, pos = 0, vm = vMarks(st.toks);
     each(st.idioms || [], function (f) { for (var q = f.s; q <= f.e; q++) idAt[q] = 1; });
     each(st.toks, function (t, ti) {
       if (t.s > pos) sp.appendChild(document.createTextNode(st.text.slice(pos, t.s)));
-      var w = document.createElement('span'); w.className = 'w' + (idAt[ti] ? ' idm' : ''); w.textContent = t.w;
+      var w = document.createElement('span'); w.className = 'w' + (idAt[ti] ? ' idm' : '') + (vm[ti] ? ' saved' : ''); w.textContent = t.w;
       on(w, 'click', function (e) { e.stopPropagation(); flWordTap(si, ti); });
       sp.appendChild(w); pos = t.e;
     });
@@ -4724,6 +4774,7 @@
   }
   function rdPullHistory() {
     if (!KEY) return;
+    vLoad();
     api('GET', '/reader', undefined, function (err, data) {
       if (err) return;
       var keep = rdCur && !(data && data[rdCur.id]) ? rdCur : null;
@@ -4979,10 +5030,10 @@
       // 熟語の範囲（単語の番号）
       var idAt = {};
       each(s.idioms, function (f, fi) { for (var q = f.s; q <= f.e; q++) idAt[q] = fi; allIdioms.push({ f: f, si: si }); });
-      var pos = 0;
+      var pos = 0, vm = vMarks(s.toks);
       each(s.toks, function (t, ti) {
         if (t.s > pos) en.appendChild(document.createTextNode(s.text.slice(pos, t.s)));
-        var w = document.createElement('span'); w.className = 'w' + (idAt[ti] !== undefined ? ' idm' : '');
+        var w = document.createElement('span'); w.className = 'w' + (idAt[ti] !== undefined ? ' idm' : '') + (vm[ti] ? ' saved' : '');
         w.textContent = t.w;
         on(w, 'click', function (e) { e.stopPropagation(); tapWord(si, ti); });
         en.appendChild(w);
@@ -5196,6 +5247,7 @@
         if (e2) { $('pop-msg').textContent = '保存できませんでした（' + errText(e2) + '）'; $('pop-save').disabled = false; return; }
         $('pop-msg').innerHTML = '';
         $('pop-msg').appendChild(document.createTextNode('メモ単語帳に保存しました（No.' + n + '）。'));
+        vAdd(it.w); if (rdCur) { renderRd(); if (flOpen) vRefreshFlow(); }
       });
     });
   }
