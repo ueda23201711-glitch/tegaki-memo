@@ -4251,19 +4251,30 @@
     document.head.appendChild(sc);
   }
   // 文の配列を訳す（長いときは分けて送る）
-  function translateAll(list, cb) {
-    var out = [], i = 0;
+  // have：すでにある訳（同じ長さ。空のところだけ訳す）。prog(できた数, 全部)
+  function translateAll(list, cb, have, prog) {
+    var out = [], todo = [], i = 0, done = 0;
+    each(list, function (t, k) { var h = have && have.length === list.length ? have[k] : ''; out.push(h || ''); if (!h && t) todo.push(k); else done++; });
     var next = function () {
-      if (i >= list.length) { cb(out, null); return; }
-      var batch = [], len = 0;
-      while (i < list.length && (batch.length === 0 || len + list[i].length < 1500) && batch.length < 25) { batch.push(list[i]); len += list[i].length; i++; }
+      if (i >= todo.length) { cb(out, null); return; }
+      var batch = [], idx = [], len = 0;
+      while (i < todo.length && (batch.length === 0 || len + list[todo[i]].length < 1500) && batch.length < 25) { batch.push(list[todo[i]]); idx.push(todo[i]); len += list[todo[i]].length; i++; }
       gasCall({ qs: JSON.stringify(batch) }, function (data, err) {
         if (err || !data || !data.ok) { cb(out, err || (data && data.error) || 'error'); return; }
-        each(batch, function (b, k) { out.push((data.ts && data.ts[k]) || ''); });
+        each(idx, function (k, j) { out[k] = (data.ts && data.ts[j]) || ''; });
+        done += idx.length; if (prog) prog(done, list.length);
         next();
       });
     };
     next();
+  }
+  function trErrText(e) {
+    e = String(e || '');
+    if (/too many times|invoked/i.test(e)) return '今日の Google 翻訳の無料の回数を使い切ったようです。しばらく（長くて24時間）たつと戻ります。できた分の訳は保存してあり、次にこの英文を開くと続きから作ります';
+    if (e === 'nourl') return '翻訳の設定がありません';
+    if (e === 'timeout') return '時間切れ。もう一度開くと続きから作ります';
+    if (e === 'net') return 'Apps Script につながりませんでした。もう一度開くと続きから作ります';
+    return '原因：' + e.replace(/^Exception:\s*/, '').slice(0, 80);
   }
   function translateOne(text, cb) {
     gasCall({ q: text }, function (data, err) { cb(!err && data && data.ok ? data.t : null); });
@@ -4870,17 +4881,20 @@
       renderRd();
     });
     // 訳
-    if (d.tr && d.tr.length === rdSents.length) { if (isNew) rdStore(id); return; }
+    if (d.tr && d.tr.length === rdSents.length && !d.trPart) { if (isNew) rdStore(id); return; }
     if (!gasUrl) { if (isNew) rdStore(id); return; }
     $('rd-status').textContent = '日本語訳を作成中…';
     translateAll(list, function (tr, err) {
       if (!rdDocs[id]) return;
-      if (tr.length === list.length) { rdDocs[id].tr = tr; rdSaveLocal(); }
+      var miss = 0; each(tr, function (t, k) { if (!t && list[k]) miss++; });
+      if (tr.length === list.length) { rdDocs[id].tr = tr; if (miss) rdDocs[id].trPart = 1; else delete rdDocs[id].trPart; rdSaveLocal(); }
       rdStore(id);
       if (rdCur && rdCur.id === id) {
-        $('rd-status').textContent = err ? '日本語訳を作れませんでした（' + (err === 'nourl' ? '翻訳の設定がありません' : err === 'timeout' ? '時間切れ' : '翻訳の設定を確認してください') + '）' : '';
+        $('rd-status').textContent = err ? '日本語訳を作れませんでした（' + (list.length - miss) + ' / ' + list.length + ' 文まで。' + trErrText(err) + '）' : '';
         renderRd();
       }
+    }, d.tr && d.tr.length === list.length ? d.tr : null, function (n, all) {
+      if (rdCur && rdCur.id === id && all > 30) $('rd-status').textContent = '日本語訳を作成中… ' + n + ' / ' + all + ' 文';
     });
   }
   function renderRd() {
@@ -5184,9 +5198,14 @@
     "    } else if (p.tts) {",
     "      out = ttsSaved(String(p.tts).slice(0, 1500), String(p.v || \"Kore\").replace(/[^A-Za-z]/g, \"\"), p.pre === \"1\", Number(p.part) || 0);",
     "    } else if (p.qs) {",
-    "      var list = JSON.parse(p.qs), ts = [];",
-    "      for (var i = 0; i < list.length && i < 30; i++) ts.push(list[i] ? LanguageApp.translate(String(list[i]).slice(0, 4000), sl, tl) : \"\");",
-    "      out = { ok: true, ts: ts };",
+    "      // いくつかの文を改行でつないで1回で訳す（翻訳の回数の節約）。行の数が合わなければ1文ずつ",
+    "      var list = JSON.parse(p.qs), ts = [], src = [], one = null;",
+    "      for (var i = 0; i < list.length && i < 30; i++) src.push(String(list[i] || \"\").replace(/\\s*\\n\\s*/g, \" \").slice(0, 4000));",
+    "      if (src.length > 1 && src.join(\"\\n\").length < 4500 && src.every(function (x) { return x; })) {",
+    "        try { var tj = LanguageApp.translate(src.join(\"\\n\"), sl, tl).split(/\\s*\\n\\s*/); if (tj.length === src.length) one = tj; } catch (e) { if (/too many times|invoked/i.test(String(e))) throw e; }",
+    "      }",
+    "      if (one) ts = one; else for (var k = 0; k < src.length; k++) ts.push(src[k] ? LanguageApp.translate(src[k], sl, tl) : \"\");",
+    "      out = { ok: true, ts: ts, one: !!one };",
     "    } else {",
     "      out = { ok: true, t: p.q ? LanguageApp.translate(String(p.q).slice(0, 4000), sl, tl) : \"\" };",
     "    }",
