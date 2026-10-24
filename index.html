@@ -158,6 +158,8 @@
   .rd-hrow.sel { background: #fff4e5; }
   .rd-hrow.sel .rd-chk { background: #a3301f; border-color: #a3301f; }
   .rd-hrow .rd-badge { margin-left: 10px; color: #2f6f8f; font-weight: 600; }
+  #rd-fix-box { margin: 0 0 8px; }
+  #rd-fix-box button { font-size: 13px; padding: 5px 10px; }
   #rd-cv-box { font-size: 13px; color: #2f6f8f; margin: 0 0 8px; line-height: 1.6; }
   #rd-cv-box button { padding: 3px 9px; font-size: 13px; margin: 2px 6px 2px 0; }
   #mk-banner { background: #e6f1f6; color: #24363f; border-radius: 10px; padding: 8px 12px; margin: 8px 12px 0; font-size: 13px; }
@@ -557,6 +559,7 @@
         <div id="rd-title-box" title="押すと題名を直せます"><span id="rd-title-mark"></span><span id="rd-title"></span><span class="ed">✎ 題名を直す</span></div>
         <div id="rd-tin-box" class="hidden"><button id="rd-tin" type="button">📝 題名も本文の最初の文にする（読み上げ・訳の対象に）</button></div>
         <div id="rd-cv-box" class="hidden"></div>
+        <div id="rd-fix-box" class="hidden"><button id="rd-fix" type="button"></button></div>
         <div id="rd-src-box" class="hidden"><a id="rd-src" href="#" target="_blank" rel="noopener"></a></div>
         <p class="note rd-hint" id="rd-hint-p">単語をタップすると意味と発音、<span class="idm-sample">下線</span>は熟語・定型表現です。🔊 でその文を読みます（「🔁 続けて」がオンなら、そこから最後まで）。</p>
         <div id="rd-text"></div>
@@ -4553,6 +4556,11 @@
       var a = paras[i - 1], c = paras[i];
       if (a.head && a.t.length < 40 && (c.head || (c.t.length <= 60 && !isEnd(c.t) && c.t.split(' ').length <= 10))) { a.t = a.t + ': ' + c.t; a.big = a.big || c.big; paras.splice(i, 1); }
     }
+    // 文の途中で切れた段落をつなぐ（前が「.」などで終わっておらず、次が小文字で始まる）。段・ページ・まとまりの境目で切れることがある
+    for (var j = paras.length - 1; j > 0; j--) {
+      var pa = paras[j - 1], pc = paras[j];
+      if (!pa.head && !pc.head && !isEnd(pa.t) && /^[a-z]/.test(pc.t)) { pa.t = /[A-Za-z]-$/.test(pa.t) ? pa.t.slice(0, -1) + pc.t : pa.t + ' ' + pc.t; paras.splice(j, 1); }
+    }
     bkParas = paras;
     // 最初の ✓：本文が 300 文字以上続く見出しだけ（目次の行は外す）
     bkHeadOn = {};
@@ -4796,6 +4804,15 @@
     delete d.tr; rdSaveLocal();
     openRdDoc(id, true);
   }
+  // 段落の区切りで文が途中で切れているところ（前が「.」などで終わらず、次が小文字で始まる）をつなぐ
+  function fixBreaks(text) {
+    var n = 0, t = String(text || '').replace(/([^\n]*[A-Za-z,;\-])[ \t]*\n\s*\n\s*(?=[a-z])/g, function (m, a) {
+      if (/[.!?…"”’)\]:]$/.test(a)) return m;
+      n++;
+      return /[A-Za-z]-$/.test(a) ? a.slice(0, -1) : a + ' ';
+    });
+    return { text: t, n: n };
+  }
   function showDocTitle() {
     var el = $('rd-title'); if (!el) return;
     el.textContent = rdCur ? String(rdCur.d.title || '').replace(/^(🌐|🎬) /, '') : '';
@@ -4808,6 +4825,9 @@
       $('rd-src-box').className = '';
     } else $('rd-src-box').className = 'hidden';
     $('rd-tin-box').className = rdCur && titleMissing(rdCur.d) ? '' : 'hidden';
+    var fx = rdCur && !rdCur.d.cues ? fixBreaks(rdCur.d.text) : null;
+    $('rd-fix-box').className = fx && fx.n ? '' : 'hidden';
+    if (fx && fx.n) $('rd-fix').textContent = '🔧 途中で切れた文をつなぐ（' + fx.n + ' か所）';
   }
   function rdLoad() {
     var text = $('rd-in').value.replace(/^\s+|\s+$/g, '');
@@ -5076,6 +5096,17 @@
   on($('rd-go'), 'click', rdLoad);
   on($('rd-title-box'), 'click', function () { if (rdCur) renameDoc(rdCur.id); });
   on($('rd-tin'), 'click', titleIntoBody);
+  on($('rd-fix'), 'click', function () {
+    if (!rdCur) return;
+    var id = rdCur.id, d = rdCur.d, fx = fixBreaks(d.text);
+    if (!fx.n) return;
+    if (!window.confirm(fx.n + ' か所の、途中で切れた文をつなぎます。日本語訳は作り直します（その部分の AI の声も作り直しになります）。よろしいですか？')) return;
+    d.text = fx.text; delete d.tr; delete d.ns; delete d.bm; delete d.bmP;
+    rdSaveLocal();
+    if (KEY) { var b = {}; b['reader/' + id + '/text'] = d.text; b['reader/' + id + '/tr'] = null; b['reader/' + id + '/bm'] = null; b['reader/' + id + '/bmP'] = null; api('PATCH', '', b, function () {}); }
+    openRdDoc(id, true);
+    $('rd-status').textContent = fx.n + ' か所をつなぎました。日本語訳を作り直しています…';
+  });
   var BM_CODE = "javascript:(function(){var d=document,t=String(window.getSelection?getSelection():'');if(t.length<40){var a=d.querySelector('article')||d.querySelector('main')||d.body,p=a.querySelectorAll('h1,h2,h3,p,li,blockquote'),o=[],i,x;for(i=0;i<p.length;i++){x=(p[i].innerText||p[i].textContent||'').replace(/\\s+/g,' ').replace(/^\\s+|\\s+$/g,'');if(x.length>25&&/[A-Za-z]{3}/.test(x)&&o.indexOf(x)<0)o.push(x);}t=o.join('\\n\\n')||a.innerText||'';}t=t.slice(0,20000);window.open('BASE#rt='+encodeURIComponent(t)+'&rs='+encodeURIComponent(location.href)+'&rtt='+encodeURIComponent(String((d.querySelector('h1')||{}).innerText||d.title).replace(/\\s+/g,' ').slice(0,120)),'_blank');})();".replace('BASE', location.protocol + '//' + location.host + '/tegaki-memo/');
   var SHARE_URL = location.protocol + '//' + location.host + '/tegaki-memo/#ru=';
   on($('share-copy'), 'click', function () { copyText(SHARE_URL); $('gas-msg').textContent = 'ショートカット用のアドレスをコピーしました。'; });
