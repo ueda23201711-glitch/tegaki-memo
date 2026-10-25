@@ -4146,7 +4146,7 @@
     if (lvA) return;
     var v = document.createElement('video'); v.id = 'lv-video'; v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', ''); v.controls = true; v.preload = 'auto';
     v.style.display = 'none'; $('yt-box').appendChild(v);
-    var cb = document.createElement('div'); cb.id = 'lv-capbox'; $('yt-box').appendChild(cb);
+    var cb = capBoxEnsure();
     v.addEventListener('timeupdate', lvCapDraw); v.addEventListener('seeked', lvCapDraw);
     var capPos = function () { cb.className = v.paused || v.ended ? 'paused' : ''; };
     v.addEventListener('play', capPos); v.addEventListener('pause', capPos); v.addEventListener('ended', capPos); capPos();
@@ -4183,11 +4183,23 @@
     while (lo <= hi) { var m = (lo + hi) >> 1; if (c[m][0] <= t + 0.05) { k = m; lo = m + 1; } else hi = m - 1; }
     return k;
   }
+  // 今の再生位置（手元の動画・YouTube）。見えていなければ -1
+  function capNow() {
+    var d = rdCur && rdCur.d; if (!d || !d.cues) return -1;
+    if (d.lv) { var v = $('lv-video'); return v && v.style.display !== 'none' ? (v.currentTime || 0) : -1; }
+    if (d.yt && ytPlayer && ytReady && $('yt-box').style.display !== 'none') { try { return ytPlayer.getCurrentTime() || 0; } catch (e) {} }
+    return -1;
+  }
+  function capBoxEnsure() {
+    var b = $('lv-capbox'); if (b) return b;
+    b = document.createElement('div'); b.id = 'lv-capbox'; $('yt-box').appendChild(b); return b;
+  }
   function lvCapDraw() {
-    var box = $('lv-capbox'), v = $('lv-video'); if (!box || !v) return;
-    var d = rdCur && rdCur.d, k = -1;
-    if (lvCapMode !== 'none' && d && d.lv && d.cues && v.style.display !== 'none') k = lvCapIdx(v.currentTime || 0);
-    if (k >= 0 && k < d.cues.length - 1 && d.cues[k + 1][0] - d.cues[k][0] > 12 && (v.currentTime || 0) - d.cues[k][0] > 8) k = -1;   // 長い間セリフがないところは消す
+    var box = $('lv-capbox'); if (!box) return;
+    var d = rdCur && rdCur.d, k = -1, t = capNow();
+    if (d && !d.lv && d.yt) box.className = ytState() === 1 ? '' : 'paused';
+    if (lvCapMode !== 'none' && t >= 0) k = lvCapIdx(t);
+    if (k >= 0 && k < d.cues.length - 1 && d.cues[k + 1][0] - d.cues[k][0] > 12 && t - d.cues[k][0] > 8) k = -1;   // 長い間セリフがないところは消す
     var key = lvCapMode + ':' + k; if (box.getAttribute('data-k') === key) return; box.setAttribute('data-k', key);
     box.innerHTML = '';
     if (k < 0) return;
@@ -4198,7 +4210,7 @@
   function lvCapUpdate() {
     var sel = $('lv-cap'); if (!sel) return;
     var d = rdCur && rdCur.d;
-    sel.className = d && d.lv && d.cues && d.cues.length ? '' : 'hidden';
+    sel.className = d && (d.lv || d.yt) && d.cues && d.cues.length ? '' : 'hidden';
     sel.value = lvCapMode; lvCapDraw();
   }
   var lvMode = '';   // 'local'（この端末）／'drive'（ドライブ）
@@ -4427,6 +4439,7 @@
       return;
     }
     ytSize();
+    capBoxEnsure(); $('lv-src').className = ''; lvCapUpdate();   // 重ねる字幕の選択
     ytLoop = false; ytLoopIdx = -1; ytLoopLabel();
     $('rd-play').textContent = '▶ 再生';
     if (ytPlayer && ytReady) { if (ytVid !== d.yt) { ytVid = d.yt; ytPlayer.cueVideoById(d.yt); } }
@@ -4476,6 +4489,7 @@
   // 再生している場所に合わせてセリフを光らせる（くり返しのときは戻す）
   function ytTick() {
     if (!ytOn() || !ytPlayer || !ytReady) return;
+    if (!rdCur.d.lv) lvCapDraw();
     var st = ytState(); if (st !== 1) return;
     var t = 0; try { t = ytPlayer.getCurrentTime(); } catch (e) { return; }
     var cues = rdCur.d.cues, k = 0;
