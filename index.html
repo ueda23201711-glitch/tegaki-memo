@@ -216,6 +216,7 @@
   .rd-hrow.rd-book { background: #f4f0e6; }
   .rd-hrow.rd-ch { margin-left: 18px; }
   #lv-src { background: #f7f9fa; color: #6b7a83; font-size: 13px; padding: 6px 12px 2px; text-align: left; border-top: 1px solid #d7dee3; }
+  #lv-get button:not(.primary), #lv-get .bk-file { color: #1f2a30; }
   #lv-src button, #lv-src select { font-size: 13px; padding: 3px 8px; margin: 2px 6px 2px 0; }
   #lv-video { width: 100%; height: 100%; background: #000; display: block; }
   #rd-prog { position: fixed; left: 0; right: 0; bottom: 0; z-index: 65; background: rgba(36,54,63,.94); color: #fff; padding: 0 10px 6px; padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px)); font-size: 13px; }
@@ -4145,7 +4146,14 @@
     v.addEventListener('play', lab); v.addEventListener('pause', lab); v.addEventListener('ended', lab);
     v.addEventListener('error', function () {
       if (ytPlayer !== lvA || !v.getAttribute('src') || !rdCur || !rdCur.d.lv) return;
-      var d = rdCur.d;
+      var d = rdCur.d, id = rdCur.id;
+      $('lv-sub').className = 'hidden';
+      if (lvMode === 'drive' && lvLinks.length) { var at = v.currentTime || 0; d.lv.link = lvLinks[0]; v.src = lvLinks.shift(); return; }   // 別の形のリンクで試す
+      if (lvMode === 'drive' && !lvOld && (lvHave[id] || lvMem[id])) {   // 端末の動画に戻す
+        lsSet('memo_lvsrc_' + id, 'local'); lvMode = 'local'; lvSwitchTo(false);
+        $('rd-status').textContent = 'ドライブの動画は、この端末では再生できませんでした。この端末の動画に戻しました。';
+        return;
+      }
       $('rd-status').textContent = 'この端末ではこの動画を再生できませんでした' + (/webm/i.test(d.lv.type || d.lv.name) ? '（webm は古い iPhone・iPad では再生できません。mp4 を使ってください）' : '') + '。' + (d.lv.link ? '' : '');
       if (d.lv.link) { $('lv-get').className = ''; $('lv-video').style.display = 'none'; $('lv-get-t').innerHTML = ''; var a = document.createElement('a'); a.href = d.lv.link; a.target = '_blank'; a.style.color = '#fff'; a.textContent = '🔗 Safari で動画を開く（別の画面で再生）'; $('lv-get-t').appendChild(a); $('lv-dl').style.display = 'none'; }
     });
@@ -4180,6 +4188,11 @@
     lvA.pauseVideo(); resume();
     lsSet('memo_lvsrc_' + id, lvMode === 'local' ? 'drive' : 'local');
     if (lvMode === 'local') { lvStream(d); return; }
+    lvSwitchTo(true);
+  }
+  function lvSwitchTo(keep) {
+    var v = $('lv-video'), id = rdCur.id;
+    $('lv-get').className = 'hidden'; v.style.display = 'block'; $('lv-sub').className = 'hidden';
     if (lvMem[id]) { v.src = lvMem[id]; lvSrc('📱 この端末に保存してある動画を再生しています'); lvSaveBtn(false); return; }
     lvGet(id, function (blob) { if (!blob || !rdCur || rdCur.id !== id) return; if (lvUrl) { try { URL.revokeObjectURL(lvUrl); } catch (e) {} } lvUrl = URL.createObjectURL(blob); v.src = lvUrl; lvSrc('📱 この端末に保存してある動画を再生しています'); lvSaveBtn(false); });
   }
@@ -4192,7 +4205,8 @@
     var cur = -1; each(list, function (t, k) { if (t.mode === 'showing') cur = k; });
     sel.innerHTML = '';
     var o0 = document.createElement('option'); o0.value = '-1'; o0.textContent = '💬 動画の字幕：なし'; sel.appendChild(o0);
-    each(list, function (t, k) { var o = document.createElement('option'); o.value = String(k); o.textContent = '💬 ' + (t.label || '') + (t.language ? '（' + t.language + '）' : '') || '字幕 ' + (k + 1); sel.appendChild(o); });
+    each(list, function (t, k) { var o = document.createElement('option'); o.value = String(k); var ln = { en: '英語', ja: '日本語', jpn: '日本語', eng: '英語' }[String(t.language || '').toLowerCase().split('-')[0]] || t.language || '';
+      o.textContent = '💬 字幕：' + (t.label && t.label !== t.language ? t.label : ln || '字幕 ' + (k + 1)); sel.appendChild(o); });
     sel.value = String(cur); sel.className = '';
     sel.onchange = function () { var k = Number(sel.value); each(list, function (t, j) { try { t.mode = j === k ? 'showing' : 'disabled'; } catch (e) {} }); };
   }
@@ -4236,12 +4250,16 @@
     gasCall({ f: 'link', id: d.lv.drive }, function (r, e) {
       if (!rdCur || rdCur.id !== id) return;
       if (!r || !r.ok || !r.url) { $('rd-status').textContent = '動画を読み込めませんでした（' + String((r && r.error) || e).slice(0, 60) + '）。'; lvAsk(d); return; }
-      d.lv.link = r.url;
-      $('lv-video').src = r.url; $('rd-status').textContent = ''; lvSrc('☁ ドライブから直接再生しています' + (lvOld ? '' : '（「⬇ この端末に取り込む」で、次からすぐ見られます）'));
+      var m = /[?&]id=([^&]+)/.exec(r.url);
+      lvLinks = m ? ['https://drive.usercontent.google.com/download?id=' + m[1] + '&export=download&confirm=t', r.url] : [r.url];
+      d.lv.link = lvLinks[0];
+      $('lv-sub').className = 'hidden';
+      $('lv-video').src = lvLinks.shift(); $('rd-status').textContent = ''; lvSrc('☁ ドライブから直接再生しています' + (lvOld ? '' : '（「⬇ この端末に取り込む」で、次からすぐ見られます）'));
       lvSaveBtn(true);
     });
   }
   // この端末にまだない：ドライブから取り込む／同じファイルを選ぶ
+  var lvLinks = [];
   function lvAsk(d) {
     lvSrc('');
     $('lv-video').style.display = 'none'; $('lv-get').className = '';
