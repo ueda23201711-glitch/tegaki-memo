@@ -215,6 +215,7 @@
   .bk-h .n { color: #6b7a83; font-size: 12px; margin-left: 6px; font-weight: 400; }
   .rd-hrow.rd-book { background: #f4f0e6; }
   .rd-hrow.rd-ch { margin-left: 18px; }
+  #lv-video { width: 100%; height: 100%; background: #000; display: block; }
   #rd-prog { position: fixed; left: 0; right: 0; bottom: 0; z-index: 65; background: rgba(36,54,63,.94); color: #fff; padding: 0 10px 6px; padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px)); font-size: 13px; }
   #rd-prog button { padding: 4px 10px; font-size: 13px; margin: 6px 6px 0 0; background: #e6eef2; color: #1f2a30; }
   #rd-prog #pg-go { background: #f4c46a; }
@@ -507,6 +508,16 @@
         <textarea id="yt-in" placeholder="（空のままで大丈夫：字幕を自動で取ってきます。うまくいかないときだけ、文字起こしを時刻つきで貼り付け）"></textarea>
         <div class="row"><button id="yt-go" class="primary" type="button">動画といっしょに読み込む</button></div>
         <p class="note" id="yt-msg"></p>
+        <div id="lv-in" class="hidden">
+          <h3 class="rd-h">🎞 手元の動画と字幕で読む（.webm / .mp4 ＋ .srt）</h3>
+          <p class="note">ダウンロードした動画と、英語の字幕（.srt）を選んでください。日本語の字幕（.srt）も選ぶと、それを訳として使います（翻訳の回数を使いません）。動画はこの端末に保存し、Google ドライブにも送るので、ほかの端末でも見られます。</p>
+          <div class="row"><label class="bk-file">🎞 動画<input id="lv-file" type="file" accept="video/*,.webm,.mp4,.mkv,.mov"></label> <span class="note" id="lv-file-n"></span></div>
+          <div class="row"><label class="bk-file">🇺🇸 英語の字幕<input id="lv-en" type="file" accept=".srt,.vtt,text/plain"></label> <span class="note" id="lv-en-n"></span></div>
+          <div class="row"><label class="bk-file">🇯🇵 日本語の字幕（なくても可）<input id="lv-ja" type="file" accept=".srt,.vtt,text/plain"></label> <span class="note" id="lv-ja-n"></span></div>
+          <input id="lv-title" type="text" placeholder="題名（空なら動画のファイル名）" style="width:100%; box-sizing:border-box; font-size:16px; padding:9px 10px; border:1px solid #c9d2d8; border-radius:8px; margin:4px 0 8px;">
+          <div class="row"><button id="lv-go" class="primary" type="button">動画と字幕で読み込む</button></div>
+          <p class="note" id="lv-msg"></p>
+        </div>
         <p class="note">字幕は、アドレスだけ入れて押せば自動で取ってきます（英語の字幕がある動画）。取れないときの貼り付け方（パソコンが簡単です）：YouTube で動画を開き、説明欄の「…もっと見る」→ いちばん下の「文字起こしを表示」→ 右に出た文字起こしをドラッグで最後まで選んでコピーして、上に貼り付けます（時刻も一緒に）。字幕ファイル（.srt / .vtt）の中身でも大丈夫です。</p>
       </div>
       <div class="yt-in hidden" id="bk-in">
@@ -543,6 +554,10 @@
     <div id="rd-view" class="hidden">
       <div id="rd-ctrl">
         <div id="yt-wrap" class="hidden"><div id="yt-box"><div id="yt-player"></div></div>
+          <div id="lv-get" class="hidden" style="color:#fff;padding:14px 12px;font-size:14px;line-height:1.6"><span id="lv-get-t"></span><br>
+            <button id="lv-dl" class="primary" type="button" style="margin-top:8px">⬇ ドライブから取り込む</button>
+            <label class="bk-file" style="margin-top:8px">🎞 この端末の動画ファイルを選ぶ<input id="lv-pick" type="file" accept="video/*,.webm,.mp4,.mkv,.mov"></label>
+            <div id="lv-get-m" style="margin-top:6px"></div></div>
           <div id="yt-safari" class="hidden" style="color:#fff;padding:14px 12px;font-size:14px;line-height:1.6">この iPad では、動画をこの画面の中で再生できません。<br>セリフの「▶ 時刻」を押すと、YouTube のその場面が別の画面で開きます。見終わったら、この画面に戻って単語を調べてください。<br>
             <button id="yt-safari-btn" class="primary" type="button" style="margin-top:8px">▶ YouTube で最初から見る</button></div></div>
         <button id="rd-play" class="primary" type="button">▶ 再生</button>
@@ -3596,6 +3611,7 @@
     if (mkJob && mkJob.id === id) return '🎙 作成中 ' + mkJob.i + '/' + mkJob.chunks.length;
     if (inQueue(id)) return '⏸ 順番待ち';
     var out = [], t = cvText(id);
+    if (d.lv) out.push(lvUp[id] ? '🎞 ドライブに送信中' : d.lv.drive ? '🎞 動画（ドライブにあり）' : '🎞 動画（この端末だけ）');
     if (t) out.push('☁ ' + t);
     if (/^gm:/.test(rdVoiceName)) {
       var v = gmVoice(), c = docLocal(d, v);
@@ -3918,6 +3934,232 @@
       $('yt-msg').textContent = msg + ' 「文字起こしを表示」の内容を貼り付けて、もう一度押してください。';
     });
   }
+  /* ---- 🎞 手元の動画と字幕 ---- */
+  var lvA = null, ytYT = null, ytYTReady = false, lvCur = '', lvUrl = '';
+  var lvCanPlay = (function () { try { var v = document.createElement('video'); return !!(v.canPlayType && (v.canPlayType('video/webm') || v.canPlayType('video/mp4'))) && !!window.indexedDB && !!window.Blob; } catch (e) { return false; } })();
+  if (lvCanPlay && $('lv-in')) $('lv-in').className = '';
+  // この端末の動画（IndexedDB。300MB でも入る）
+  var lvDb = null;
+  function lvIdb(cb) {
+    if (lvDb) { cb(lvDb); return; }
+    try {
+      var rq = indexedDB.open('memo-video', 1);
+      rq.onupgradeneeded = function () { try { rq.result.createObjectStore('v'); } catch (e) {} };
+      rq.onsuccess = function () { lvDb = rq.result; cb(lvDb); };
+      rq.onerror = function () { cb(null); };
+    } catch (e) { cb(null); }
+  }
+  function lvPut(id, blob, cb) { lvIdb(function (db) { if (!db) { cb(false); return; } try { var tx = db.transaction('v', 'readwrite'); tx.objectStore('v').put(blob, id); tx.oncomplete = function () { cb(true); }; tx.onerror = tx.onabort = function () { cb(false); }; } catch (e) { cb(false); } }); }
+  function lvGet(id, cb) { lvIdb(function (db) { if (!db) { cb(null); return; } try { var rq = db.transaction('v', 'readonly').objectStore('v').get(id); rq.onsuccess = function () { cb(rq.result || null); }; rq.onerror = function () { cb(null); }; } catch (e) { cb(null); } }); }
+  function lvDelLocal(id) { lvIdb(function (db) { if (!db) return; try { db.transaction('v', 'readwrite').objectStore('v')['delete'](id); } catch (e) {} }); }
+  // ほかの端末で消した英文の動画を、この端末からも消す
+  function lvGc() {
+    lvIdb(function (db) {
+      if (!db) return;
+      try {
+        var rq = db.transaction('v', 'readonly').objectStore('v').getAllKeys ? db.transaction('v', 'readonly').objectStore('v').getAllKeys() : null;
+        if (!rq) return;
+        rq.onsuccess = function () { each(rq.result || [], function (k) { if (!rdDocs[k]) lvDelLocal(k); }); };
+      } catch (e) {}
+    });
+  }
+  // 英文を消すとき：ドライブの動画とこの端末の動画も消す
+  function lvDrop(id) {
+    var d = rdDocs[id]; if (!d || !d.lv) return;
+    if (d.lv.drive && gasUrl) gasCall({ f: 'del', id: d.lv.drive }, function () {});
+    lvDelLocal(id);
+  }
+  // 字幕（srt / vtt）：[{a 始まり, b 終わり, t 文}]
+  function parseSrt(raw) {
+    var out = [], blocks = String(raw || '').replace(/^﻿/, '').replace(/\r/g, '').split(/\n\s*\n/);
+    var ts = function (x) { var m = /(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{1,3})/.exec(x); return m ? (Number(m[1] || 0) * 3600 + Number(m[2]) * 60 + Number(m[3]) + Number('0.' + m[4])) : null; };
+    each(blocks, function (b) {
+      var ls = b.split('\n'), k = 0;
+      while (k < ls.length && ls[k].indexOf('-->') < 0) k++;
+      if (k >= ls.length) return;
+      var p = ls[k].split('-->'), a = ts(p[0]), e = ts(p[1] || '');
+      var t = ls.slice(k + 1).join(' ').replace(/<[^>]+>/g, '').replace(/\{[^}]*\}/g, '').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '');
+      if (a !== null && t) out.push({ a: a, b: e !== null ? e : a + 2, t: t });
+    });
+    return out;
+  }
+  // 英語の字幕を文にまとめる（YouTube と同じ）
+  function lvEnCues(raw) {
+    var lines = []; each(parseSrt(raw), function (c) { lines.push(fmtSec(c.a) + '.' + Math.round((c.a % 1) * 10) + '\n' + c.t); });
+    return parseCues(lines.join('\n'));
+  }
+  // 日本語の字幕を、英語の文の時間に合わせて並べる
+  function lvAlignJa(cues, ja) {
+    var tr = [];
+    each(cues, function (c, i) {
+      var a = c[0], b = i + 1 < cues.length ? cues[i + 1][0] : a + 30, t = [];
+      each(ja, function (j) { var mid = (j.a + j.b) / 2; if (mid >= a - 0.3 && mid < b - 0.05) t.push(j.t); });
+      tr.push(t.join(' '));
+    });
+    return tr;
+  }
+  function readText(file, cb) { if (!file) { cb(''); return; } var fr = new FileReader(); fr.onload = function () { cb(String(fr.result || '')); }; fr.onerror = function () { cb(''); }; fr.readAsText(file, 'utf-8'); }
+  each([['lv-file', 'lv-file-n'], ['lv-en', 'lv-en-n'], ['lv-ja', 'lv-ja-n']], function (p) {
+    if (!$(p[0])) return;
+    on($(p[0]), 'change', function () { var f = $(p[0]).files[0]; $(p[1]).textContent = f ? f.name + (f.size > 1048576 ? '（' + Math.round(f.size / 1048576) + 'MB）' : '') : ''; });
+  });
+  if ($('lv-go')) on($('lv-go'), 'click', function () {
+    var vf = $('lv-file').files[0], ef = $('lv-en').files[0], jf = $('lv-ja').files[0];
+    if (!vf || !ef) { $('lv-msg').textContent = '動画と英語の字幕を選んでください。'; return; }
+    $('lv-msg').textContent = '字幕を読んでいます…';
+    readText(ef, function (en) {
+      readText(jf, function (ja) {
+        var cues = lvEnCues(en);
+        if (!cues.length) { $('lv-msg').textContent = '英語の字幕を読めませんでした（.srt か .vtt を選んでください）。'; return; }
+        if (cues.length > 3000) cues = cues.slice(0, 3000);
+        var title = $('lv-title').value.replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '') || vf.name.replace(/\.[A-Za-z0-9]+$/, '').replace(/[_.]+/g, ' ');
+        var id = newId(), d = { title: '🎞 ' + title.slice(0, 80), text: cueTexts(cues).join('\n'), at: now(), cues: cues, named: 1,
+          lv: { name: vf.name.slice(0, 200), size: vf.size, type: vf.type || (/\.webm$/i.test(vf.name) ? 'video/webm' : 'video/mp4') } };
+        if (ja) { var jl = parseSrt(ja); if (jl.length) { d.tr = lvAlignJa(cues, jl); var miss = 0; each(d.tr, function (t) { if (!t) miss++; }); if (miss) d.trPart = 1; } }
+        rdDocs[id] = d; rdSaveLocal();
+        $('lv-msg').textContent = '動画をこの端末に保存しています…';
+        lvPut(id, vf, function (okp) {
+          $('lv-msg').textContent = okp ? '' : 'この端末に動画を保存できませんでした（空き容量を確かめてください）。ドライブには送ります。';
+          each(['lv-file', 'lv-en', 'lv-ja'], function (x) { $(x).value = ''; }); each(['lv-file-n', 'lv-en-n', 'lv-ja-n'], function (x) { $(x).textContent = ''; }); $('lv-title').value = '';
+          openRdDoc(id, true);
+          lvUpload(id, vf);
+        });
+      });
+    });
+  });
+  // ドライブに送る（8MB ずつ。途中で失敗したらやり直しボタン）
+  var lvUp = {};
+  function lvNote(id, t) { lvUp[id] = t; if (rdCur && rdCur.id === id) $('rd-status').textContent = t; var bn = $('mk-banner'); if (bn && (!rdCur || rdCur.id !== id) && t) { bn.className = ''; bn.textContent = '🎞 「' + docTitle(id) + '」：' + t; } }
+  function gasPostJ(body, cb, tries) {
+    if (!gasUrl) { cb(null, 'nourl'); return; }
+    var x = new XMLHttpRequest(), done = false;
+    var fail = function (e) { if (done) return; done = true; if ((tries || 0) < 3) setTimeout(function () { gasPostJ(body, cb, (tries || 0) + 1); }, 4000); else cb(null, e); };
+    try { x.open('POST', gasUrl, true); } catch (e) { fail('net'); return; }
+    x.setRequestHeader('Content-Type', 'text/plain;charset=utf-8'); x.timeout = 240000;
+    x.onreadystatechange = function () { if (x.readyState !== 4 || done) return; var r = null; if (x.status === 200) { try { r = JSON.parse(x.responseText); } catch (e) {} } if (!r) { fail(x.status ? 'http' + x.status : 'net'); return; } done = true; cb(r, null); };
+    x.ontimeout = function () { fail('timeout'); };
+    try { x.send(JSON.stringify(body)); } catch (e) { fail('net'); }
+  }
+  function ab2b64(buf) { var u = new Uint8Array(buf), s2 = '', C = 0x8000; for (var i = 0; i < u.length; i += C) s2 += String.fromCharCode.apply(null, u.subarray(i, i + C)); return btoa(s2); }
+  function lvUpload(id, file) {
+    var d = rdDocs[id]; if (!d || !d.lv) return;
+    if (!gasUrl) { lvNote(id, 'ドライブに送るには「⚙ 翻訳の設定」が必要です（この端末では見られます）。'); return; }
+    var UP = 8 * 1024 * 1024, type = d.lv.type, t0 = now();
+    lvNote(id, '🎞 動画をドライブに送っています… 0%（ほかの端末でも見られるように。この画面を閉じないでください）');
+    gasPostJ({ act: 'up0', name: '🎞 ' + d.lv.name, type: type, size: file.size }, function (r, e) {
+      if (!r || !r.ok) { lvNote(id, '動画をドライブに送れませんでした（' + String((r && r.error) || e).slice(0, 60) + '）。英文を開き直すと送り直せます。'); return; }
+      var off = 0;
+      var step = function () {
+        if (!rdDocs[id]) return;   // 途中で消した
+        var blob = file.slice(off, Math.min(file.size, off + UP)), fr = new FileReader();
+        fr.onerror = function () { lvNote(id, '動画を読めませんでした。'); };
+        fr.onload = function () {
+          gasPostJ({ act: 'upc', up: r.up, off: off, total: file.size, type: type, data: ab2b64(fr.result) }, function (r2, e2) {
+            if (!r2 || !r2.ok) { lvNote(id, '動画をドライブに送れませんでした（' + String((r2 && r2.error) || e2).slice(0, 60) + '）。英文を開き直すと送り直せます。'); return; }
+            off += blob.size;
+            var pct = Math.round(off * 100 / file.size), el = (now() - t0) / off * (file.size - off) / 1000;
+            if (!r2.done) { lvNote(id, '🎞 動画をドライブに送っています… ' + pct + '%（残り約 ' + (el > 90 ? Math.round(el / 60) + ' 分' : Math.round(el) + ' 秒') + '）'); step(); return; }
+            var dd = rdDocs[id]; if (!dd) { gasCall({ f: 'del', id: r2.id }, function () {}); return; }
+            dd.lv.drive = r2.id; rdSaveLocal();
+            if (KEY) { var b = {}; b['reader/' + id + '/lv/drive'] = r2.id; api('PATCH', '', b, function () {}); }
+            delete lvUp[id];
+            lvNote(id, '🎞 動画をドライブに送りました。ほかの端末でも見られます。');
+            setTimeout(function () { var bn = $('mk-banner'); if (bn && /🎞/.test(bn.textContent)) bn.className = 'hidden'; }, 5000);
+          });
+        };
+        fr.readAsArrayBuffer(blob);
+      };
+      step();
+    });
+  }
+  // 動画を開く
+  function lvSetup() {
+    if (lvA) return;
+    var v = document.createElement('video'); v.id = 'lv-video'; v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', ''); v.controls = true; v.preload = 'auto';
+    v.style.display = 'none'; $('yt-box').appendChild(v);
+    var lab = function () { if (ytPlayer === lvA) $('rd-play').textContent = !v.paused && !v.ended ? '⏸ 一時停止' : '▶ 再生'; };
+    v.addEventListener('play', lab); v.addEventListener('pause', lab); v.addEventListener('ended', lab);
+    lvA = { getPlayerState: function () { return !v.paused && !v.ended ? 1 : 2; },
+      playVideo: function () { try { var p = v.play(); if (p && p['catch']) p['catch'](function () {}); } catch (e) {} },
+      pauseVideo: function () { try { v.pause(); } catch (e) {} },
+      seekTo: function (t) { try { v.currentTime = t; } catch (e) {} },
+      getCurrentTime: function () { return v.currentTime || 0; },
+      setPlaybackRate: function (r) { try { v.playbackRate = r; } catch (e) {} },
+      cueVideoById: function () {} };
+  }
+  function lvShow(on) {
+    var v = $('lv-video'), f = $('yt-player');
+    if (v) v.style.display = on ? 'block' : 'none';
+    if (f) f.style.display = on ? 'none' : '';
+    $('lv-get').className = 'hidden';
+  }
+  function lvOpen(d) {
+    lvSetup();
+    $('yt-wrap').className = ''; ytShowCtl(true); $('yt-safari').className = 'hidden'; $('yt-box').style.display = '';
+    ytSize(); ytLoop = false; ytLoopIdx = -1; ytLoopLabel();
+    if (ytPlayer !== lvA) { if (ytPlayer) { try { ytPlayer.pauseVideo(); } catch (e) {} } ytPlayer = lvA; }
+    ytReady = true; lvShow(true);
+    $('rd-play').textContent = '▶ 再生';
+    var id = rdCur.id;
+    if (lvCur !== id) {
+      lvCur = id; if (lvUrl) { try { URL.revokeObjectURL(lvUrl); } catch (e) {} lvUrl = ''; }
+      $('lv-video').removeAttribute('src');
+      lvGet(id, function (blob) {
+        if (!rdCur || rdCur.id !== id) return;
+        if (blob) { lvUrl = URL.createObjectURL(blob); $('lv-video').src = lvUrl; ytRate(); return; }
+        lvAsk(d);
+      });
+    }
+    if (lvUp[id]) $('rd-status').textContent = lvUp[id];
+    if (!ytTimer) ytTimer = setInterval(ytTick, 250);
+  }
+  // この端末にまだない：ドライブから取り込む／同じファイルを選ぶ
+  function lvAsk(d) {
+    $('lv-video').style.display = 'none'; $('lv-get').className = '';
+    $('lv-get-t').textContent = 'この端末には、まだこの動画（' + d.lv.name + '・約 ' + Math.round((d.lv.size || 0) / 1048576) + 'MB）がありません。';
+    $('lv-dl').style.display = d.lv.drive && gasUrl ? '' : 'none';
+    $('lv-get-m').textContent = d.lv.drive ? '' : 'ドライブにはまだ送られていません（動画を入れた端末で送っている途中か、送れなかったようです）。';
+  }
+  on($('lv-pick'), 'change', function () {
+    var f = $('lv-pick').files[0]; $('lv-pick').value = '';
+    if (!f || !rdCur || !rdCur.d.lv) return;
+    var id = rdCur.id;
+    $('lv-get-m').textContent = 'この端末に保存しています…';
+    lvPut(id, f, function () { lvCur = ''; if (rdCur && rdCur.id === id) lvOpen(rdCur.d); });
+  });
+  on($('lv-dl'), 'click', function () {
+    if (!rdCur || !rdCur.d.lv || !rdCur.d.lv.drive) return;
+    var id = rdCur.id, d = rdCur.d, fid = d.lv.drive, parts = [], n = 0, got = 0, next = 0, fly = 0, fail = false, t0 = now();
+    $('lv-dl').disabled = true; $('lv-get-m').textContent = '取り込んでいます…';
+    var finish = function () {
+      var blob = new Blob(parts, { type: d.lv.type || 'video/webm' });
+      lvPut(id, blob, function () { $('lv-dl').disabled = false; lvCur = ''; if (rdCur && rdCur.id === id) lvOpen(rdCur.d); });
+    };
+    var pump = function () {
+      while (!fail && fly < 3 && next < n) (function (k) {
+        fly++;
+        var tryGet = function (tries) {
+          gasCall({ f: 'get', id: fid, part: String(k) }, function (r, e) {
+            if (fail) return;
+            if (!r || !r.ok || typeof r.a !== 'string') { if (tries < 3) { setTimeout(function () { tryGet(tries + 1); }, 3000); return; } fail = true; $('lv-dl').disabled = false; $('lv-get-m').textContent = '取り込めませんでした（' + String((r && r.error) || e).slice(0, 60) + '）。もう一度押すと最初からやり直します。'; return; }
+            var bin = atob(r.a), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+            parts[k] = u; got++; fly--;
+            var el = (now() - t0) / got * (n - got) / 1000;
+            $('lv-get-m').textContent = '取り込んでいます… ' + Math.round(got * 100 / n) + '%（残り約 ' + (el > 90 ? Math.round(el / 60) + ' 分' : Math.round(el) + ' 秒') + '。この画面を閉じないでください）';
+            if (got === n) finish(); else pump();
+          });
+        };
+        tryGet(0);
+      })(next++);
+    };
+    // 最初の分で全体の数を知る
+    gasCall({ f: 'get', id: fid, part: '0' }, function (r, e) {
+      if (!r || !r.ok || typeof r.a !== 'string') { $('lv-dl').disabled = false; $('lv-get-m').textContent = '取り込めませんでした（' + String((r && r.error) || e).slice(0, 60) + '）。'; return; }
+      var bin = atob(r.a), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+      n = r.n || 1; parts[0] = u; got = 1; next = 1;
+      if (n === 1) finish(); else pump();
+    });
+  });
   function ytMake(vid, cues, title) {
     if (title && cues.length && /[A-Za-z]{3}/.test(title) && cues[0][1].toLowerCase().indexOf(String(title).toLowerCase().slice(0, 30)) < 0) cues = [[0, String(title).replace(/\s+/g, ' ').slice(0, 200)]].concat(cues);
     if (!cues.length) { alert('時刻つきの字幕が見つかりませんでした。YouTube の「文字起こしを表示」の内容を、時刻ごとコピーして貼り付けてください。'); return; }
@@ -3930,7 +4172,7 @@
     $('yt-in').value = ''; $('yt-url').value = '';
     openRdDoc(id, true);
   }
-  function ytOn() { return !!(rdCur && rdCur.d && rdCur.d.yt && rdCur.d.cues); }
+  function ytOn() { return !!(rdCur && rdCur.d && (rdCur.d.yt || rdCur.d.lv) && rdCur.d.cues); }
   function ytApi(cb) {
     if (window.YT && window.YT.Player) { cb(); return; }
     ytWait.push(cb);
@@ -3958,6 +4200,9 @@
   function ytNeedSafari() { return /OS [5-9]_\d.* like Mac OS X/.test(navigator.userAgent); }
   function ytOpenOut(sec) { if (!rdCur) return; window.open('https://www.youtube.com/watch?v=' + rdCur.d.yt + '&t=' + Math.floor(sec || 0) + 's', '_blank'); }
   function ytOpen(d) {
+    if (d.lv) { lvOpen(d); return; }
+    if (ytPlayer === lvA && lvA) { lvA.pauseVideo(); ytPlayer = ytYT; ytReady = ytYTReady; }
+    lvShow(false);
     $('yt-wrap').className = ''; ytShowCtl(true);
     if (ytNeedSafari()) {
       $('yt-box').style.display = 'none'; $('yt-safari').className = '';
@@ -3972,11 +4217,11 @@
       ytApi(function () {
         if (!ytOn() || ytPlayer) return;
         ytVid = rdCur.d.yt;
-        ytPlayer = new YT.Player('yt-player', {
+        ytPlayer = ytYT = new YT.Player('yt-player', {
           videoId: ytVid, width: '100%', height: '100%',
           playerVars: { playsinline: 1, rel: 0, modestbranding: 1, cc_load_policy: 0, origin: location.protocol + '//' + location.host },
           events: {
-            onReady: function () { ytReady = true; ytRate(); if (ytOn() && ytVid !== rdCur.d.yt) { ytVid = rdCur.d.yt; ytPlayer.cueVideoById(ytVid); } },
+            onReady: function () { ytYTReady = true; if (ytPlayer !== ytYT) return; ytReady = true; ytRate(); if (ytOn() && ytVid !== rdCur.d.yt) { ytVid = rdCur.d.yt; ytPlayer.cueVideoById(ytVid); } },
             onStateChange: function (e) { $('rd-play').textContent = e.data === 1 ? '⏸ 一時停止' : '▶ 再生'; },
             onError: function () { $('rd-status').textContent = 'この動画はここでは再生できません（埋め込み不可など）。字幕を読むことはできます。'; }
           }
@@ -3987,6 +4232,7 @@
   }
   function ytClose() {
     if (ytPlayer && ytReady) { try { ytPlayer.pauseVideo(); } catch (e) {} }
+    if (lvA) lvA.pauseVideo();
     $('yt-wrap').className = 'hidden'; ytShowCtl(false);
     if (ytTimer) { clearInterval(ytTimer); ytTimer = null; }
   }
@@ -3997,7 +4243,7 @@
   }
   function ytSeek(si) {
     if (!ytOn()) return;
-    if (ytNeedSafari()) { markSentence(si); ytOpenOut(rdCur.d.cues[si][0]); return; }
+    if (ytNeedSafari() && !rdCur.d.lv) { markSentence(si); ytOpenOut(rdCur.d.cues[si][0]); return; }
     if (ytLoop) ytLoopIdx = si;
     markSentence(si);
     if (!ytPlayer || !ytReady) return;
@@ -4347,6 +4593,7 @@
     each(ids, function (id) {
       if (mkJob && mkJob.id === id) stopJob('');
       for (var q = mkQueue.length - 1; q >= 0; q--) if (mkQueue[q].id === id) mkQueue.splice(q, 1);
+      lvDrop(id);
       delete rdDocs[id]; b['reader/' + id] = null;
     });
     rdSaveLocal();
@@ -4830,7 +5077,8 @@
       var del = document.createElement('button'); del.type = 'button'; del.textContent = '削除'; del.className = 'danger';
       on(del, 'click', function (e) {
         e.stopPropagation();
-        if (!window.confirm('この英文を履歴から削除しますか？')) return;
+        if (!window.confirm('この英文を履歴から削除しますか？' + (d.lv ? '（動画もドライブとこの端末から削除します）' : ''))) return;
+        lvDrop(id);
         delete rdDocs[id]; rdSaveLocal(); renderRdHistory();
         var bd = {}; bd['reader/' + id] = null; api('PATCH', '', bd, function () {});
       });
@@ -4860,7 +5108,7 @@
       if (keep) rdDocs[keep.id] = keep.d;
       rdSaveLocal();
       if (!rdCur) renderRdHistory();
-      setTimeout(backfillSrc, 1500);
+      setTimeout(backfillSrc, 1500); setTimeout(lvGc, 2000);
     });
     api('GET', '/settings/gas', undefined, function (err, u) {
       if (!err && typeof u === 'string' && u !== gasUrl) { gasUrl = u; lsSet('memo_gas', u); }
@@ -4906,6 +5154,9 @@
       if (x.status === 200) { try { ids = JSON.parse(x.responseText) || {}; } catch (e) {} }
       if (!ids) { rdSyncBusy = false; return; }
       var add = []; for (var id in ids) if (!rdDocs[id]) add.push(id);
+      // ほかの端末で消した動画つきの英文は、この端末からも動画ごと消す（容量が大きいため）
+      var gone = false; for (var lk in rdDocs) { var ld = rdDocs[lk]; if (ld && ld.lv && !ids[lk] && !(rdCur && rdCur.id === lk) && now() - (ld.at || 0) > 120000) { lvDelLocal(lk); delete rdDocs[lk]; gone = true; } }
+      if (gone) { rdSaveLocal(); if (!rdCur) renderRdHistory(); }
       if (!add.length) { rdSyncBusy = false; return; }
       var left = add.length, got = 0;
       each(add, function (nid) {
@@ -4930,7 +5181,7 @@
       var before = rdIds().length, keep = rdCur && !(data && data[rdCur.id]) ? rdCur : null;
       rdDocs = data || {};
       if (keep) rdDocs[keep.id] = keep.d;
-      rdSaveLocal(); rdSyncAt = now();
+      rdSaveLocal(); rdSyncAt = now(); setTimeout(lvGc, 500);
       if (!rdCur) renderRdHistory();
       var n = rdIds().length - before;
       syncMsg('最新にしました（' + (n > 0 ? n + ' 件増えました' : n < 0 ? -n + ' 件減りました' : '増えた英文はありません') + '）。');
@@ -5071,7 +5322,8 @@
     $('rd-body').scrollTop = 0; rdIdx = -1;
     if (typeof d.bm === 'number' && d.bm > 0 && d.bm < rdSents.length) setTimeout(function () { if (rdCur && rdCur.id === id) $('rd-status').textContent = '🔖 しおりがあります（' + pctOf(d.bm, rdSents.length) + '%）。下の「↩ しおりへ」で続きから読めます。'; }, 0);
     progSoon();
-    if (d.yt && d.cues) ytOpen(d); else ytClose();
+    if ((d.yt || d.lv) && d.cues) ytOpen(d); else ytClose();
+    if (d.lv && !d.lv.drive && !lvUp[id]) lvGet(id, function (blob) { if (blob && rdDocs[id] && !rdDocs[id].lv.drive && !lvUp[id]) lvUpload(id, blob); });   // 送れていなければ送り直す
     loadPhrases(function () {
       if (!rdCur || rdCur.id !== id) return;
       each(rdSents, function (s) { s.idioms = findIdioms(s.toks); });
