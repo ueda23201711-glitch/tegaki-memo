@@ -563,6 +563,7 @@
             <button id="yt-safari-btn" class="primary" type="button" style="margin-top:8px">▶ YouTube で最初から見る</button></div></div>
         <button id="rd-play" class="primary" type="button">▶ 再生</button>
         <button id="yt-loop" class="hidden" type="button" title="今のセリフをくり返し再生">🔂 1文くり返し：オフ</button>
+        <button id="lv-save" class="hidden" type="button" title="ドライブの動画をこの端末に取り込んで、次からすぐ見られるようにする">⬇ この端末に取り込む</button>
         <button id="rd-cont" type="button" title="🔊 で読んだあと、次の文も続けて読む">🔁 続けて：オフ</button>
         <button id="rd-flowbtn" type="button">📖 通しで聞く</button>
         <button id="rd-make" class="hidden" type="button" title="この英文の AI の声を先に作ってドライブに保存しておく">🎙 AIの声を作って保存</button>
@@ -4112,6 +4113,7 @@
     if (lvCur !== id) {
       lvCur = id; if (lvUrl) { try { URL.revokeObjectURL(lvUrl); } catch (e) {} lvUrl = ''; }
       $('lv-video').removeAttribute('src');
+      lvSaveBtn(false);
       if (lvMem[id]) { $('lv-video').src = lvMem[id]; ytRate(); }
       else if (lvOld) lvStream(d);
       else lvGet(id, function (blob) {
@@ -4133,6 +4135,7 @@
       if (!r || !r.ok || !r.url) { $('rd-status').textContent = '動画を読み込めませんでした（' + String((r && r.error) || e).slice(0, 60) + '）。'; lvAsk(d); return; }
       d.lv.link = r.url;
       $('lv-video').src = r.url; $('rd-status').textContent = '';
+      lvSaveBtn(true);
     });
   }
   // この端末にまだない：ドライブから取り込む／同じファイルを選ぶ
@@ -4143,6 +4146,10 @@
     $('lv-st').style.display = d.lv.drive && gasUrl ? '' : 'none';
     $('lv-get-m').textContent = d.lv.drive ? '' : 'ドライブにはまだ送られていません（動画を入れた端末で送っている途中か、送れなかったようです）。';
   }
+  function lvMsg(t) { $('lv-get-m').textContent = t; if ($('lv-get').className === 'hidden') $('rd-status').textContent = t; }
+  // 取り込まずに再生しているとき：「この端末に取り込む」ボタン
+  function lvSaveBtn(on) { var b = $('lv-save'); if (b) b.className = on && !lvOld && rdCur && rdCur.d.lv && rdCur.d.lv.drive ? '' : 'hidden'; }
+  on($('lv-save'), 'click', function () { $('lv-save').disabled = true; $('lv-dl').click(); });
   on($('lv-st'), 'click', function () { if (rdCur && rdCur.d.lv) { $('lv-get').className = 'hidden'; $('lv-video').style.display = 'block'; lvStream(rdCur.d); } });
   on($('lv-pick'), 'change', function () {
     var f = $('lv-pick').files[0]; $('lv-pick').value = '';
@@ -4155,20 +4162,21 @@
   on($('lv-dl'), 'click', function () {
     if (!rdCur || !rdCur.d.lv || !rdCur.d.lv.drive) return;
     var id = rdCur.id, d = rdCur.d, fid = d.lv.drive, parts = [], n = 0, got = 0, fail = false, t0 = now(), wait = {}, busy = {};
-    $('lv-dl').disabled = true; $('lv-get-m').textContent = '取り込んでいます…';
+    $('lv-dl').disabled = true; lvMsg('取り込んでいます…');
     var show = function () {
       var el = got ? (now() - t0) / got * (n - got) / 1000 : 0;
-      $('lv-get-m').textContent = '取り込んでいます… ' + Math.round(got * 100 / n) + '%（' + got + ' / ' + n + '。残り約 ' + (el > 90 ? Math.round(el / 60) + ' 分' : Math.max(1, Math.round(el)) + ' 秒') + '。この画面を閉じないでください）';
+      lvMsg('取り込んでいます… ' + Math.round(got * 100 / n) + '%（' + got + ' / ' + n + '。残り約 ' + (el > 90 ? Math.round(el / 60) + ' 分' : Math.max(1, Math.round(el)) + ' 秒') + '。この画面を閉じないでください）');
     };
     var finish = function () {
       if (fail) return; fail = true;   // 二度目を防ぐ
       var blob = new Blob(parts, { type: d.lv.type || 'video/webm' });
       try { lvMem[id] = URL.createObjectURL(blob); } catch (e) {}
-      $('lv-get-m').textContent = '取り込みました。この端末に保存しています…';
+      lvMsg('取り込みました。この端末に保存しています…');
       lvPut(id, blob, function (okp) {
         for (var k = 0; k < n; k++) lvDelLocal(id + '#' + k);   // 途中の分は消す
-        $('lv-dl').disabled = false; lvCur = '';
-        if (rdCur && rdCur.id === id) { lvOpen(rdCur.d); if (!okp) $('rd-status').textContent = 'この端末に動画を保存できませんでした（空き容量が足りないなど）。この画面を開いている間は見られます。'; }
+        $('lv-dl').disabled = false; $('lv-save').disabled = false; lvCur = '';
+        var v0 = $('lv-video'), at = v0 && v0.getAttribute('src') ? v0.currentTime : 0, was = v0 && !v0.paused;
+        if (rdCur && rdCur.id === id) { lvOpen(rdCur.d); lvSaveBtn(false); $('rd-status').textContent = '🎞 この端末に取り込みました。次からすぐ見られます。'; if (at) setTimeout(function () { try { v0.currentTime = at; if (was) lvA.playVideo(); } catch (e) {} }, 300); if (!okp) $('rd-status').textContent = 'この端末に動画を保存できませんでした（空き容量が足りないなど）。この画面を開いている間は見られます。'; }
       });
     };
     var take = function (k, a64) {
@@ -4191,8 +4199,8 @@
         if (wait[k] !== my || parts[k] || fail) return;
         clearTimeout(timer); delete busy[k];
         if (tries < 6) { setTimeout(function () { ask(k, tries + 1); }, 5000); return; }
-        fail = true; $('lv-dl').disabled = false;
-        $('lv-get-m').textContent = '取り込めませんでした（' + String((r && r.error) || e).slice(0, 60) + '）。もう一度押すと、続きから取り込みます。「▶ 取り込まずに再生」でも見られます。';
+        fail = true; $('lv-dl').disabled = false; $('lv-save').disabled = false;
+        lvMsg('取り込めませんでした（' + String((r && r.error) || e).slice(0, 60) + '）。もう一度押すと、続きから取り込みます。「▶ 取り込まずに再生」でも見られます。');
       });
     };
     var pump = function () {
@@ -4208,7 +4216,7 @@
     };
     // 最初の分で全体の数を知る
     gasCall({ f: 'get', id: fid, part: '0' }, function (r, e) {
-      if (!r || !r.ok || typeof r.a !== 'string') { $('lv-dl').disabled = false; $('lv-get-m').textContent = '取り込めませんでした（' + String((r && r.error) || e).slice(0, 60) + '）。もう一度押してください。'; return; }
+      if (!r || !r.ok || typeof r.a !== 'string') { $('lv-dl').disabled = false; lvMsg('取り込めませんでした（' + String((r && r.error) || e).slice(0, 60) + '）。もう一度押してください。'); return; }
       n = r.n || 1;
       var bin = atob(r.a), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
       parts[0] = u; got = 1; lvPut(id + '#0', u, function () {});
@@ -4286,6 +4294,7 @@
     if (!ytTimer) ytTimer = setInterval(ytTick, 250);
   }
   function ytClose() {
+    lvSaveBtn(false);
     if (ytPlayer && ytReady) { try { ytPlayer.pauseVideo(); } catch (e) {} }
     if (lvA) lvA.pauseVideo();
     $('yt-wrap').className = 'hidden'; ytShowCtl(false);
