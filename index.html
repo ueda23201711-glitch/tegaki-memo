@@ -218,6 +218,8 @@
   #lv-src { background: #f7f9fa; color: #6b7a83; font-size: 13px; padding: 6px 12px 2px; text-align: left; border-top: 1px solid #d7dee3; }
   #yt-box { position: relative; }
   #lv-capbox { position: absolute; left: 3%; right: 3%; bottom: 10px; text-align: center; pointer-events: none; z-index: 3; line-height: 1.25; }
+  #lv-cover { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background: #000; z-index: 2; display: none; color: #555; font-size: 12px; padding: 8px; text-align: left; }
+  #yt-box.vhide #lv-cover { display: block; }
   #lv-capbox.paused { bottom: 54px; }
   #lv-capbox span { display: inline-block; background: rgba(0,0,0,.6); color: #fff; padding: 1px 6px; margin-top: 2px; border-radius: 4px; font-size: 15px; }
   #lv-capbox span.ja { color: #ffe9a8; font-size: 13px; }
@@ -562,7 +564,7 @@
     </div>
     <div id="rd-view" class="hidden">
       <div id="rd-ctrl">
-        <div id="yt-wrap" class="hidden"><div id="yt-box"><div id="yt-player"></div></div><div id="lv-src" class="hidden"><span id="lv-src-t"></span> <button id="lv-sw" type="button" class="hidden"></button> <select id="lv-sub" class="hidden" title="動画の字幕"></select> <select id="lv-cap" class="hidden" title="取り込んだ字幕を動画に重ねる"><option value="none">🔤 重ねる字幕：なし</option><option value="en">🔤 重ねる字幕：英語</option><option value="ja">🔤 重ねる字幕：日本語</option><option value="both">🔤 重ねる字幕：英語＋日本語</option></select></div>
+        <div id="yt-wrap" class="hidden"><div id="yt-box"><div id="yt-player"></div></div><div id="lv-src" class="hidden"><span id="lv-src-t"></span> <button id="lv-sw" type="button" class="hidden"></button> <select id="lv-sub" class="hidden" title="動画の字幕"></select> <select id="lv-cap" class="hidden" title="取り込んだ字幕を動画に重ねる"><option value="none">🔤 重ねる字幕：なし</option><option value="en">🔤 重ねる字幕：英語</option><option value="ja">🔤 重ねる字幕：日本語</option><option value="both">🔤 重ねる字幕：英語＋日本語</option></select> <button id="lv-hide" type="button" class="hidden"></button></div>
           <div id="lv-get" class="hidden" style="color:#fff;padding:14px 12px;font-size:14px;line-height:1.6"><span id="lv-get-t"></span><br>
             <button id="lv-dl" class="primary" type="button" style="margin-top:8px">⬇ ドライブから取り込む（次からすぐ見られる）</button>
             <button id="lv-st" type="button" style="margin-top:8px">▶ 取り込まずに再生</button>
@@ -4192,6 +4194,7 @@
   }
   function capBoxEnsure() {
     var b = $('lv-capbox'); if (b) return b;
+    var c = document.createElement('div'); c.id = 'lv-cover'; c.textContent = '🙈 映像を隠しています（声と字幕だけ）'; $('yt-box').appendChild(c);
     b = document.createElement('div'); b.id = 'lv-capbox'; $('yt-box').appendChild(b); return b;
   }
   function lvCapDraw() {
@@ -4212,7 +4215,10 @@
     var d = rdCur && rdCur.d;
     sel.className = d && (d.lv || d.yt) && d.cues && d.cues.length ? '' : 'hidden';
     sel.value = lvCapMode; lvCapDraw();
+    var hb = $('lv-hide'); if (hb) { hb.className = sel.className; hb.textContent = lvHide ? '👁 映像を出す' : '🙈 映像を隠す'; }
+    $('yt-box').className = lvHide && sel.className === '' ? 'vhide' : '';
   }
+  var lvHide = lsGet('memo_lvhide') === '1';
   var lvMode = '';   // 'local'（この端末）／'drive'（ドライブ）
   function lvSrc(t) {
     var e = $('lv-src'); if (!e) return;
@@ -4315,6 +4321,7 @@
   function lvSaveBtn(on) { var b = $('lv-save'); if (b) b.className = on && !lvOld && rdCur && rdCur.d.lv && rdCur.d.lv.drive ? '' : 'hidden'; }
   on($('lv-save'), 'click', function () { $('lv-save').disabled = true; $('lv-dl').click(); });
   on($('lv-sw'), 'click', lvSwitch);
+  on($('lv-hide'), 'click', function () { lvHide = !lvHide; lsSet('memo_lvhide', lvHide ? '1' : '0'); lvCapUpdate(); });
   on($('lv-cap'), 'change', function () { lvCapMode = $('lv-cap').value; lsSet('memo_lvcap', lvCapMode); lvCapDraw(); lvSubList(); });
   on($('lv-st'), 'click', function () { if (rdCur && rdCur.d.lv) { $('lv-get').className = 'hidden'; $('lv-video').style.display = 'block'; lvStream(rdCur.d); } });
   on($('lv-pick'), 'change', function () {
