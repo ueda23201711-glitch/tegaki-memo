@@ -216,6 +216,7 @@
   .rd-hrow.rd-book { background: #f4f0e6; }
   .rd-hrow.rd-ch { margin-left: 18px; }
   #lv-src { background: #f7f9fa; color: #6b7a83; font-size: 13px; padding: 6px 12px 2px; text-align: left; border-top: 1px solid #d7dee3; }
+  #lv-src button, #lv-src select { font-size: 13px; padding: 3px 8px; margin: 2px 6px 2px 0; }
   #lv-video { width: 100%; height: 100%; background: #000; display: block; }
   #rd-prog { position: fixed; left: 0; right: 0; bottom: 0; z-index: 65; background: rgba(36,54,63,.94); color: #fff; padding: 0 10px 6px; padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px)); font-size: 13px; }
   #rd-prog button { padding: 4px 10px; font-size: 13px; margin: 6px 6px 0 0; background: #e6eef2; color: #1f2a30; }
@@ -554,7 +555,7 @@
     </div>
     <div id="rd-view" class="hidden">
       <div id="rd-ctrl">
-        <div id="yt-wrap" class="hidden"><div id="yt-box"><div id="yt-player"></div></div><div id="lv-src" class="hidden"></div>
+        <div id="yt-wrap" class="hidden"><div id="yt-box"><div id="yt-player"></div></div><div id="lv-src" class="hidden"><span id="lv-src-t"></span> <button id="lv-sw" type="button" class="hidden"></button> <select id="lv-sub" class="hidden" title="動画の字幕"></select></div>
           <div id="lv-get" class="hidden" style="color:#fff;padding:14px 12px;font-size:14px;line-height:1.6"><span id="lv-get-t"></span><br>
             <button id="lv-dl" class="primary" type="button" style="margin-top:8px">⬇ ドライブから取り込む（次からすぐ見られる）</button>
             <button id="lv-st" type="button" style="margin-top:8px">▶ 取り込まずに再生</button>
@@ -4138,6 +4139,8 @@
     if (lvA) return;
     var v = document.createElement('video'); v.id = 'lv-video'; v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', ''); v.controls = true; v.preload = 'auto';
     v.style.display = 'none'; $('yt-box').appendChild(v);
+    v.addEventListener('loadedmetadata', function () { setTimeout(lvSubList, 300); });
+    if (v.textTracks && v.textTracks.addEventListener) { v.textTracks.addEventListener('addtrack', function () { setTimeout(lvSubList, 100); }); v.textTracks.addEventListener('change', function () { setTimeout(lvSubList, 50); }); }
     var lab = function () { if (ytPlayer === lvA) $('rd-play').textContent = !v.paused && !v.ended ? '⏸ 一時停止' : '▶ 再生'; };
     v.addEventListener('play', lab); v.addEventListener('pause', lab); v.addEventListener('ended', lab);
     v.addEventListener('error', function () {
@@ -4154,7 +4157,46 @@
       setPlaybackRate: function (r) { try { v.playbackRate = r; } catch (e) {} },
       cueVideoById: function () {} };
   }
-  function lvSrc(t) { var e = $('lv-src'); if (!e) return; e.textContent = t || ''; e.className = t ? '' : 'hidden'; }
+  var lvMode = '';   // 'local'（この端末）／'drive'（ドライブ）
+  function lvSrc(t) {
+    var e = $('lv-src'); if (!e) return;
+    $('lv-src-t').textContent = t || ''; e.className = t ? '' : 'hidden';
+    lvMode = /^📱/.test(t || '') ? 'local' : /^☁/.test(t || '') ? 'drive' : '';
+    lvSwUpdate();
+  }
+  // 切り替えのボタン：この端末の動画 ⇔ ドライブの動画（ドライブの動画は、動画に入っている字幕が出ることがある）
+  function lvSwUpdate() {
+    var b = $('lv-sw'); if (!b) return;
+    var d = rdCur && rdCur.d, id = rdCur && rdCur.id;
+    if (!d || !d.lv || !lvMode) { b.className = 'hidden'; return; }
+    if (lvMode === 'local' && d.lv.drive && gasUrl) { b.className = ''; b.textContent = '☁ ドライブの動画で再生'; }
+    else if (lvMode === 'drive' && !lvOld && (lvHave[id] || lvMem[id])) { b.className = ''; b.textContent = '📱 この端末の動画で再生'; }
+    else b.className = 'hidden';
+  }
+  function lvSwitch() {
+    if (!rdCur || !rdCur.d.lv) return;
+    var v = $('lv-video'), at = v.currentTime || 0, was = !v.paused, id = rdCur.id, d = rdCur.d;
+    var resume = function () { var go = function () { try { v.currentTime = at; } catch (e) {} if (was) lvA.playVideo(); v.removeEventListener('loadedmetadata', go); }; v.addEventListener('loadedmetadata', go); };
+    lvA.pauseVideo(); resume();
+    lsSet('memo_lvsrc_' + id, lvMode === 'local' ? 'drive' : 'local');
+    if (lvMode === 'local') { lvStream(d); return; }
+    if (lvMem[id]) { v.src = lvMem[id]; lvSrc('📱 この端末に保存してある動画を再生しています'); lvSaveBtn(false); return; }
+    lvGet(id, function (blob) { if (!blob || !rdCur || rdCur.id !== id) return; if (lvUrl) { try { URL.revokeObjectURL(lvUrl); } catch (e) {} } lvUrl = URL.createObjectURL(blob); v.src = lvUrl; lvSrc('📱 この端末に保存してある動画を再生しています'); lvSaveBtn(false); });
+  }
+  // 動画に入っている字幕（ブラウザーが読めるもの）を選んで表示する
+  function lvSubList() {
+    var sel = $('lv-sub'), v = $('lv-video'); if (!sel || !v) return;
+    var tt = v.textTracks, list = [];
+    if (tt) for (var i = 0; i < tt.length; i++) if (tt[i].kind === 'subtitles' || tt[i].kind === 'captions' || !tt[i].kind) list.push(tt[i]);
+    if (!list.length) { sel.className = 'hidden'; return; }
+    var cur = -1; each(list, function (t, k) { if (t.mode === 'showing') cur = k; });
+    sel.innerHTML = '';
+    var o0 = document.createElement('option'); o0.value = '-1'; o0.textContent = '💬 動画の字幕：なし'; sel.appendChild(o0);
+    each(list, function (t, k) { var o = document.createElement('option'); o.value = String(k); o.textContent = '💬 ' + (t.label || '') + (t.language ? '（' + t.language + '）' : '') || '字幕 ' + (k + 1); sel.appendChild(o); });
+    sel.value = String(cur); sel.className = '';
+    sel.onchange = function () { var k = Number(sel.value); each(list, function (t, j) { try { t.mode = j === k ? 'showing' : 'disabled'; } catch (e) {} }); };
+  }
+
   function lvShow(on) {
     if (!on) lvSrc('');
     var v = $('lv-video'), f = $('yt-player');
@@ -4173,8 +4215,9 @@
     if (lvCur !== id) {
       lvCur = id; if (lvUrl) { try { URL.revokeObjectURL(lvUrl); } catch (e) {} lvUrl = ''; }
       $('lv-video').removeAttribute('src');
-      lvSaveBtn(false);
-      if (lvMem[id]) { $('lv-video').src = lvMem[id]; ytRate(); lvSrc('📱 この端末に保存してある動画を再生しています'); }
+      lvSaveBtn(false); $('lv-sub').className = 'hidden';
+      if (d.lv.drive && gasUrl && lsGet('memo_lvsrc_' + id) === 'drive' && !lvOld) lvStream(d);
+      else if (lvMem[id]) { $('lv-video').src = lvMem[id]; ytRate(); lvSrc('📱 この端末に保存してある動画を再生しています'); }
       else if (lvOld) lvStream(d);
       else lvGet(id, function (blob) {
         if (!rdCur || rdCur.id !== id) return;
@@ -4211,6 +4254,7 @@
   // 取り込まずに再生しているとき：「この端末に取り込む」ボタン
   function lvSaveBtn(on) { var b = $('lv-save'); if (b) b.className = on && !lvOld && rdCur && rdCur.d.lv && rdCur.d.lv.drive ? '' : 'hidden'; }
   on($('lv-save'), 'click', function () { $('lv-save').disabled = true; $('lv-dl').click(); });
+  on($('lv-sw'), 'click', lvSwitch);
   on($('lv-st'), 'click', function () { if (rdCur && rdCur.d.lv) { $('lv-get').className = 'hidden'; $('lv-video').style.display = 'block'; lvStream(rdCur.d); } });
   on($('lv-pick'), 'change', function () {
     var f = $('lv-pick').files[0]; $('lv-pick').value = '';

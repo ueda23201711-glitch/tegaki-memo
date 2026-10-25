@@ -1,5 +1,5 @@
 // 手書きメモ用 Service Worker（iOS 9 では使われない。新しい端末でのオフライン起動用）
-const CACHE = "tegaki-memo-v86";
+const CACHE = "tegaki-memo-v87";
 const ASSETS = [
   "./",
   "./index.html",
