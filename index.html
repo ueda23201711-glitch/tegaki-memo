@@ -858,7 +858,8 @@
           <button id="pg-prev" type="button" class="hidden">◀ 前の章</button>
           <button id="pg-bm" type="button" title="今の文にしおりを挟む">🔖 しおり</button>
           <button id="pg-go" type="button" class="hidden"></button>
-          <button id="pg-next" type="button" class="hidden">次の章 ▶</button></div>
+          <button id="pg-next" type="button" class="hidden">次の章 ▶</button>
+          <button id="pg-auto" type="button" class="hidden" title="章の終わりまで聞いたら、次の章を続けて読む"></button></div>
         <button id="fl-exit" class="hidden" type="button" aria-hidden="true" tabindex="-1"></button>
         <div id="rd-flow" class="hidden">
           <div id="fl-ctrl">
@@ -3261,7 +3262,44 @@
       if (!onOff && wakeLock) { wakeLock.release(); wakeLock = null; }
     } catch (e) {}
   }
+  /* ---- 車で聞く（CarPlay・ロック画面の再生中の表示と、ボタンでの操作） ---- */
+  var msOn = !!(navigator.mediaSession && window.MediaMetadata), msSet = false;
+  function msUpdate() {
+    if (!msOn) return;
+    try {
+      if (rdCur) {
+        var d = rdCur.d, t = d.book ? '第' + d.ch + '章　' + (d.chTitle || '') : String(d.title || '').replace(/^(🌐|🎬|🎞|📚) /, '');
+        navigator.mediaSession.metadata = new MediaMetadata({ title: t.slice(0, 80), artist: d.book ? (d.bookTitle || '') : '英文リーダー', album: '英文リーダー',
+          artwork: [{ src: location.href.replace(/[#?].*$/, '').replace(/[^\/]*$/, '') + 'icons/icon-v2-512.png', sizes: '512x512', type: 'image/png' }] });
+      }
+      navigator.mediaSession.playbackState = rdSpeaking ? 'playing' : 'paused';
+    } catch (e) {}
+    if (msSet) return;
+    msSet = true;
+    var h = function (a, f) { try { navigator.mediaSession.setActionHandler(a, f); } catch (e) {} };
+    var cur = function () { return rdIdx >= 0 ? rdIdx : 0; };
+    var pauseKeep = function () { var k = cur(); stopSpeak(); rdIdx = k; if (!flOpen) markSentence(k); rdIdx = k; playLabel(); };
+    h('play', function () { if (rdCur && !rdSpeaking) playFrom(cur()); });
+    h('pause', pauseKeep);
+    h('stop', pauseKeep);
+    h('nexttrack', function () { if (rdCur) playFrom(Math.min(rdSents.length - 1, cur() + 1)); });
+    h('previoustrack', function () { if (rdCur) playFrom(Math.max(0, cur() - 1)); });
+    h('seekforward', function () { if (rdCur) playFrom(Math.min(rdSents.length - 1, cur() + 1)); });
+    h('seekbackward', function () { if (rdCur) playFrom(cur()); });   // 今の文をもう一度
+  }
+  // 本：章の終わりまで聞いたら、次の章へ（オン・オフは下のバーで）
+  var autoNext = lsGet('memo_autonext') !== '0';
+  function nextChapterGo() {
+    if (!autoNext || !rdCur || !rdCur.d.book) return false;
+    var c = bookChapters(rdCur.d.book), k = c.indexOf(rdCur.id);
+    if (k < 0 || k >= c.length - 1) return false;
+    var nid = c[k + 1];
+    openChapter(nid, -1);
+    setTimeout(function () { if (rdCur && rdCur.id === nid) { $('rd-status').textContent = '📚 次の章（第' + rdCur.d.ch + '章）に進みました。'; playFrom(0); } }, 400);
+    return true;
+  }
   function playLabel() {
+    msUpdate();
     $('rd-play').textContent = rdSpeaking ? '■ 停止' : '▶ 再生';
     $('fl-play').textContent = rdSpeaking ? '■ 停止' : (rdIdx > 0 ? '▶ 続きから' : '▶ 最初から');
   }
@@ -3283,7 +3321,7 @@
     var gen = ++playGen;
     var step = function (k) {
       if (!rdSpeaking || gen !== playGen) return;
-      if (k >= rdSents.length) { rdIdx = 0; stopSpeak(); if (flOpen) markSentence(-1); playLabel(); return; }
+      if (k >= rdSents.length) { rdIdx = 0; stopSpeak(); if (flOpen) markSentence(-1); playLabel(); nextChapterGo(); return; }
       markSentence(k);
       speak(rdSents[k].text, function () { if (rdSpeaking) setTimeout(function () { step(k + 1); }, 250); });
     };
@@ -3524,7 +3562,7 @@
     gmUnlock(); gmNote('');
     var step = function (c) {
       if (gen !== playGen || !rdSpeaking) return;
-      if (c >= chunks.length) { rdIdx = 0; stopSpeak(); if (flOpen) markSentence(-1); playLabel(); return; }
+      if (c >= chunks.length) { rdIdx = 0; stopSpeak(); if (flOpen) markSentence(-1); playLabel(); if (!one) nextChapterGo(); return; }
       var ch = chunks[c], st0 = c === 0 ? ch.from : ch.a;
       markSentence(st0);
       var ready = !!gmCache[gmVoice() + '|' + ch.text];
@@ -4510,7 +4548,9 @@
       t = '第' + (at + 1) + '章 ' + (at + 1) + '/' + chs.length + '・章の ' + p + '%・本全体の ' + pctOf(before + i, all) + '%';
       $('pg-prev').className = at > 0 ? '' : 'hidden';
       $('pg-next').className = at >= 0 && at < chs.length - 1 ? '' : 'hidden';
-    } else { $('pg-prev').className = 'hidden'; $('pg-next').className = 'hidden'; }
+      $('pg-auto').className = at >= 0 && at < chs.length - 1 ? '' : 'hidden';
+      $('pg-auto').textContent = autoNext ? '⏭ 次の章へ自動：オン' : '⏭ 次の章へ自動：オフ';
+    } else { $('pg-prev').className = 'hidden'; $('pg-next').className = 'hidden'; $('pg-auto').className = 'hidden'; }
     $('pg-text').textContent = '📍 ' + t;
     var bm = d.bm;
     if (typeof bm === 'number' && bm < n) {
@@ -4565,6 +4605,7 @@
     if (fl) setTimeout(openFlow, 80);
   }
   on($('pg-bm'), 'click', setBookmark);
+  on($('pg-auto'), 'click', function () { autoNext = !autoNext; lsSet('memo_autonext', autoNext ? '1' : '0'); progUpdate(); });
   on($('pg-go'), 'click', function () { if (rdCur && typeof rdCur.d.bm === 'number') gotoSent(rdCur.d.bm); });
   on($('pg-next'), 'click', function () { if (!rdCur || !rdCur.d.book) return; var c = bookChapters(rdCur.d.book), k = c.indexOf(rdCur.id); if (k >= 0 && k < c.length - 1) openChapter(c[k + 1], -1); });
   on($('pg-prev'), 'click', function () { if (!rdCur || !rdCur.d.book) return; var c = bookChapters(rdCur.d.book), k = c.indexOf(rdCur.id); if (k > 0) openChapter(c[k - 1], -1); });
