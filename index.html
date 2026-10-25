@@ -555,7 +555,8 @@
       <div id="rd-ctrl">
         <div id="yt-wrap" class="hidden"><div id="yt-box"><div id="yt-player"></div></div>
           <div id="lv-get" class="hidden" style="color:#fff;padding:14px 12px;font-size:14px;line-height:1.6"><span id="lv-get-t"></span><br>
-            <button id="lv-dl" class="primary" type="button" style="margin-top:8px">⬇ ドライブから取り込む</button>
+            <button id="lv-dl" class="primary" type="button" style="margin-top:8px">⬇ ドライブから取り込む（次からすぐ見られる）</button>
+            <button id="lv-st" type="button" style="margin-top:8px">▶ 取り込まずに再生</button>
             <label class="bk-file" style="margin-top:8px">🎞 この端末の動画ファイルを選ぶ<input id="lv-pick" type="file" accept="video/*,.webm,.mp4,.mkv,.mov"></label>
             <div id="lv-get-m" style="margin-top:6px"></div></div>
           <div id="yt-safari" class="hidden" style="color:#fff;padding:14px 12px;font-size:14px;line-height:1.6">この iPad では、動画をこの画面の中で再生できません。<br>セリフの「▶ 時刻」を押すと、YouTube のその場面が別の画面で開きます。見終わったら、この画面に戻って単語を調べてください。<br>
@@ -4139,8 +4140,10 @@
     $('lv-video').style.display = 'none'; $('lv-get').className = '';
     $('lv-get-t').textContent = 'この端末には、まだこの動画（' + d.lv.name + '・約 ' + Math.round((d.lv.size || 0) / 1048576) + 'MB）がありません。';
     $('lv-dl').style.display = d.lv.drive && gasUrl && !lvOld ? '' : 'none';
+    $('lv-st').style.display = d.lv.drive && gasUrl ? '' : 'none';
     $('lv-get-m').textContent = d.lv.drive ? '' : 'ドライブにはまだ送られていません（動画を入れた端末で送っている途中か、送れなかったようです）。';
   }
+  on($('lv-st'), 'click', function () { if (rdCur && rdCur.d.lv) { $('lv-get').className = 'hidden'; $('lv-video').style.display = 'block'; lvStream(rdCur.d); } });
   on($('lv-pick'), 'change', function () {
     var f = $('lv-pick').files[0]; $('lv-pick').value = '';
     if (!f || !rdCur || !rdCur.d.lv) return;
@@ -4162,12 +4165,12 @@
       });
     };
     var pump = function () {
-      while (!fail && fly < 3 && next < n) (function (k) {
+      while (!fail && fly < 2 && next < n) (function (k) {
         fly++;
         var tryGet = function (tries) {
           gasCall({ f: 'get', id: fid, part: String(k) }, function (r, e) {
             if (fail) return;
-            if (!r || !r.ok || typeof r.a !== 'string') { if (tries < 3) { setTimeout(function () { tryGet(tries + 1); }, 3000); return; } fail = true; $('lv-dl').disabled = false; $('lv-get-m').textContent = '取り込めませんでした（' + String((r && r.error) || e).slice(0, 60) + '）。もう一度押すと最初からやり直します。'; return; }
+            if (!r || !r.ok || typeof r.a !== 'string') { if (tries < 5) { setTimeout(function () { tryGet(tries + 1); }, 5000); return; } fail = true; $('lv-dl').disabled = false; $('lv-get-m').textContent = '取り込めませんでした（' + String((r && r.error) || e).slice(0, 60) + '）。電波のよいところでもう一度押すか、「▶ 取り込まずに再生」を使ってください。'; return; }
             var bin = atob(r.a), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
             parts[k] = u; got++; fly--;
             var el = (now() - t0) / got * (n - got) / 1000;
@@ -4545,10 +4548,10 @@
     var q = []; for (var k in params) q.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
     var x = new XMLHttpRequest(), done = false;
     try { x.open('GET', gasUrl + (gasUrl.indexOf('?') >= 0 ? '&' : '?') + q.join('&'), true); } catch (e) { gasJsonp(params, cb); return; }
-    x.timeout = params.tts ? 120000 : 30000;   // 音声は大きいので長めに待つ
+    x.timeout = params.tts || params.f === 'get' ? 120000 : 30000;   // 音声や動画の取り込みは大きいので長めに待つ
     var timedOut = false;
     // 普通の通信がだめなら JSONP。音声や時間切れのときは、方式を切り替えたままにしない
-    var fail = function () { if (done) return; done = true; gasJsonp(params, function (data, err) { if (data && !err && !params.tts && !timedOut) { gasXhrOk = false; lsSet('memo_gas_xhr', '0'); } cb(data, err); }); };
+    var fail = function () { if (done) return; done = true; if (params.f === 'get' && timedOut) { cb(null, 'timeout'); return; } gasJsonp(params, function (data, err) { if (data && !err && !params.tts && !timedOut) { gasXhrOk = false; lsSet('memo_gas_xhr', '0'); } cb(data, err); }); };
     x.onreadystatechange = function () {
       if (x.readyState !== 4 || done) return;
       var data = null;
@@ -4563,7 +4566,7 @@
     var name = '__gas' + (++jsonpN) + '_' + now(), done = false;
     var sc = document.createElement('script');
     var q = []; for (var k in params) q.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
-    var timer = setTimeout(function () { finish(null, 'timeout'); }, params.tts ? 120000 : 30000);
+    var timer = setTimeout(function () { finish(null, 'timeout'); }, params.tts || params.f === 'get' ? 120000 : 30000);
     var finish = function (data, err) {
       if (done) return; done = true; clearTimeout(timer);
       try { delete window[name]; } catch (e) { window[name] = undefined; }
