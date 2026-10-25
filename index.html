@@ -4051,7 +4051,7 @@
   });
   // ドライブに送る（8MB ずつ。途中で失敗したらやり直しボタン）
   var lvUp = {};
-  function lvNote(id, t) { if (/送っています/.test(t)) lvUp[id] = t; else delete lvUp[id];   // 送っている途中だけ「送信中」 if (rdCur && rdCur.id === id) $('rd-status').textContent = t; var bn = $('mk-banner'); if (bn && (!rdCur || rdCur.id !== id) && t) { bn.className = ''; bn.textContent = '🎞 「' + docTitle(id) + '」：' + t; } }
+  function lvNote(id, t) { if (/送っています/.test(t)) lvUp[id] = t; else delete lvUp[id]; if (rdCur && rdCur.id === id) $('rd-status').textContent = t; var bn = $('mk-banner'); if (bn && (!rdCur || rdCur.id !== id) && t) { bn.className = ''; bn.textContent = '🎞 「' + docTitle(id) + '」：' + t; } }
   function gasPostJ(body, cb, tries) {
     if (!gasUrl) { cb(null, 'nourl'); return; }
     var x = new XMLHttpRequest(), done = false;
