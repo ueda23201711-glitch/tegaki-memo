@@ -3613,7 +3613,10 @@
     if (mkJob && mkJob.id === id) return '🎙 作成中 ' + mkJob.i + '/' + mkJob.chunks.length;
     if (inQueue(id)) return '⏸ 順番待ち';
     var out = [], t = cvText(id);
-    if (d.lv) out.push(lvUp[id] ? '🎞 ドライブに送信中' : d.lv.drive ? '🎞 動画（ドライブにあり）' : '🎞 動画（この端末だけ）');
+    if (d.lv) {
+      var here = lvHave[id] || lvMem[id];
+      out.push(lvUp[id] ? '🎞 動画：ドライブに送信中（📱 この端末にあり）' : '🎞 動画：' + (here ? '📱 この端末にあり' : lvOld ? '▶ ドライブから再生' : '📱 この端末にはまだない') + (d.lv.drive ? '・☁ ドライブにあり' : '・ドライブにはない'));
+    }
     if (t) out.push('☁ ' + t);
     if (/^gm:/.test(rdVoiceName)) {
       var v = gmVoice(), c = docLocal(d, v);
@@ -3952,9 +3955,25 @@
       rq.onerror = function () { cb(null); };
     } catch (e) { cb(null); }
   }
-  function lvPut(id, blob, cb) { lvIdb(function (db) { if (!db) { cb(false); return; } try { var tx = db.transaction('v', 'readwrite'); tx.objectStore('v').put(blob, id); tx.oncomplete = function () { cb(true); }; tx.onerror = tx.onabort = function () { cb(false); }; } catch (e) { cb(false); } }); }
+  function lvPut(id, blob, cb) { lvIdb(function (db) { if (!db) { cb(false); return; } try { var tx = db.transaction('v', 'readwrite'); tx.objectStore('v').put(blob, id); tx.oncomplete = function () { if (String(id).indexOf('#') < 0) lvHave[id] = 1; cb(true); }; tx.onerror = tx.onabort = function () { cb(false); }; } catch (e) { cb(false); } }); }
   function lvGet(id, cb) { lvIdb(function (db) { if (!db) { cb(null); return; } try { var rq = db.transaction('v', 'readonly').objectStore('v').get(id); rq.onsuccess = function () { cb(rq.result || null); }; rq.onerror = function () { cb(null); }; } catch (e) { cb(null); } }); }
-  function lvDelLocal(id) { lvIdb(function (db) { if (!db) return; try { db.transaction('v', 'readwrite').objectStore('v')['delete'](id); } catch (e) {} }); }
+  function lvDelLocal(id) { delete lvHave[id]; lvIdb(function (db) { if (!db) return; try { db.transaction('v', 'readwrite').objectStore('v')['delete'](id); } catch (e) {} }); }
+  // この端末に保存してある動画（一覧の表示用）
+  var lvHave = {};
+  function lvScan() {
+    lvIdb(function (db) {
+      if (!db) return;
+      try {
+        var st = db.transaction('v', 'readonly').objectStore('v'); if (!st.getAllKeys) return;
+        var rq = st.getAllKeys();
+        rq.onsuccess = function () {
+          var h = {}; each(rq.result || [], function (k) { if (String(k).indexOf('#') < 0) h[k] = 1; });
+          var ch = false; for (var k in h) if (!lvHave[k]) ch = true; for (var k2 in lvHave) if (!h[k2]) ch = true;
+          lvHave = h; if (ch) each(rdIds(), function (id) { var bd = $('mkb-' + id); if (bd && rdDocs[id].lv) bd.textContent = docBadge(id); });
+        };
+      } catch (e) {}
+    });
+  }
   // ほかの端末で消した英文の動画を、この端末からも消す
   function lvGc() {
     lvIdb(function (db) {
@@ -4032,7 +4051,7 @@
   });
   // ドライブに送る（8MB ずつ。途中で失敗したらやり直しボタン）
   var lvUp = {};
-  function lvNote(id, t) { lvUp[id] = t; if (rdCur && rdCur.id === id) $('rd-status').textContent = t; var bn = $('mk-banner'); if (bn && (!rdCur || rdCur.id !== id) && t) { bn.className = ''; bn.textContent = '🎞 「' + docTitle(id) + '」：' + t; } }
+  function lvNote(id, t) { if (/送っています/.test(t)) lvUp[id] = t; else delete lvUp[id];   // 送っている途中だけ「送信中」 if (rdCur && rdCur.id === id) $('rd-status').textContent = t; var bn = $('mk-banner'); if (bn && (!rdCur || rdCur.id !== id) && t) { bn.className = ''; bn.textContent = '🎞 「' + docTitle(id) + '」：' + t; } }
   function gasPostJ(body, cb, tries) {
     if (!gasUrl) { cb(null, 'nourl'); return; }
     var x = new XMLHttpRequest(), done = false;
@@ -4114,11 +4133,11 @@
       lvCur = id; if (lvUrl) { try { URL.revokeObjectURL(lvUrl); } catch (e) {} lvUrl = ''; }
       $('lv-video').removeAttribute('src');
       lvSaveBtn(false);
-      if (lvMem[id]) { $('lv-video').src = lvMem[id]; ytRate(); }
+      if (lvMem[id]) { $('lv-video').src = lvMem[id]; ytRate(); $('rd-status').textContent = '📱 この端末の動画を再生します。'; }
       else if (lvOld) lvStream(d);
       else lvGet(id, function (blob) {
         if (!rdCur || rdCur.id !== id) return;
-        if (blob) { lvUrl = URL.createObjectURL(blob); $('lv-video').src = lvUrl; ytRate(); return; }
+        if (blob) { lvUrl = URL.createObjectURL(blob); $('lv-video').src = lvUrl; ytRate(); lvHave[id] = 1; if (!lvUp[id] && !/翻訳|訳を/.test($('rd-status').textContent)) $('rd-status').textContent = '📱 この端末に保存してある動画を再生します。'; return; }
         lvAsk(d);
       });
     }
@@ -4134,7 +4153,7 @@
       if (!rdCur || rdCur.id !== id) return;
       if (!r || !r.ok || !r.url) { $('rd-status').textContent = '動画を読み込めませんでした（' + String((r && r.error) || e).slice(0, 60) + '）。'; lvAsk(d); return; }
       d.lv.link = r.url;
-      $('lv-video').src = r.url; $('rd-status').textContent = '';
+      $('lv-video').src = r.url; $('rd-status').textContent = '☁ ドライブから直接再生しています' + (lvOld ? '。' : '（「⬇ この端末に取り込む」で、次からすぐ見られます）。');
       lvSaveBtn(true);
     });
   }
@@ -5110,7 +5129,7 @@
     return row;
   }
   function renderRdHistory() {
-    cvLoad();
+    cvLoad(); if (lvCanPlay && !lvOld) lvScan();
     var box = $('rd-hist'); box.innerHTML = '';
     var ids = rdIds();
     $('rd-hist-h').style.display = ids.length ? '' : 'none';
