@@ -4268,10 +4268,12 @@
   // ドライブに送る（8MB ずつ。途中で失敗したらやり直しボタン）
   var lvUp = {};
   function lvNote(id, t) { if (/送っています/.test(t)) lvUp[id] = t; else delete lvUp[id]; if (rdCur && rdCur.id === id) $('rd-status').textContent = t; var bn = $('mk-banner'); if (bn && (!rdCur || rdCur.id !== id) && t) { bn.className = ''; bn.textContent = '🎞 「' + docTitle(id) + '」：' + t; } }
-  function gasPostJ(body, cb, tries) {
+  // prog（なくてもよい）：送った量 {sent, total}・送り終えて返事待ち {wait:1}・やり直し {retry: 回数, err}
+  function gasPostJ(body, cb, tries, prog) {
     if (!gasUrl) { cb(null, 'nourl'); return; }
     var x = new XMLHttpRequest(), done = false;
-    var fail = function (e) { if (done) return; done = true; if ((tries || 0) < 3) setTimeout(function () { gasPostJ(body, cb, (tries || 0) + 1); }, 4000); else cb(null, e); };
+    var fail = function (e) { if (done) return; done = true; if ((tries || 0) < 3) { if (prog) prog({ retry: (tries || 0) + 2, err: e }); setTimeout(function () { gasPostJ(body, cb, (tries || 0) + 1, prog); }, 4000); } else cb(null, e); };
+    if (prog && x.upload) { x.upload.onprogress = function (ev) { if (ev.lengthComputable) prog({ sent: ev.loaded, total: ev.total }); }; x.upload.onload = function () { prog({ wait: 1 }); }; }
     try { x.open('POST', gasUrl, true); } catch (e) { fail('net'); return; }
     x.setRequestHeader('Content-Type', 'text/plain;charset=utf-8'); x.timeout = 240000;
     x.onreadystatechange = function () { if (x.readyState !== 4 || done) return; var r = null; if (x.status === 200) { try { r = JSON.parse(x.responseText); } catch (e) {} } if (!r) { fail(x.status ? 'http' + x.status : 'net'); return; } done = true; cb(r, null); };
@@ -4284,25 +4286,42 @@
     if (!gasUrl) { lvNote(id, 'ドライブに送るには「⚙ 翻訳の設定」が必要です（この端末では見られます）。'); return; }
     var UP = 8 * 1024 * 1024, type = d.lv.type, t0 = now();
     lvNote(id, '🎞 動画をドライブに送っています… 0%（ほかの端末でも見られるように。この画面を閉じないでください）');
+    var upErr = function (e) { e = String(e || ''); return e === 'timeout' ? '4 分待っても Apps Script から返事がありません' : e === 'net' ? 'Apps Script につながりませんでした（通信が切れた・遅い）' : /^http/.test(e) ? 'Apps Script がエラーを返しました（' + e + '）' : e.replace(/^Exception:\s*/, '').slice(0, 100); };
+    var retryTxt = function (p) { return '通信がうまくいかないので、やり直しています（' + p.retry + ' 回目／4 回まで。理由：' + upErr(p.err) + '）'; };
+    var base = '', since = now(), tick = setInterval(function () {
+      if (!lvUp[id] || !rdDocs[id]) { clearInterval(tick); return; }
+      var sec = Math.round((now() - since) / 1000); if (sec >= 30) lvNote(id, base + '　［この状態のまま ' + Math.floor(sec / 60) + ' 分 ' + (sec % 60) + ' 秒］');
+    }, 5000);
+    var showStep = function (txt) { base = txt; since = now(); lvNote(id, txt); };
+    showStep('🎞 動画をドライブに送っています…（準備中：Apps Script に問い合わせ中）');
     gasPostJ({ act: 'up0', name: '🎞 ' + d.lv.name, type: type, size: file.size }, function (r, e) {
-      if (!r || !r.ok) { lvNote(id, '動画をドライブに送れませんでした（' + String((r && r.error) || e).slice(0, 60) + '）。英文を開き直すと送り直せます。'); return; }
+      if (!r || !r.ok) clearInterval(tick);
+      if (!r || !r.ok) { lvNote(id, '動画をドライブに送れませんでした（' + String((r && r.error) || upErr(e)).slice(0, 100) + '）。英文を開き直すと送り直せます。'); return; }
       var off = 0;
       var step = function () {
         if (!rdDocs[id]) return;   // 途中で消した
         var blob = file.slice(off, Math.min(file.size, off + UP)), fr = new FileReader();
         fr.onerror = function () { lvNote(id, '動画を読めませんでした。'); };
         fr.onload = function () {
-          gasPostJ({ act: 'upc', up: r.up, off: off, total: file.size, type: type, data: ab2b64(fr.result) }, function (r2, e2) {
-            if (!r2 || !r2.ok) { lvNote(id, '動画をドライブに送れませんでした（' + String((r2 && r2.error) || e2).slice(0, 60) + '）。英文を開き直すと送り直せます。'); return; }
+          var body = { act: 'upc', up: r.up, off: off, total: file.size, type: type, data: ab2b64(fr.result) }, lastPct = -1;
+          gasPostJ(body, function (r2, e2) {
+            if (!r2 || !r2.ok) clearInterval(tick);
+            if (r2 && r2.ok && r2.done) clearInterval(tick);
+            if (!r2 || !r2.ok) { lvNote(id, '動画をドライブに送れませんでした（' + String((r2 && r2.error) || upErr(e2)).slice(0, 100) + '）。英文を開き直すと送り直せます。'); return; }
             off += blob.size;
             var pct = Math.round(off * 100 / file.size), el = (now() - t0) / off * (file.size - off) / 1000;
-            if (!r2.done) { lvNote(id, '🎞 動画をドライブに送っています… ' + pct + '%（残り約 ' + (el > 90 ? Math.round(el / 60) + ' 分' : Math.round(el) + ' 秒') + '）'); step(); return; }
+            if (!r2.done) { showStep('🎞 動画をドライブに送っています… ' + pct + '%（残り約 ' + (el > 90 ? Math.round(el / 60) + ' 分' : Math.round(el) + ' 秒') + '）'); step(); return; }
             var dd = rdDocs[id]; if (!dd) { gasCall({ f: 'del', id: r2.id }, function () {}); return; }
             dd.lv.drive = r2.id; rdSaveLocal();
             if (KEY) { var b = {}; b['reader/' + id + '/lv/drive'] = r2.id; api('PATCH', '', b, function () {}); }
             delete lvUp[id];
             lvNote(id, '🎞 動画をドライブに送りました。ほかの端末でも見られます。');
             setTimeout(function () { var bn = $('mk-banner'); if (bn && /🎞/.test(bn.textContent)) bn.className = 'hidden'; }, 5000);
+          }, 0, function (p) {
+            if (p.retry) { showStep('🎞 動画をドライブに送っています… ' + retryTxt(p)); return; }
+            if (p.wait) { showStep('🎞 動画をドライブに送っています… ' + Math.round((off + blob.size) * 100 / file.size) + '%（ドライブに書き込み中。少し待ちます）'); return; }
+            var pc = Math.floor((off + blob.size * p.sent / Math.max(1, p.total)) * 100 / file.size);
+            if (pc !== lastPct) { lastPct = pc; showStep('🎞 動画をドライブに送っています… ' + pc + '%（この端末から送信中）'); }
           });
         };
         fr.readAsArrayBuffer(blob);
