@@ -363,7 +363,9 @@
   .item.loading { background: #f1f4f6; border: 1px dashed #c9d2d8; box-sizing: border-box; }
   .item.sel { outline: 2px solid #2463c9; }
   .handle { position: absolute; right: -15px; bottom: -15px; width: 30px; height: 30px; border-radius: 50%; background: #2463c9; border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.3); box-sizing: border-box; }
-  #item-bar { position: absolute; z-index: 5; white-space: nowrap; }
+  #item-bar, #lasso-bar { position: absolute; z-index: 5; white-space: nowrap; }
+  #lasso-bar button { padding: 6px 10px; margin-right: 4px; background: #2463c9; color: #fff; font-size: 13px; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+  #lasso-bar button.danger { background: #a3301f; }
   #item-bar button { padding: 6px 10px; margin-right: 4px; background: #2f4858; color: #fff; font-size: 13px; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
   #item-bar button.danger { background: #a3301f; }
   .tools button.hidden, #item-bar button.hidden { display: none !important; }
@@ -737,6 +739,7 @@
     <button data-tool="hl" data-color="#ffd43b" type="button"><span class="dot" id="hl-dot" style="background:#ffd43b"></span> 蛍光</button>
     <button data-tool="eraser" type="button">消しゴム</button>
     <button data-tool="select" type="button">✋ 選択</button>
+    <button data-tool="lasso" type="button" title="手書きの線や文字を囲んで選び、まとめて動かす・コピー・削除">➰ 囲む</button>
     <span class="sep"></span>
     <button id="btn-img" type="button">🖼 画像</button>
     <button id="btn-paste" class="hidden" type="button">📋 貼付</button>
@@ -763,7 +766,11 @@
       <div id="item-bar" class="hidden">
         <button id="ib-edit" type="button">編集</button>
         <button id="ib-front" type="button">前面へ</button>
+        <button id="ib-dup" type="button">複製</button>
         <button id="ib-del" class="danger" type="button">削除</button>
+      </div>
+      <div id="lasso-bar" class="hidden">
+        <button id="lb-copy" type="button">コピー</button><button id="lb-dup" type="button">複製</button><button id="lb-del" class="danger" type="button">削除</button><button id="lb-x" type="button">✕</button>
       </div>
     </div>
     <div id="page-bar">
@@ -1200,6 +1207,7 @@
     lctx.clearRect(0, 0, cvLive.width, cvLive.height);
     if (!cur) return;
     each(visible(pg.strokes), function (st) { pathStroke(ctx, st, scale); });
+    lsoPaint();
   }
   function makeThumb(n) {
     var saveDpr = 0;
@@ -1237,6 +1245,7 @@
   }
   function startStroke(x, y, ptrId, pressure) {
     if (!cur || tool === 'select') return;
+    if (tool === 'lasso') { lsoDown(x, y, ptrId); return; }
     var st = { t: tool, w: SIZES[tool][sizeLv - 1], p: [] };
     if (tool !== 'eraser') st.c = color;
     var pt = toPage(x, y); st.p.push(pt[0], pt[1]);
@@ -1246,6 +1255,7 @@
   }
   function moveStroke(x, y, pressure) {
     if (!drawing) return;
+    if (drawing.lasso) { lsoMove(x, y); return; }
     var pt = toPage(x, y), p = drawing.st.p;
     var lx = p[p.length - 2], ly = p[p.length - 1];
     if (Math.abs(pt[0] - lx) + Math.abs(pt[1] - ly) < 2) return;
@@ -1275,6 +1285,7 @@
   }
   function endStroke() {
     if (!drawing) return;
+    if (drawing.lasso) { lsoUp(); return; }
     var st = drawing.st; drawing = null;
     lctx.clearRect(0, 0, cvLive.width, cvLive.height);
     pushHistory();
@@ -1504,7 +1515,7 @@
     each($('tools').getElementsByTagName('button'), function (b) {
       var t = b.getAttribute('data-tool'), s = b.getAttribute('data-size');
       var onState = false;
-      if (t) onState = (t === tool) && (t === 'eraser' || t === 'select' || b.getAttribute('data-color') === color || t === 'hl');
+      if (t) onState = (t === tool) && (t === 'eraser' || t === 'select' || t === 'lasso' || b.getAttribute('data-color') === color || t === 'hl');
       if (s) onState = Number(s) === sizeLv;
       if (t || s) b.className = onState ? 'on' : '';
     });
@@ -1677,6 +1688,159 @@
     }
   }, { passive: false });
 
+
+  /* ===================== 囲んで選ぶ（➰）・コピー／貼り付け ===================== */
+  // lso = {pg, si: 選んだ線の番号（pg.strokes の位置）, ii: 選んだ文字・画像の ID, b: 囲みの枠 [x0,y0,x1,y1]}
+  var lso = null, memClip = null;
+  function ptInPoly(poly, x, y) {
+    var c = false;
+    for (var i = 0, j = poly.length - 2; i < poly.length; j = i, i += 2) {
+      var xi = poly[i], yi = poly[i + 1], xj = poly[j], yj = poly[j + 1];
+      if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / ((yj - yi) || 1e-9) + xi) c = !c;
+    }
+    return c;
+  }
+  function visFrom() { var a = pg.strokes || []; for (var i = a.length - 1; i >= 0; i--) if (a[i].t === 'clear') return i + 1; return 0; }
+  function lsoBounds(si, ii) {
+    var b = [1e9, 1e9, -1e9, -1e9];
+    each(si, function (i) { var st = pg.strokes[i], p = st.p, w = (st.w || 4) / 2; for (var j = 0; j < p.length; j += 2) { b[0] = Math.min(b[0], p[j] - w); b[1] = Math.min(b[1], p[j + 1] - w); b[2] = Math.max(b[2], p[j] + w); b[3] = Math.max(b[3], p[j + 1] + w); } });
+    each(ii, function (id) { var it = findItem(id); if (!it) return; b[0] = Math.min(b[0], it.x); b[1] = Math.min(b[1], it.y); b[2] = Math.max(b[2], it.x + it.w); b[3] = Math.max(b[3], it.y + (it.h || 60)); });
+    return b;
+  }
+  function lsoClear() { lso = null; lctx.clearRect(0, 0, cvLive.width, cvLive.height); $('lasso-bar').className = 'hidden'; }
+  function lsoPaint() {
+    if (lso && (lso.pg !== pg || !cur)) lso = null;
+    var bar = $('lasso-bar');
+    if (!lso) { bar.className = 'hidden'; return; }
+    var k = scale * dpr, b = lso.b;
+    lctx.save();
+    if (lctx.setLineDash) lctx.setLineDash([6 * dpr, 4 * dpr]);
+    lctx.globalAlpha = 1; lctx.globalCompositeOperation = 'source-over';
+    lctx.strokeStyle = '#2463c9'; lctx.lineWidth = 1.5 * dpr;
+    lctx.strokeRect((b[0] - 6) * k, (b[1] - 6) * k, (b[2] - b[0] + 12) * k, (b[3] - b[1] + 12) * k);
+    lctx.fillStyle = 'rgba(36,99,201,.06)'; lctx.fillRect((b[0] - 6) * k, (b[1] - 6) * k, (b[2] - b[0] + 12) * k, (b[3] - b[1] + 12) * k);
+    lctx.restore();
+    bar.className = '';
+    var top = (b[1] - 6) * scale - 42;
+    if (top < 4) top = (b[3] + 6) * scale + 8;
+    bar.style.left = Math.max(4, Math.min((b[0] - 6) * scale, $('page').clientWidth - 260)) + 'px';
+    bar.style.top = Math.min(top, $('page').clientHeight - 40) + 'px';
+  }
+  function lsoRepaint() { lctx.clearRect(0, 0, cvLive.width, cvLive.height); lsoPaint(); }
+  function lsoDown(x, y, id) {
+    var pt = toPage(x, y);
+    if (lso && pt[0] >= lso.b[0] - 10 && pt[0] <= lso.b[2] + 10 && pt[1] >= lso.b[1] - 10 && pt[1] <= lso.b[3] + 10) {
+      drawing = { lasso: 1, id: id, mv: 1, lx: pt[0], ly: pt[1], before: snapshot(), moved: false };   // 囲んだものを動かす
+      return;
+    }
+    lso = null; $('lasso-bar').className = 'hidden';
+    drawing = { lasso: 1, id: id, path: [pt[0], pt[1]] };
+  }
+  var lsoQueued = false;
+  function lsoFrame() {
+    if (lsoQueued) return; lsoQueued = true;
+    var raf = window.requestAnimationFrame || function (f) { return setTimeout(f, 16); };
+    raf(function () {
+      lsoQueued = false;
+      if (drawing && drawing.lasso && drawing.path) {
+        var p = drawing.path, k = scale * dpr;
+        lctx.clearRect(0, 0, cvLive.width, cvLive.height);
+        lctx.save(); if (lctx.setLineDash) lctx.setLineDash([5 * dpr, 4 * dpr]);
+        lctx.globalAlpha = 1; lctx.globalCompositeOperation = 'source-over'; lctx.strokeStyle = '#2463c9'; lctx.lineWidth = 1.5 * dpr;
+        lctx.beginPath(); lctx.moveTo(p[0] * k, p[1] * k); for (var i = 2; i < p.length; i += 2) lctx.lineTo(p[i] * k, p[i + 1] * k); lctx.stroke(); lctx.restore();
+      } else redraw();
+    });
+  }
+  function lsoShift(dx, dy) {
+    each(lso.si, function (i) { var p = pg.strokes[i].p; for (var j = 0; j < p.length; j += 2) { p[j] += dx; p[j + 1] += dy; } });
+    each(lso.ii, function (id) { var it = findItem(id); if (!it) return; it.x += dx; it.y += dy; var el = itemEl(id); if (el) { el.style.left = (it.x * scale) + 'px'; el.style.top = (it.y * scale) + 'px'; } });
+    lso.b[0] += dx; lso.b[2] += dx; lso.b[1] += dy; lso.b[3] += dy;
+  }
+  function lsoMove(x, y) {
+    var pt = toPage(x, y), d = drawing;
+    if (d.mv) {
+      var dx = pt[0] - d.lx, dy = pt[1] - d.ly; if (!dx && !dy) return;
+      d.lx = pt[0]; d.ly = pt[1]; d.moved = true; lsoShift(dx, dy); lsoFrame(); return;
+    }
+    var p = d.path; if (Math.abs(pt[0] - p[p.length - 2]) + Math.abs(pt[1] - p[p.length - 1]) < 3) return;
+    p.push(pt[0], pt[1]); lsoFrame();
+  }
+  function lsoUp() {
+    var d = drawing; drawing = null;
+    if (d.mv) {
+      if (d.moved) { undoStack.push(d.before); if (undoStack.length > 40) undoStack.shift(); redoStack = []; redraw(); changed(); }
+      return;
+    }
+    var poly = d.path, si = [], ii = [];
+    if (poly.length >= 6) {
+      for (var i = visFrom(); i < pg.strokes.length; i++) {
+        var st = pg.strokes[i], p = st.p, n = 0, inn = 0;
+        if (!p || st.t === 'clear') continue;
+        for (var j = 0; j < p.length; j += 2) { n++; if (ptInPoly(poly, p[j], p[j + 1])) inn++; }
+        if (n && inn >= n * 0.6) si.push(i);
+      }
+      each(pg.items || [], function (it) { if (ptInPoly(poly, it.x + it.w / 2, it.y + (it.h || 60) / 2)) ii.push(it.id); });
+    }
+    if (!si.length && !ii.length) { lsoClear(); return; }
+    lso = { pg: pg, si: si, ii: ii, b: lsoBounds(si, ii) };
+    lsoRepaint();
+  }
+  // コピー：選んだ線・文字・画像（文字はほかのアプリにも貼れるよう、端末のクリップボードにも）
+  function clipCopy() {
+    var ss = [], ii = [];
+    if (lso) { each(lso.si, function (i) { ss.push(pg.strokes[i]); }); each(lso.ii, function (id) { var it = findItem(id); if (it) ii.push(it); }); }
+    else if (selectedId && findItem(selectedId)) ii.push(findItem(selectedId));
+    if (!ss.length && !ii.length) return false;
+    var tx = []; each(ii, function (it) { if (it.k === 'txt' && it.tx) tx.push(it.tx); });
+    memClip = { s: JSON.parse(JSON.stringify(ss)), i: JSON.parse(JSON.stringify(ii)), text: tx.join('\n') };
+    try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(memClip.text).then(function () {}, function () {}); } catch (e) {}
+    $('btn-paste').className = '';
+    return true;
+  }
+  function clipPaste() {
+    if (!cur || !memClip) return;
+    pushHistory();
+    var off = 30, si = [], ii = [], z = topZ();
+    each(memClip.s, function (st0) { var st = JSON.parse(JSON.stringify(st0)); for (var j = 0; j < st.p.length; j += 2) { st.p[j] += off; st.p[j + 1] += off; } pg.strokes.push(st); si.push(pg.strokes.length - 1); });
+    each(memClip.i, function (it0) { var it = JSON.parse(JSON.stringify(it0)); it.id = newId(); it.x += off; it.y += off; it.z = ++z; pg.items.push(it); ii.push(it.id); });
+    // 次に貼るときは、さらにずらす
+    each(memClip.s, function (st) { for (var j = 0; j < st.p.length; j += 2) { st.p[j] += off; st.p[j + 1] += off; } });
+    each(memClip.i, function (it) { it.x += off; it.y += off; });
+    if (!si.length && ii.length === 1) { setTool('select'); selectedId = ii[0]; lso = null; }
+    else { if (tool !== 'lasso') setTool('lasso'); selectedId = null; lso = { pg: pg, si: si, ii: ii, b: [0, 0, 0, 0] }; }
+    renderItems();
+    if (lso) lso.b = lsoBounds(si, ii);
+    redraw(); changed();
+  }
+  function clipDelete() {
+    if (lso) {
+      pushHistory();
+      var ids = {}; each(lso.ii, function (id) { ids[id] = 1; });
+      pg.items = (pg.items || []).filter(function (it) { return !ids[it.id]; });
+      lso.si.slice(0).sort(function (a, b) { return b - a; }).forEach(function (i) { pg.strokes.splice(i, 1); });
+      lso = null; redraw(); renderItems(); changed(); return true;
+    }
+    if (selectedId) { $('ib-del').click(); return true; }
+    return false;
+  }
+  function flashBtn(b, t) { var o = b.textContent; b.textContent = t; setTimeout(function () { b.textContent = o; }, 1200); }
+  on($('lb-copy'), 'click', function (e) { e.stopPropagation(); if (clipCopy()) flashBtn($('lb-copy'), 'コピーしました'); });
+  on($('lb-dup'), 'click', function (e) { e.stopPropagation(); if (clipCopy()) clipPaste(); });
+  on($('lb-del'), 'click', function (e) { e.stopPropagation(); clipDelete(); });
+  on($('lb-x'), 'click', function (e) { e.stopPropagation(); lsoClear(); });
+  on($('ib-dup'), 'click', function (e) { e.stopPropagation(); if (clipCopy()) clipPaste(); });
+  // キーボード：Ctrl（Mac は ⌘）＋C／X／V／D、Delete・Backspace で削除、Esc で選択をやめる
+  on(document, 'keydown', function (e) {
+    if (!cur || $('scr-edit').className.indexOf('hidden') >= 0 || $('text-dlg').className !== 'hidden') return;
+    var tg = e.target; if (tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA' || tg.tagName === 'SELECT' || tg.isContentEditable)) return;
+    var k = String(e.key || '').toLowerCase(), mod = e.ctrlKey || e.metaKey;
+    if (!mod && (k === 'delete' || k === 'backspace' || e.keyCode === 46 || e.keyCode === 8)) { if (clipDelete()) e.preventDefault(); return; }
+    if (k === 'escape' || e.keyCode === 27) { if (lso) lsoClear(); if (selectedId) selectItem(null); return; }
+    if (!mod) return;
+    if (k === 'c' || k === 'x') { if (clipCopy()) { e.preventDefault(); if (k === 'x') clipDelete(); } return; }
+    if (k === 'd') { if (clipCopy()) { e.preventDefault(); clipPaste(); } return; }
+    if (k === 'v' && memClip && !(navigator.clipboard && navigator.clipboard.readText)) { e.preventDefault(); clipPaste(); }
+  });
   /* ===================== やり直し（写し） ===================== */
   function it0(o) { for (var k in o) return true; return false; }
   function snapshot() { return JSON.stringify({ s: pg.strokes, i: pg.items || [] }); }
@@ -1689,7 +1853,7 @@
   function restore(js) {
     var o = JSON.parse(js);
     pg.strokes = o.s || []; pg.items = o.i || [];
-    selectedId = null;
+    selectedId = null; lso = null;
     redraw(); renderItems(); changed();
   }
 
@@ -1920,6 +2084,7 @@
   function applySelectMode() {
     $('page').className = 'page' + (tool === 'select' ? ' select-mode' : '');
     if (tool !== 'select' && selectedId && !penOnly) selectItem(null);
+    if (tool !== 'lasso' && lso) lsoClear();
   }
   function setTool(t) { tool = t; syncToolButtons(); applySelectMode(); }
   function syncPencilButton() {
@@ -1949,6 +2114,7 @@
   if (navigator.clipboard && navigator.clipboard.read) $('btn-paste').className = '';
   on($('btn-paste'), 'click', function () {
     if (!cur) return;
+    if (memClip && !(navigator.clipboard && navigator.clipboard.read)) { clipPaste(); return; }
     navigator.clipboard.read().then(function (list) {
       var done = false;
       each(list, function (ci) {
@@ -1958,11 +2124,11 @@
         if (imgType) { done = true; ci.getType(imgType).then(function (blob) { readImageFile(blob); }); }
         else if (txtType) {
           done = true;
-          ci.getType(txtType).then(function (blob) { var fr = new FileReader(); fr.onload = function () { openTextDialog(null, String(fr.result || '')); }; fr.readAsText(blob); });
+          ci.getType(txtType).then(function (blob) { var fr = new FileReader(); fr.onload = function () { var t = String(fr.result || ''); if (memClip && (!t || t === memClip.text)) clipPaste(); else openTextDialog(null, t); }; fr.readAsText(blob); });
         }
       });
-      if (!done) alert('貼り付けられる画像や文字がありません。');
-    }, function () { alert('貼り付けできませんでした。画像や文字をコピーしてから、もう一度押してください。'); });
+      if (!done) { if (memClip) clipPaste(); else alert('貼り付けられる画像や文字がありません。'); }
+    }, function () { if (memClip) clipPaste(); else alert('貼り付けできませんでした。画像や文字をコピーしてから、もう一度押してください。'); });
   });
   on(document, 'paste', function (e) {
     if (!cur || $('scr-edit').className.indexOf('hidden') >= 0) return;
@@ -1973,6 +2139,7 @@
       if (items[i].kind === 'file' && /^image\//.test(items[i].type)) { e.preventDefault(); readImageFile(items[i].getAsFile()); return; }
     }
     var t = cd.getData && cd.getData('text/plain');
+    if (memClip && (!t || t === memClip.text)) { e.preventDefault(); clipPaste(); return; }
     if (t) { e.preventDefault(); openTextDialog(null, t); }
   });
 
@@ -6495,7 +6662,7 @@
     penColor = savedTool.pen || (tool === 'pen' ? color : penColor);
     hlColor = savedTool.hl || (tool === 'hl' ? color : hlColor);
   }
-  if (!SIZES[tool] && tool !== 'select') tool = 'pen';
+  if (!SIZES[tool] && tool !== 'select' && tool !== 'lasso') tool = 'pen';
   syncToolButtons(); applySelectMode();
 
   on(window, 'resize', function () { if (cur) layout(); });
