@@ -176,6 +176,8 @@
   #rd-ctrl select { font-size: 15px; padding: 6px; border-radius: 8px; border: 1px solid #c9d2d8; background: #fff; }
   .rd-hint { margin: 0 0 10px; }
   .rd-sent { background: #fff; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(31,42,48,.1); }
+  .rd-sent.ab { border-left: 5px solid #2463c9; }
+  .fl-s.ab { background: #e3eefc; }
   .rd-sent.now { box-shadow: 0 0 0 3px #e8b44c; background: #fffbea; }
   #rd-flow { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 60; background: #fbf8f1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   #fl-ctrl { position: -webkit-sticky; position: sticky; top: 0; z-index: 2; background: rgba(251,248,241,.97); border-bottom: 1px solid #e3dccb; padding: 8px 12px; }
@@ -579,6 +581,7 @@
             <button id="yt-safari-btn" class="primary" type="button" style="margin-top:8px">▶ YouTube で最初から見る</button></div></div>
         <button id="rd-play" class="primary" type="button">▶ 再生</button>
         <button id="yt-loop" class="hidden" type="button" title="今のセリフをくり返し再生">🔂 1文くり返し：オフ</button>
+        <button id="rd-ab" type="button" title="1回目に押した文（A）から2回目に押した文（B）までをくり返す">🅰🅱 A-B リピート</button>
         <button id="lv-save" class="hidden" type="button" title="ドライブの動画をこの端末に取り込んで、次からすぐ見られるようにする">⬇ この端末に取り込む</button>
         <button id="rd-cont" type="button" title="🔊 で読んだあと、次の文も続けて読む">🔁 続けて：オフ</button>
         <button id="rd-flowbtn" type="button">📖 通しで聞く</button>
@@ -885,6 +888,7 @@
         <div id="rd-flow" class="hidden">
           <div id="fl-ctrl">
             <button id="fl-play" class="primary" type="button">▶ 最初から</button>
+            <button id="fl-ab" type="button" title="1回目に押した文（A）から2回目に押した文（B）までをくり返す">🅰🅱 A-B</button>
             <select id="fl-rate" title="速さ">
               <option value="0.6">ゆっくり</option><option value="0.75">やや遅く</option><option value="0.9">ふつう</option><option value="1">少し速く</option><option value="1.15">速く</option>
             </select>
@@ -3527,6 +3531,7 @@
     var gen = ++playGen;
     var step = function (k) {
       if (!rdSpeaking || gen !== playGen) return;
+      if (abB >= 0 && (k > abB || k < abA)) k = abA;   // A-B リピート
       if (k >= rdSents.length) { rdIdx = 0; stopSpeak(); if (flOpen) markSentence(-1); playLabel(); nextChapterGo(); return; }
       markSentence(k);
       speak(rdSents[k].text, function () { if (rdSpeaking) setTimeout(function () { step(k + 1); }, 250); });
@@ -3535,9 +3540,9 @@
   }
   function markSentence(k) {
     rdIdx = k; progSoon();
-    each($('rd-text').childNodes, function (el, i) { if (el.id !== 'rd-flow') el.className = 'rd-sent' + (i === k ? ' now' : ''); });
+    each($('rd-text').childNodes, function (el, i) { if (el.id !== 'rd-flow') el.className = 'rd-sent' + (abIn(i) ? ' ab' : '') + (i === k ? ' now' : ''); });
     if (flOpen) {
-      each(flEls, function (el, i) { el.className = 'fl-s' + (i === k ? ' now' : k >= 0 && i < k ? ' done' : ''); });
+      each(flEls, function (el, i) { el.className = 'fl-s' + (abIn(i) ? ' ab' : '') + (i === k ? ' now' : k >= 0 && i < k ? ' done' : ''); });
       var fe = flEls[k], box = $('rd-flow');
       if (fe && flOnly) { var wy = fe.offsetTop - window.innerHeight * 0.3; if (Math.abs(window.pageYOffset - wy) > window.innerHeight * 0.25) window.scrollTo(0, Math.max(0, wy)); }
       else if (fe) { var y = fe.offsetTop - box.clientHeight * 0.3; if (Math.abs(box.scrollTop - y) > box.clientHeight * 0.25) box.scrollTop = Math.max(0, y); }
@@ -3763,12 +3768,14 @@
     devicePlay(at);
   }
   function gmPlayFrom(i, one) {
+    if (!one && abB >= 0 && (i < abA || i > abB)) i = abA;
     var gen = ++playGen, chunks = one ? [{ a: i, b: i, from: i, skip: 0, text: rdSents[i].text }] : gmChunks(i);
+    if (!one && abB >= 0) { var cl = []; each(chunks, function (ch) { if (ch.a <= abB) cl.push(ch); }); chunks = cl; }
     gmOne = !!one;
     gmUnlock(); gmNote('');
     var step = function (c) {
       if (gen !== playGen || !rdSpeaking) return;
-      if (c >= chunks.length) { rdIdx = 0; stopSpeak(); if (flOpen) markSentence(-1); playLabel(); if (!one) nextChapterGo(); return; }
+      if (c >= chunks.length) { if (!one && abB >= 0) { gmPlayFrom(abA); return; } rdIdx = 0; stopSpeak(); if (flOpen) markSentence(-1); playLabel(); if (!one) nextChapterGo(); return; }
       var ch = chunks[c], st0 = c === 0 ? ch.from : ch.a;
       markSentence(st0);
       var ready = !!gmCache[gmVoice() + '|' + ch.text];
@@ -4453,6 +4460,7 @@
     if (v.textTracks && v.textTracks.addEventListener) { v.textTracks.addEventListener('addtrack', function () { setTimeout(lvSubList, 100); }); v.textTracks.addEventListener('change', function () { setTimeout(lvSubList, 50); }); }
     var lab = function () { if (ytPlayer === lvA) $('rd-play').textContent = !v.paused && !v.ended ? '⏸ 一時停止' : '▶ 再生'; };
     v.addEventListener('play', lab); v.addEventListener('pause', lab); v.addEventListener('ended', lab);
+    v.addEventListener('ended', function () { if (abB >= 0 && ytPlayer === lvA && rdCur && rdCur.d.cues && rdCur.d.cues[abA]) { try { v.currentTime = rdCur.d.cues[abA][0]; } catch (e) {} lvA.playVideo(); } });
     v.addEventListener('error', function () {
       if (ytPlayer !== lvA || !v.getAttribute('src') || !rdCur || !rdCur.d.lv) return;
       var d = rdCur.d, id = rdCur.id;
@@ -4811,9 +4819,15 @@
   function ytTick() {
     if (!ytOn() || !ytPlayer || !ytReady) return;
     if (!rdCur.d.lv) lvCapDraw();
-    var st = ytState(); if (st !== 1) return;
+    var st = ytState();
+    if (st === 0 && abB >= 0) { try { ytPlayer.seekTo(rdCur.d.cues[abA][0], true); ytPlayer.playVideo(); } catch (e) {} return; }   // 最後まで来た：A へ
+    if (st !== 1) return;
     var t = 0; try { t = ytPlayer.getCurrentTime(); } catch (e) { return; }
     var cues = rdCur.d.cues, k = 0;
+    if (abB >= 0 && !(ytLoop && ytLoopIdx >= 0) && cues[abA]) {
+      var ab0 = cues[abA][0], ab1 = abB + 1 < cues.length ? cues[abB + 1][0] : null;
+      if ((ab1 !== null && t >= ab1 - 0.05) || t < ab0 - 1) { ytPlayer.seekTo(ab0, true); t = ab0; }
+    }
     for (var i = 0; i < cues.length; i++) { if (cues[i][0] <= t + 0.15) k = i; else break; }
     if (ytLoop && ytLoopIdx >= 0) {
       var end = ytLoopIdx + 1 < cues.length ? cues[ytLoopIdx + 1][0] : null;
@@ -5883,9 +5897,29 @@
     var ids = [], all = rdIds(); each(all, function (x) { if (!rdDocs[x].book) ids.push(x); });
     if (ids.length > 50) { var b2 = {}; for (var i = 50; i < ids.length; i++) { b2['reader/' + ids[i]] = null; delete rdDocs[ids[i]]; } rdSaveLocal(); api('PATCH', '', b2, function () {}); }
   }
+  /* ---- A-B リピート ---- */
+  var abA = -1, abB = -1;
+  function abIn(i) { return abB >= 0 && i >= abA && i <= abB; }
+  function abLabel() {
+    var t = abA < 0 ? '🅰🅱 A-B リピート' : abB < 0 ? '🅱 ここを B に（A：' + (abA + 1) + ' 文目）' : '🔁 A-B：' + (abA + 1) + '〜' + (abB + 1) + ' 文目（押すと解除）';
+    each(['rd-ab', 'fl-ab'], function (b) { if (!$(b)) return; $(b).textContent = b === 'fl-ab' && abA < 0 ? '🅰🅱 A-B' : t; $(b).className = abA >= 0 ? 'primary' : ''; });
+  }
+  function abPress() {
+    if (!rdCur) return;
+    var cur = rdIdx >= 0 ? rdIdx : topVisible();
+    if (abA < 0) { abA = cur; abB = -1; $('rd-status').textContent = '🅰 A を ' + (abA + 1) + ' 文目にしました。くり返しの終わりの文まで進んで（または文を選んで）もう一度押すと B になります。'; }
+    else if (abB < 0) {
+      if (cur < abA) { abB = abA; abA = cur; } else abB = cur;
+      $('rd-status').textContent = '🔁 ' + (abA + 1) + '〜' + (abB + 1) + ' 文目をくり返します。もう一度押すと解除。';
+      if (ytOn()) { if (rdIdx < abA || rdIdx > abB) { try { ytPlayer.seekTo(rdCur.d.cues[abA][0], true); } catch (e) {} } }
+      else if (rdSpeaking && (rdIdx < abA || rdIdx > abB)) playFrom(abA);
+    } else { abA = abB = -1; $('rd-status').textContent = 'A-B リピートを解除しました。'; }
+    abLabel(); markSentence(rdIdx);
+  }
+  function abReset() { abA = abB = -1; abLabel(); }
   function openRdDoc(id, isNew) {
     var d = rdDocs[id]; if (!d) return;
-    stopSpeak();
+    stopSpeak(); abReset();
     rdCur = { id: id, d: d };
     $('rd-input').className = 'hidden'; $('rd-view').className = '';
     if (d.cues && fixCues(d)) isNew = true;
@@ -6207,6 +6241,8 @@
   on($('fl-close'), 'click', closeFlow);
   on($('fl-only'), 'click', function () { stopSpeak(); setFlOnly(true); });
   on($('fl-exit'), 'click', function () { setFlOnly(false); });
+  on($('rd-ab'), 'click', abPress);
+  on($('fl-ab'), 'click', abPress);
   on($('fl-play'), 'click', function () { if (rdSpeaking) stopSpeak(); else playFrom(rdIdx > 0 ? rdIdx : 0); });
   on($('fl-rate'), 'change', function () {
     rdRate = Number($('fl-rate').value) || 0.9; lsSet('memo_rd_rate', String(rdRate)); $('rd-rate').value = String(rdRate);
