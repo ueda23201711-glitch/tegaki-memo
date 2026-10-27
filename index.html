@@ -4461,7 +4461,11 @@
         $('rd-status').textContent = 'ドライブの動画は、この端末では再生できませんでした。この端末の動画に戻しました。';
         return;
       }
-      $('rd-status').textContent = 'この端末ではこの動画を再生できませんでした' + (/webm/i.test(d.lv.type || d.lv.name) ? '（webm は古い iPhone・iPad では再生できません。mp4 を使ってください）' : '') + '。' + (d.lv.link ? '' : '');
+      var ec = v.error ? v.error.code : 0;
+      var why = ec === 3 ? '動画の中身を再生できません（この端末には画質・形式が重すぎる可能性。小さい画質の mp4 なら見られることがあります）'
+        : ec === 4 ? (lvMode === 'drive' ? 'ドライブから動画として受け取れませんでした' : 'この端末が対応していない形式です')
+        : ec === 2 ? '読み込みの途中で通信が切れました' : '';
+      $('rd-status').textContent = 'この端末ではこの動画を再生できませんでした' + (/webm/i.test(d.lv.type || d.lv.name) ? '（webm は古い iPhone・iPad では再生できません。mp4 を使ってください）' : why ? '（' + why + (ec ? '・コード ' + ec : '') + (lvMode === 'drive' && lvLinkInfo ? '・' + lvLinkInfo : '') + '）' : '') + '。';
       if (d.lv.link) { $('lv-get').className = ''; $('lv-video').style.display = 'none'; $('lv-get-t').innerHTML = ''; var a = document.createElement('a'); a.href = d.lv.link; a.target = '_blank'; a.style.color = '#fff'; a.textContent = '🔗 Safari で動画を開く（別の画面で再生）'; $('lv-get-t').appendChild(a); $('lv-dl').style.display = 'none'; }
     });
     lvA = { getPlayerState: function () { return !v.paused && !v.ended ? 1 : 2; },
@@ -4602,6 +4606,8 @@
       if (!r || !r.ok || !r.url) { $('rd-status').textContent = '動画を読み込めませんでした（' + String((r && r.error) || e).slice(0, 60) + '）。'; lvAsk(d); return; }
       var m = /[?&]id=([^&]+)/.exec(r.url);
       lvLinks = m ? ['https://drive.usercontent.google.com/download?id=' + m[1] + '&export=download&confirm=t', r.url] : [r.url];
+      if (r.direct && r.direct !== lvLinks[0]) lvLinks.unshift(r.direct);   // Apps Script が確かめたリンク（新しい Apps Script のとき）
+      lvLinkInfo = r.info || '';
       d.lv.link = lvLinks[0];
       $('lv-sub').className = 'hidden';
       $('lv-video').src = lvLinks.shift(); $('rd-status').textContent = ''; lvSrc('☁ ドライブから直接再生しています' + (lvOld ? '' : '（「⬇ この端末に取り込む」で、次からすぐ見られます）'));
@@ -4609,7 +4615,7 @@
     });
   }
   // この端末にまだない：ドライブから取り込む／同じファイルを選ぶ
-  var lvLinks = [];
+  var lvLinks = [], lvLinkInfo = '';
   function lvAsk(d) {
     lvSrc('');
     $('lv-video').style.display = 'none'; $('lv-get').className = '';
@@ -6423,7 +6429,18 @@
     "  if (act === \"del\") { f.setTrashed(true); return { ok: true }; }",
     "  if (act === \"link\") {",
     "    f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);",
-    "    return { ok: true, url: \"https://drive.google.com/uc?export=download&id=\" + id };",
+    "    // 大きいファイルは「ウイルス確認」の画面が出るので、その先のリンク（uuid 付き）を作る",
+    "    var u = \"https://drive.usercontent.google.com/download?id=\" + id + \"&export=download&confirm=t\", direct = u, info = \"\";",
+    "    try {",
+    "      var r = UrlFetchApp.fetch(u, { muteHttpExceptions: true, headers: { Range: \"bytes=0-1\" } });",
+    "      var hd = r.getHeaders(), ct = String(hd[\"Content-Type\"] || hd[\"content-type\"] || \"\");",
+    "      info = r.getResponseCode() + \" \" + ct;",
+    "      if (/text\\/html/.test(ct)) {",
+    "        var html = r.getContentText(), mu = html.match(/name=\"uuid\" value=\"([^\"]+)\"/), mc = html.match(/name=\"confirm\" value=\"([^\"]+)\"/), ma = html.match(/name=\"at\" value=\"([^\"]+)\"/);",
+    "        if (mu) direct = \"https://drive.usercontent.google.com/download?id=\" + id + \"&export=download&confirm=\" + (mc ? mc[1] : \"t\") + \"&uuid=\" + mu[1] + (ma ? \"&at=\" + encodeURIComponent(ma[1]) : \"\");",
+    "      }",
+    "    } catch (e) { info = String(e).slice(0, 100); }",
+    "    return { ok: true, url: \"https://drive.google.com/uc?export=download&id=\" + id, direct: direct, info: info };",
     "  }",
     "  var size = f.getSize(), CH = 3 * 1024 * 1024, n = Math.max(1, Math.ceil(size / CH));",
     "  if (!size) return { ok: true, a: \"\", n: 1, k: 0, size: 0, type: f.getMimeType(), name: f.getName() };",
