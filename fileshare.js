@@ -93,6 +93,17 @@
     x.ontimeout = function () { fail('timeout'); };
     try { x.send(JSON.stringify(body)); } catch (e) { fail('net'); }
   }
+  // 返事を読まずに送る（届けば良い。届いたかは ups で確かめる）
+  function gasPostBlind(body, cb) {
+    var url = opt.gas(), fin = false, end = function () { if (!fin) { fin = true; cb(); } };
+    if (window.fetch) { try { fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) }).then(end, end); } catch (e) { end(); } setTimeout(end, 300000); return; }
+    var x = new XMLHttpRequest();
+    try { x.open('POST', url, true); x.setRequestHeader('Content-Type', 'text/plain;charset=utf-8'); } catch (e) { end(); return; }
+    x.timeout = 180000; x.onreadystatechange = function () { if (x.readyState === 4) end(); }; x.ontimeout = end;
+    try { x.send(JSON.stringify(body)); } catch (e) { end(); }
+  }
+  function lsG(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsS(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   function ab2b64(buf) {
     var u = new Uint8Array(buf), s = '', CHUNK = 0x8000;
     for (var i = 0; i < u.length; i += CHUNK) s += String.fromCharCode.apply(null, u.subarray ? u.subarray(i, i + CHUNK) : Array.prototype.slice.call(u, i, i + CHUNK));
@@ -197,6 +208,36 @@
         done();
       });
     };
+    // 返事を受け取れない端末：受け取った量を確かめながら送る
+    var blind = function (why) {
+      msg.style.color = ''; msg.textContent = '別の方法で送っています…';
+      gasGet({ f: 'up0', name: file.name, type: type, size: file.size }, function (r, e) {
+        if (!r || !r.ok || r.v !== 2) { fail(r && /notshared|act/.test(String(r.error)) ? 'act' : (r && r.error) || e || why); return; }
+        lsS('fs_blind', '1');
+        var up = r.up, BU = 2 * 1024 * 1024, last = -1, miss = 0;
+        var check = function () {
+          gasGet({ f: 'ups', up: up, total: file.size }, function (st, e2) {
+            if (!st) { if (++miss > 6) { fail(e2 || 'net'); return; } setTimeout(check, 4000 * miss); return; }
+            if (!st.ok) { fail(st.error); return; }
+            if (st.done) { finish(st.id); return; }
+            var g = st.got || 0;
+            if (g <= last) { if (++miss > 6) { fail('net'); return; } } else miss = 0;
+            last = g;
+            fill.style.width = Math.round(g / file.size * 100) + '%'; msg.textContent = Math.round(g / file.size * 100) + '%';
+            sendPart(g);
+          });
+        };
+        var sendPart = function (off) {
+          var blob = file.slice(off, Math.min(file.size, off + BU)), fr = new FileReader();
+          fr.onerror = function () { fail('ファイルを読めませんでした'); };
+          fr.onload = function () { gasPostBlind({ act: 'upc', up: up, off: off, total: file.size, type: type, data: ab2b64(fr.result) }, check); };
+          fr.readAsArrayBuffer(blob);
+        };
+        sendPart(0);
+      });
+    };
+    var failOrBlind = function (r, e) { if (!r && /net|timeout|http0/.test(String(e))) blind(e); else fail((r && r.error) || e); };
+    if (lsG('fs_blind') === '1') { blind(''); return; }
     // 8MB までは1回で送る（Apps Script が古いときは、分けて送る方法に戻す）
     if (file.size <= ONE) {
       var fr0 = new FileReader();
@@ -206,7 +247,7 @@
         gasPost({ act: 'one', name: file.name, type: type, data: ab2b64(fr0.result) }, function (r0, e0) {
           if (r0 && r0.ok && r0.id) { finish(r0.id); return; }
           if (r0 && r0.error === 'act') { chunked(); return; }
-          fail((r0 && r0.error) || e0);
+          failOrBlind(r0, e0);
         });
       };
       fr0.readAsArrayBuffer(file);
@@ -215,7 +256,7 @@
     chunked();
     function chunked() {
     gasPost({ act: 'up0', name: file.name, type: type, size: file.size }, function (r, e) {
-      if (!r || !r.ok) { fail((r && r.error) || e); return; }
+      if (!r || !r.ok) { failOrBlind(r, e); return; }
       var off = 0;
       var step = function () {
         var blob = file.slice(off, Math.min(file.size, off + UP)), fr = new FileReader();
