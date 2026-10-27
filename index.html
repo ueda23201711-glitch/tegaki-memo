@@ -530,6 +530,7 @@
           <div class="row"><label class="bk-file">🇺🇸 英語の字幕<input id="lv-en" type="file" accept=".srt,.vtt,text/plain"></label> <span class="note" id="lv-en-n"></span></div>
           <div class="row"><label class="bk-file">🇯🇵 日本語の字幕（なくても可）<input id="lv-ja" type="file" accept=".srt,.vtt,text/plain"></label> <span class="note" id="lv-ja-n"></span></div>
           <input id="lv-title" type="text" placeholder="題名（空なら動画のファイル名）" style="width:100%; box-sizing:border-box; font-size:16px; padding:9px 10px; border:1px solid #c9d2d8; border-radius:8px; margin:4px 0 8px;">
+          <input id="lv-srcurl" type="url" placeholder="元の動画のページの URL（なくても可・あとからでも入れられます）" style="width:100%; box-sizing:border-box; font-size:16px; padding:9px 10px; border:1px solid #c9d2d8; border-radius:8px; margin:0 0 8px;">
           <div class="row"><button id="lv-go" class="primary" type="button">動画と字幕で読み込む</button></div>
           <p class="note" id="lv-msg"></p>
         </div>
@@ -597,7 +598,7 @@
         <div id="rd-tin-box" class="hidden"><button id="rd-tin" type="button">📝 題名も本文の最初の文にする（読み上げ・訳の対象に）</button></div>
         <div id="rd-cv-box" class="hidden"></div>
         <div id="rd-fix-box" class="hidden"><button id="rd-fix" type="button"></button></div>
-        <div id="rd-src-box" class="hidden"><a id="rd-src" href="#" target="_blank" rel="noopener"></a></div>
+        <div id="rd-src-box" class="hidden"><a id="rd-src" href="#" target="_blank" rel="noopener"></a> <button id="rd-src-ed" type="button" class="hidden" style="font-size:13px; padding:3px 9px; margin-left:4px;"></button></div>
         <p class="note rd-hint" id="rd-hint-p">単語をタップすると意味と発音、<span class="idm-sample">下線</span>は熟語・定型表現、<span class="saved-sample">黄色</span>はメモ単語帳に保存済みの単語です。🔊 でその文を読みます（「🔁 続けて」がオンなら、そこから最後まで）。</p>
         <div id="rd-text"></div>
       </div>
@@ -4282,11 +4283,12 @@
         var id = newId(), d = { title: '🎞 ' + title.slice(0, 80), text: cueTexts(cues).join('\n'), at: now(), cues: cues, named: 1,
           lv: { name: vf.name.slice(0, 200), size: vf.size, type: vf.type || (/\.webm$/i.test(vf.name) ? 'video/webm' : 'video/mp4') } };
         if (ja) { var jl = parseSrt(ja); if (jl.length) { d.tr = lvAlignJa(cues, jl); var miss = 0; each(d.tr, function (t) { if (!t) miss++; }); if (miss) d.trPart = 1; } }
+        var su = String($('lv-srcurl').value || '').replace(/^\s+|\s+$/g, ''); if (/^https?:\/\/\S+$/.test(su)) d.src = su.slice(0, 500);
         rdDocs[id] = d; rdSaveLocal();
         $('lv-msg').textContent = '動画をこの端末に保存しています…';
         lvPut(id, vf, function (okp) {
           $('lv-msg').textContent = okp ? '' : 'この端末に動画を保存できませんでした（空き容量を確かめてください）。ドライブには送ります。';
-          each(['lv-file', 'lv-en', 'lv-ja'], function (x) { $(x).value = ''; }); each(['lv-file-n', 'lv-en-n', 'lv-ja-n'], function (x) { $(x).textContent = ''; }); $('lv-title').value = '';
+          each(['lv-file', 'lv-en', 'lv-ja'], function (x) { $(x).value = ''; }); each(['lv-file-n', 'lv-en-n', 'lv-ja-n'], function (x) { $(x).textContent = ''; }); $('lv-title').value = ''; $('lv-srcurl').value = '';
           openRdDoc(id, true);
           lvUpload(id, vf);
         });
@@ -5788,6 +5790,20 @@
     t = m ? m[1] : t;
     return t.length > 60 ? t.slice(0, 58).replace(/\s+\S*$/, '') + '…' : t;
   }
+  // 元の動画のページの URL（端末とクラウドの両方）
+  function editSrcUrl() {
+    if (!rdCur) return;
+    var id = rdCur.id, d = rdCur.d;
+    var t = window.prompt('元の動画のページの URL（空にすると消します）', d.src || '');
+    if (t === null) return;
+    t = t.replace(/^\s+|\s+$/g, '');
+    if (t && !/^https?:\/\/\S+$/.test(t)) { alert('https:// で始まる URL を入れてください。'); return; }
+    if (t) d.src = t.slice(0, 500); else delete d.src;
+    rdSaveLocal();
+    if (KEY) { var b = {}; b['reader/' + id + '/src'] = t ? d.src : null; api('PATCH', '', b, function () {}); }
+    showDocTitle();
+  }
+  on($('rd-src-ed'), 'click', editSrcUrl);
   // 題名を直す（端末とクラウドの両方）
   function renameDoc(id) {
     var d = rdDocs[id]; if (!d) return;
@@ -5832,11 +5848,15 @@
     $('rd-title-mark').textContent = rdCur && /^🎬/.test(rdCur.d.title || '') ? '🎬 ' : rdCur && /^🌐/.test(rdCur.d.title || '') ? '🌐 ' : '';
     // 元のページ・元の動画へのリンク（押すとブラウザで開く）
     var u = rdCur ? (rdCur.d.src || (rdCur.d.yt ? 'https://www.youtube.com/watch?v=' + rdCur.d.yt : '')) : '';
+    var isLv = rdCur && rdCur.d.lv;
+    $('rd-src-ed').className = isLv ? '' : 'hidden';
+    $('rd-src-ed').textContent = u ? '✎ URL を直す' : '🔗 元の動画のページの URL を入れる';
     if (u && /^https?:\/\//.test(u)) {
-      $('rd-src').href = u;
-      $('rd-src').textContent = (rdCur.d.yt ? '▶ YouTube で元の動画を見る：' : '🔗 元のページを開く：') + u.replace(/^https?:\/\/(www\.)?/, '').slice(0, 70) + (u.length > 80 ? '…' : '');
+      $('rd-src').href = u; $('rd-src').style.display = '';
+      $('rd-src').textContent = (rdCur.d.yt ? '▶ YouTube で元の動画を見る：' : isLv ? '🔗 元の動画のページを開く：' : '🔗 元のページを開く：') + u.replace(/^https?:\/\/(www\.)?/, '').slice(0, 70) + (u.length > 80 ? '…' : '');
       $('rd-src-box').className = '';
-    } else $('rd-src-box').className = 'hidden';
+    } else if (isLv) { $('rd-src').style.display = 'none'; $('rd-src-box').className = ''; }
+    else $('rd-src-box').className = 'hidden';
     $('rd-tin-box').className = rdCur && titleMissing(rdCur.d) ? '' : 'hidden';
     var fx = rdCur && !rdCur.d.cues ? fixBreaks(rdCur.d.text) : null;
     $('rd-fix-box').className = fx && fx.n ? '' : 'hidden';
