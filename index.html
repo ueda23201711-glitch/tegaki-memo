@@ -4455,7 +4455,8 @@
       if (ytPlayer !== lvA || !v.getAttribute('src') || !rdCur || !rdCur.d.lv) return;
       var d = rdCur.d, id = rdCur.id;
       $('lv-sub').className = 'hidden';
-      if (lvMode === 'drive' && lvLinks.length) { var at = v.currentTime || 0; d.lv.link = lvLinks[0]; v.src = lvLinks.shift(); return; }   // 別の形のリンクで試す
+      if (lvMode === 'drive') lvLinkErr.push(v.error ? v.error.code : 0);
+      if (lvMode === 'drive' && lvLinks.length) { d.lv.link = lvLinks[0]; v.src = lvLinks.shift(); try { v.load(); } catch (er) {} return; }   // 別の形のリンクで試す
       if (lvMode === 'drive' && !lvOld && (lvHave[id] || lvMem[id])) {   // 端末の動画に戻す
         lsSet('memo_lvsrc_' + id, 'local'); lvMode = 'local'; lvSwitchTo(false);
         $('rd-status').textContent = 'ドライブの動画は、この端末では再生できませんでした。この端末の動画に戻しました。';
@@ -4465,7 +4466,7 @@
       var why = ec === 3 ? '動画の中身を再生できません（この端末には画質・形式が重すぎる可能性。小さい画質の mp4 なら見られることがあります）'
         : ec === 4 ? (lvMode === 'drive' ? 'ドライブから動画として受け取れませんでした' : 'この端末が対応していない形式です')
         : ec === 2 ? '読み込みの途中で通信が切れました' : '';
-      $('rd-status').textContent = 'この端末ではこの動画を再生できませんでした' + (/webm/i.test(d.lv.type || d.lv.name) ? '（webm は古い iPhone・iPad では再生できません。mp4 を使ってください）' : why ? '（' + why + (ec ? '・コード ' + ec : '') + (lvMode === 'drive' && lvLinkInfo ? '・' + lvLinkInfo : '') + '）' : '') + '。';
+      $('rd-status').textContent = 'この端末ではこの動画を再生できませんでした' + (/webm/i.test(d.lv.type || d.lv.name) ? '（webm は古い iPhone・iPad では再生できません。mp4 を使ってください）' : why ? '（' + why + (ec ? '・コード ' + ec : '') + (lvMode === 'drive' && lvLinkInfo ? '・' + lvLinkInfo : '') + (lvMode === 'drive' && lvLinkErr.length > 1 ? '・試したリンクのコード ' + lvLinkErr.join('→') : '') + '）' : '') + '。';
       if (d.lv.link) { $('lv-get').className = ''; $('lv-video').style.display = 'none'; $('lv-get-t').innerHTML = ''; var a = document.createElement('a'); a.href = d.lv.link; a.target = '_blank'; a.style.color = '#fff'; a.textContent = '🔗 Safari で動画を開く（別の画面で再生）'; $('lv-get-t').appendChild(a); $('lv-dl').style.display = 'none'; }
     });
     lvA = { getPlayerState: function () { return !v.paused && !v.ended ? 1 : 2; },
@@ -4608,6 +4609,8 @@
       lvLinks = m ? ['https://drive.usercontent.google.com/download?id=' + m[1] + '&export=download&confirm=t', r.url] : [r.url];
       if (r.direct && r.direct !== lvLinks[0]) lvLinks.unshift(r.direct);   // Apps Script が確かめたリンク（新しい Apps Script のとき）
       lvLinkInfo = r.info || '';
+      if (/^20[06] (video|audio|application\/octet)/.test(lvLinkInfo)) lvLinks = [lvLinks[0], lvLinks[0]];   // そのリンクで動画が届く：もう一度だけ同じリンクで
+      lvLinkErr = [];
       d.lv.link = lvLinks[0];
       $('lv-sub').className = 'hidden';
       $('lv-video').src = lvLinks.shift(); $('rd-status').textContent = ''; lvSrc('☁ ドライブから直接再生しています' + (lvOld ? '' : '（「⬇ この端末に取り込む」で、次からすぐ見られます）'));
@@ -4615,7 +4618,7 @@
     });
   }
   // この端末にまだない：ドライブから取り込む／同じファイルを選ぶ
-  var lvLinks = [], lvLinkInfo = '';
+  var lvLinks = [], lvLinkInfo = '', lvLinkErr = [];
   function lvAsk(d) {
     lvSrc('');
     $('lv-video').style.display = 'none'; $('lv-get').className = '';
