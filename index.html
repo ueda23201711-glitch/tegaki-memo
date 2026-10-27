@@ -4309,7 +4309,76 @@
     try { x.send(JSON.stringify(body)); } catch (e) { fail('net'); }
   }
   function ab2b64(buf) { var u = new Uint8Array(buf), s2 = '', C = 0x8000; for (var i = 0; i < u.length; i += C) s2 += String.fromCharCode.apply(null, u.subarray(i, i + C)); return btoa(s2); }
+  // 返事を読まずに送る（パソコンの Edge などで Apps Script の返事を受け取れなくても、届けば良い）
+  function gasPostBlind(body, cb) {
+    var fin = false, end = function () { if (!fin) { fin = true; cb(); } };
+    if (window.fetch) { try { fetch(gasUrl, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) }).then(end, end); } catch (e) { end(); } setTimeout(end, 300000); return; }
+    gasPostJ(body, function () { end(); }, 3);
+  }
   function lvUpload(id, file) {
+    var d = rdDocs[id]; if (!d || !d.lv) return;
+    if (!gasUrl) { lvNote(id, 'ドライブに送るには「⚙ 翻訳の設定」が必要です（この端末では見られます）。'); return; }
+    var UP = 2 * 1024 * 1024, type = d.lv.type, t0 = now(), SK = 'memo_lvup_' + id, fails = 0, restarted = false, got0 = -1, off0 = 0;
+    var saved = lsJSON(SK, null);
+    if (saved && (saved.v !== 2 || saved.size !== file.size || now() - (saved.at || 0) > 5 * 3600 * 1000)) { if (saved.v === 2) { lsDel(SK); saved = null; } }
+    var base = '', since = now(), tick = setInterval(function () {
+      if (!lvUp[id] || !rdDocs[id]) { clearInterval(tick); return; }
+      var sec = Math.round((now() - since) / 1000); if (sec >= 30) lvNote(id, base + '　［この状態のまま ' + Math.floor(sec / 60) + ' 分 ' + (sec % 60) + ' 秒］');
+    }, 5000);
+    var showStep = function (txt) { base = txt; since = now(); lvNote(id, txt); };
+    var stop = function (msg) { clearInterval(tick); lvNote(id, msg); };
+    var pctOf = function (n) { return Math.round(n * 100 / file.size); };
+    var finish = function (fid) {
+      clearInterval(tick); lsDel(SK);
+      var dd = rdDocs[id]; if (!dd) { gasCall({ f: 'del', id: fid }, function () {}); return; }
+      dd.lv.drive = fid; rdSaveLocal();
+      if (KEY) { var b = {}; b['reader/' + id + '/lv/drive'] = fid; api('PATCH', '', b, function () {}); }
+      delete lvUp[id];
+      lvNote(id, '🎞 動画をドライブに送りました。ほかの端末でも見られます。');
+      setTimeout(function () { var bn = $('mk-banner'); if (bn && /🎞/.test(bn.textContent)) bn.className = 'hidden'; }, 5000);
+    };
+    var up = null;
+    // ドライブが受け取った量を確かめて、続きを送る
+    var check = function () {
+      if (!rdDocs[id]) { clearInterval(tick); return; }
+      gasCall({ f: 'ups', up: up, total: file.size }, function (st, e) {
+        if (!rdDocs[id]) { clearInterval(tick); return; }
+        if (!st) { if (++fails > 6) { stop('動画をドライブに送れませんでした（Apps Script につながりません）。英文を開き直すと続きから送ります。'); return; } showStep('🎞 動画をドライブに送っています…（つながらないので少し待ってやり直しています ' + (fails + 1) + ' 回目）'); setTimeout(check, Math.min(60000, 4000 * fails)); return; }
+        if (!st.ok) {
+          if (/expired/.test(String(st.error)) && !restarted) { restarted = true; lsDel(SK); saved = null; begin(); return; }
+          stop('動画をドライブに送れませんでした（' + String(st.error).slice(0, 100) + '）。英文を開き直すと送り直せます。'); return;
+        }
+        if (st.done) { finish(st.id); return; }
+        var got = st.got || 0;
+        if (got <= got0) { if (++fails > 6) { stop('動画をドライブに送れませんでした（' + pctOf(got) + '% から先が届きません）。英文を開き直すと続きから送ります。'); return; } }
+        else fails = 0;
+        if (got0 < 0) { t0 = now(); off0 = got; }
+        got0 = got;
+        lsSet(SK, JSON.stringify({ v: 2, up: up, off: got, size: file.size, at: (saved && saved.at) || now() })); saved = lsJSON(SK, null);
+        send(got);
+      });
+    };
+    var send = function (off) {
+      var blob = file.slice(off, Math.min(file.size, off + UP)), fr = new FileReader();
+      var el = off > off0 && now() > t0 ? (now() - t0) / Math.max(1, off - off0) * (file.size - off) / 1000 : 0;
+      showStep('🎞 動画をドライブに送っています… ' + pctOf(off) + '%' + (fails ? '（届かなかったので、もう一度）' : el > 5 ? '（残り約 ' + (el > 90 ? Math.round(el / 60) + ' 分' : Math.round(el) + ' 秒') + '）' : '') + '（この画面を閉じないでください）');
+      fr.onerror = function () { stop('動画を読めませんでした。'); };
+      fr.onload = function () { gasPostBlind({ act: 'upc', up: up, off: off, total: file.size, type: type, data: ab2b64(fr.result) }, check); };
+      fr.readAsArrayBuffer(blob);
+    };
+    var begin = function () {
+      showStep('🎞 動画をドライブに送っています…（準備中：Apps Script に問い合わせ中）');
+      gasCall({ f: 'up0', name: '🎞 ' + d.lv.name, type: type, size: file.size }, function (r, e) {
+        if (r && r.ok && r.up && r.v === 2) { up = r.up; lsSet(SK, JSON.stringify({ v: 2, up: up, off: 0, size: file.size, at: now() })); saved = lsJSON(SK, null); got0 = -1; send(0); return; }
+        clearInterval(tick);
+        if (r && !r.ok && /notshared|act/.test(String(r.error))) { lvUploadOld(id, file); return; }   // Apps Script が古い：今までの送り方
+        lvNote(id, '動画をドライブに送れませんでした（' + (r ? String(r.error).slice(0, 100) : trErrText(e)) + '）。英文を開き直すと送り直せます。');
+      });
+    };
+    if (saved && saved.v === 2 && saved.up) { up = saved.up; showStep('🎞 動画をドライブに送っています…（前回の続きを確かめています）'); check(); }
+    else begin();
+  }
+  function lvUploadOld(id, file) {
     var d = rdDocs[id]; if (!d || !d.lv) return;
     if (!gasUrl) { lvNote(id, 'ドライブに送るには「⚙ 翻訳の設定」が必要です（この端末では見られます）。'); return; }
     var UP = 2 * 1024 * 1024, type = d.lv.type, t0 = now(), SK = 'memo_lvup_' + id;
@@ -6144,6 +6213,8 @@
     "      out = { ok: true, names: voiceNames() };",
     "    } else if (p.page) {",
     "      out = fetchPage(String(p.page));",
+    "    } else if (p.f === \"up0\" || p.f === \"ups\") {",
+    "      out = upAct(p);",
     "    } else if (p.f) {",
     "      out = fileAct(String(p.f), String(p.id || \"\").replace(/[^A-Za-z0-9_-]/g, \"\"), Number(p.part) || 0);",
     "    } else if (p.yt) {",
@@ -6314,6 +6385,29 @@
     "  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);",
     "}",
     "// 受け取る（3MB ずつ）・リンクを作る・削除する",
+    "// 動画を送る準備（up0）と、ドライブが受け取った量の確認（ups）",
+    "function upAct(p) {",
+    "  var cache = CacheService.getScriptCache();",
+    "  if (p.f === \"up0\") {",
+    "    var res = UrlFetchApp.fetch(\"https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id\", {",
+    "      method: \"post\", contentType: \"application/json; charset=UTF-8\", muteHttpExceptions: true,",
+    "      headers: { Authorization: \"Bearer \" + ScriptApp.getOAuthToken(), \"X-Upload-Content-Type\": p.type || \"application/octet-stream\", \"X-Upload-Content-Length\": String(p.size) },",
+    "      payload: JSON.stringify({ name: String(p.name || \"file\").slice(0, 200), parents: [shareFolder().getId()] })",
+    "    });",
+    "    var h = res.getHeaders(), loc = h[\"Location\"] || h[\"location\"];",
+    "    if (!loc) throw new Error(\"upload start \" + res.getResponseCode() + \" \" + res.getContentText().slice(0, 200));",
+    "    var up = Utilities.getUuid();",
+    "    cache.put(\"up_\" + up, loc, 21600);",
+    "    return { ok: true, up: up, v: 2 };",
+    "  }",
+    "  var loc2 = cache.get(\"up_\" + p.up);",
+    "  if (!loc2) return { ok: false, error: \"upload expired\" };",
+    "  var r = UrlFetchApp.fetch(loc2, { method: \"put\", muteHttpExceptions: true, headers: { \"Content-Range\": \"bytes */\" + p.total } });",
+    "  var code = r.getResponseCode();",
+    "  if (code === 200 || code === 201) return { ok: true, done: true, id: JSON.parse(r.getContentText()).id };",
+    "  if (code === 308) { var hh = r.getHeaders(), rg = hh[\"Range\"] || hh[\"range\"]; return { ok: true, done: false, got: rg ? Number(String(rg).split(\"-\")[1]) + 1 : 0 }; }",
+    "  return { ok: false, error: \"upload status \" + code };",
+    "}",
     "function fileAct(act, id, part) {",
     "  if (!id || !inShare(id)) return { ok: false, error: \"notshared\" };",
     "  var f = DriveApp.getFileById(id);",
