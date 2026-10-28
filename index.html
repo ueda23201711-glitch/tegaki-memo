@@ -7025,5 +7025,124 @@
   window.__memo = { shrink: shrinkImage, exif: exifOrientation, state: function () { return { key: KEY, index: index, dirty: dirty, cur: cur, pageIdx: pageIdx, pg: pg, selectedId: selectedId, undo: undoStack.length, redo: redoStack.length, pending: imgPending, penOnly: penOnly }; } };
 })();
 </script>
+<script>
+/* ===================== スワイプで戻る =====================
+   ・画面を開くたびに履歴を1つ積むので、iPhone（Safari）の左端スワイプや Android の「戻る」で一覧などに戻れる
+   ・ホーム画面から開いた iPhone/iPad には戻るスワイプがないため、左端からの右スワイプを自前で判定する
+   ・どこへ戻るかは、いま見えている「← 戻る」系のボタンを押すのと同じ（保存などの処理もそのまま通る）
+   ・iOS 9（iPad 2/3）でも動くよう ES5 だけで書いています */
+(function () {
+  'use strict';
+  // 上から順に、見えている最初のものを「戻る」として押す
+  var TARGETS = ["#pop-close", "#fl-exit", "#fl-close", "#read-close", "#sel-cancel", "#btn-back", "#btn-rd-back", "#btn-clip-back", "#btn-settings-back", "#fb-path a"];
+  // これらが開いている間は何もしない（入力中のダイアログなどを勝手に閉じない）
+  var BLOCK = ["busy", "photo-dlg", "more-dlg", "export-dlg", "color-pop", "text-dlg", "scanner", "move-dlg", "gas-dlg", "pl-ov"];
+  var CANVAS = "cv-live";          // 手書きの画面：左端から始まった指は線を引かずにスワイプに使う
+  var EDGE = 24, MIN_DX = 60;       // 左端からこの幅で触れ始め、右へこれ以上動かしたら戻る
+
+  function $(id) { return document.getElementById(id); }
+  function hidden(el) {
+    var c = typeof el.className === 'string' ? el.className : '';
+    return /(^|\s)hidden(\s|$)/.test(c) || (el.style && el.style.display === 'none');
+  }
+  function vis(el) {
+    for (; el && el.nodeType === 1 && el !== document.body; el = el.parentNode) if (hidden(el)) return false;
+    return !!el && el.nodeType === 1;
+  }
+  function blocked() {
+    for (var i = 0; i < BLOCK.length; i++) { var b = $(BLOCK[i]); if (b && vis(b)) return true; }
+    return false;
+  }
+  function target() {
+    for (var i = 0; i < TARGETS.length; i++) {
+      var b = document.querySelector(TARGETS[i]);
+      if (b && vis(b)) return b;
+    }
+    return null;
+  }
+  function goBack() {
+    if (blocked()) return false;
+    var t = target(); if (!t) return false;
+    t.click(); return true;
+  }
+
+  /* ---- 履歴（ブラウザの「戻る」・Safari の戻るスワイプ・Android の戻る操作） ---- */
+  var H = window.history, canHist = !!(H && H.pushState);
+  var pushed = false, skip = 0, ready = false, timer = 0;
+  function sync() {
+    timer = 0;
+    if (!canHist || blocked()) return;
+    var need = !!target();
+    if (need && !pushed) { try { H.pushState({ swipeBack: 1 }, ''); pushed = true; } catch (e) {} }
+    else if (!need && pushed) { pushed = false; skip++; try { H.back(); } catch (e) { skip--; } }
+  }
+  function later() { if (!timer) timer = setTimeout(sync, 60); }
+  if (canHist) {
+    window.addEventListener('popstate', function () {
+      if (!ready) return;                    // 古い Safari は読み込み時にも popstate が来る
+      if (skip) { skip--; return; }          // 画面の「← 戻る」で閉じたあと、積んだ履歴を戻しただけ
+      pushed = false;
+      goBack();
+      later();                               // まだ戻れる画面なら、もう一度積む
+    }, false);
+    var MO = window.MutationObserver || window.WebKitMutationObserver;
+    if (MO) new MO(later).observe(document.body, { attributes: true, attributeFilter: ['class', 'style'], childList: true, subtree: true });
+    else setInterval(sync, 500);
+    setTimeout(function () { ready = true; sync(); }, 800);
+  }
+
+  /* ---- ホーム画面から開いた iPhone/iPad：左端からの右スワイプ ---- */
+  if (window.navigator.standalone !== true) return;
+  var tr = null, hint = null;
+  function onCanvas(el) { return CANVAS && el && el.id === CANVAS; }
+  function showHint(dx) {
+    if (!hint) {
+      hint = document.createElement('div');
+      hint.setAttribute('aria-hidden', 'true');
+      hint.style.cssText = 'position:fixed;left:0;top:50%;width:40px;height:40px;margin-top:-20px;border-radius:50%;'
+        + 'background:rgba(36,54,63,.7);color:#fff;font:bold 26px/38px sans-serif;text-align:center;z-index:9999;pointer-events:none;';
+      hint.textContent = '‹';
+      document.body.appendChild(hint);
+    }
+    var x = Math.min(dx, MIN_DX * 1.4) * 0.8 - 44;
+    hint.style.display = 'block';
+    hint.style.opacity = dx >= MIN_DX ? '1' : '0.5';
+    hint.style.webkitTransform = hint.style.transform = 'translateX(' + x + 'px)';
+  }
+  function hideHint() { if (hint) hint.style.display = 'none'; }
+
+  if (window.PointerEvent) {
+    // 手書きの画面で左端から触れた指は、線を引く処理に渡さない（Pencil はそのまま書ける）
+    window.addEventListener('pointerdown', function (e) {
+      if (e.pointerType === 'touch' && e.clientX <= EDGE && onCanvas(e.target) && target() && !blocked()) e.stopPropagation();
+    }, true);
+  }
+  window.addEventListener('touchstart', function (e) {
+    tr = null;
+    if (e.touches.length !== 1) return;
+    var t = e.touches[0];
+    if (t.touchType === 'stylus' || t.clientX > EDGE) return;
+    if (!target() || blocked()) return;
+    tr = { x: t.clientX, y: t.clientY, t: new Date().getTime() };
+    if (!window.PointerEvent && onCanvas(e.target)) e.stopPropagation();   // iOS 9：タッチで線を引いているため
+  }, true);
+  window.addEventListener('touchmove', function (e) {
+    if (!tr) return;
+    if (e.touches.length !== 1) { tr = null; hideHint(); return; }
+    var t = e.touches[0], dx = t.clientX - tr.x, dy = t.clientY - tr.y;
+    if (Math.abs(dy) > 30 && Math.abs(dy) > dx) { tr = null; hideHint(); return; }   // 縦のスクロール
+    if (dx > 8) showHint(dx);
+  }, true);
+  function end(e) {
+    if (!tr) return;
+    var t = e.changedTouches && e.changedTouches[0], s = tr; tr = null; hideHint();
+    if (!t || e.type === 'touchcancel') return;
+    var dx = t.clientX - s.x, dy = t.clientY - s.y;
+    if (dx >= MIN_DX && Math.abs(dy) < dx * 0.7 && new Date().getTime() - s.t < 1200) goBack();
+  }
+  window.addEventListener('touchend', end, true);
+  window.addEventListener('touchcancel', end, true);
+})();
+</script>
 </body>
 </html>
