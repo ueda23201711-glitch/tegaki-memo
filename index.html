@@ -7060,9 +7060,15 @@
     }
     return null;
   }
+  // ホーム画面版の iPhone では、自前のスワイプと iOS の戻るスワイプが両方届くことがある。
+  // 1回のスワイプで2つ戻らないよう、戻った直後の2回目は無視する
+  var lastBack = 0;
   function goBack() {
+    var n = new Date().getTime();
+    if (n - lastBack < 700) return false;
     if (blocked()) return false;
     var t = target(); if (!t) return false;
+    lastBack = n;
     t.click(); return true;
   }
 
