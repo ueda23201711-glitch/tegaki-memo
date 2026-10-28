@@ -3799,6 +3799,10 @@
           var d = au.duration; if (!d || !isFinite(d)) return;
           if (!seeked) { seekNow(); return; }
           var f = au.currentTime / d, tot = ch.text.length, acc = 0;
+          if (!one && abB >= 0 && ch.b > abB && abB >= ch.a) {   // B の文を読み終えたら A へ
+            var endAt = 0; for (var q3 = ch.a; q3 <= abB; q3++) endAt += rdSents[q3].text.length + 1;
+            if (f >= (endAt - 1) / tot) { if (done) return; done = true; au.ontimeupdate = null; try { au.pause(); } catch (e) {} gmPlayFrom(abA); return; }
+          }
           for (var q2 = ch.a; q2 <= ch.b; q2++) { acc += rdSents[q2].text.length + 1; if (acc / tot >= f) { q2 = Math.max(q2, st0); if (rdIdx !== q2) markSentence(q2); break; } }
         };
         au.src = r.src; gmRate();
