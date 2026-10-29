@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="字幕プレイヤー">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-v2-180.png">
+<link rel="icon" href="icons/favicon-v2-32.png">
+<title>字幕プレイヤー</title>
+<!--
+  字幕プレイヤー（英文リーダーの「🎞 手元の動画と字幕」を、画面いっぱいに大きな英日字幕で見る）
+  ・データは英文リーダーと共通：Firebase の memos/合言葉/reader（英語の字幕 cues・日本語訳 tr・ドライブの動画 lv.drive）
+  ・動画は「この端末に保存してある動画」（英文リーダーと同じ IndexedDB eibun-video）を先に使い、なければドライブから再生
+  ・ドライブのリンクは英文リーダーと同じ Apps Script（f=link）で作る
+  ・このアプリはデータを読むだけで、英文リーダーのデータは書き換えない
+-->
+<style>
+  :root { --bg:#0b0f12; --panel:#151c21; --line:#26313a; --tx:#eef3f6; --sub:#93a3ad; --acc:#4fb3d9; --ja:#ffe08a; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--tx); font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif; -webkit-text-size-adjust:100%; }
+  body { overscroll-behavior:none; }
+  button { font:inherit; color:inherit; border:0; background:none; cursor:pointer; -webkit-appearance:none; touch-action:manipulation; }
+  .hidden { display:none !important; }
+
+  /* ---- 一覧 ---- */
+  #home { min-height:100%; padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  .hbar { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:8px; padding:12px 14px; background:rgba(11,15,18,.92); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); border-bottom:1px solid var(--line); }
+  .hbar h1 { flex:1; margin:0; font-size:19px; font-weight:700; letter-spacing:.02em; }
+  .hbtn { padding:8px 12px; border-radius:10px; background:#1d262d; font-size:15px; }
+  .wrap { max-width:760px; margin:0 auto; padding:12px 12px 40px; }
+  .note { color:var(--sub); font-size:14px; line-height:1.6; }
+  #hmsg { margin:6px 2px 10px; }
+  .item { display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:14px; margin-bottom:10px; border-radius:14px; background:var(--panel); border:1px solid var(--line); }
+  .item:active { background:#1b252c; }
+  .item .ic { flex:none; width:44px; height:44px; border-radius:11px; background:#0e3446; display:flex; align-items:center; justify-content:center; font-size:20px; }
+  .item .tx { flex:1; min-width:0; }
+  .item .t { font-size:16px; font-weight:600; line-height:1.4; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .item .s { margin-top:4px; color:var(--sub); font-size:13px; }
+  .item .go { flex:none; color:var(--acc); font-size:22px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:12px; }
+  .card h2 { margin:0 0 8px; font-size:16px; }
+  .card input[type=text] { width:100%; font:inherit; font-size:17px; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:#0b1013; color:var(--tx); letter-spacing:.04em; }
+  .pbtn { margin-top:10px; padding:11px 16px; border-radius:10px; background:var(--acc); color:#04161e; font-weight:700; font-size:16px; }
+  .or { margin:14px 0 6px; color:var(--sub); font-size:14px; }
+  .code-in { text-transform:uppercase; font-family:Menlo,"Courier New",monospace !important; font-size:24px !important; letter-spacing:4px !important; text-align:center; }
+  details { margin-top:14px; } details summary { color:var(--sub); font-size:14px; cursor:pointer; }
+  #scanner { position:fixed; left:0; top:0; right:0; bottom:0; background:#000; z-index:50; }
+  #scanner video { position:absolute; left:0; top:0; width:100%; height:100%; object-fit:cover; }
+  #scanner .frame { position:absolute; left:50%; top:45%; width:240px; height:240px; margin:-120px 0 0 -120px; border:3px solid rgba(255,255,255,.9); border-radius:18px; box-shadow:0 0 0 2000px rgba(0,0,0,.45); }
+  #scanner .scan-ui { position:absolute; left:0; right:0; bottom:0; padding:20px 20px calc(env(safe-area-inset-bottom) + 30px); text-align:center; color:#fff; }
+  #scanner .scan-ui p { margin:0 0 14px; line-height:1.6; }
+  #scanner .scan-ui button { background:#fff; color:#1f2a30; padding:12px 28px; border-radius:10px; font-size:16px; }
+  .sbtn { margin:8px 8px 0 0; padding:9px 12px; border-radius:10px; background:#1d262d; font-size:15px; }
+
+  /* ---- 再生画面（画面いっぱい） ---- */
+  #stage { position:fixed; left:0; top:0; right:0; bottom:0; background:#000; overflow:hidden; touch-action:manipulation; -webkit-user-select:none; user-select:none; z-index:10; }
+  #ytbox { position:absolute; background:#000; }
+  #ytbox iframe, #ytp { position:absolute; left:0; top:0; width:100%; height:100%; border:0; }
+  #ytshield { position:absolute; left:0; top:0; right:0; bottom:0; }
+  #ytshield.pass { pointer-events:none; }
+  #vid { position:absolute; background:#000; object-fit:contain; display:block; }
+  #cap { position:absolute; text-align:center; pointer-events:none; display:flex; flex-direction:column; align-items:center; }
+  #cap.sep { justify-content:flex-start; }
+  #cap.over { justify-content:flex-end; transition:bottom .2s; }
+  #capin { max-width:100%; }
+  #cap .en, #cap .ja { display:block; margin:0 auto; line-height:1.32; word-wrap:break-word; overflow-wrap:break-word; }
+  #cap .en { color:#fff; font-weight:600; }
+  #cap .ja { color:var(--ja); margin-top:.35em; }
+  #cap.over .en, #cap.over .ja { display:inline; padding:.06em .3em; background:rgba(0,0,0,.72); -webkit-box-decoration-break:clone; box-decoration-break:clone; border-radius:.2em; text-shadow:0 1px 2px #000; }
+  #cap.over .br { display:block; height:.3em; }
+  #cap.sep .en, #cap.sep .ja { text-shadow:none; }
+  #msg { white-space:pre-line; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:min(86%,520px); text-align:center; font-size:15px; line-height:1.6; color:#dfe7eb; background:rgba(20,28,33,.92); border-radius:14px; padding:16px; z-index:3; }
+  #msg a { color:var(--acc); }
+  #msg button { display:inline-block; margin:12px 6px 0; padding:10px 16px; border-radius:10px; background:var(--acc); color:#04161e; font-weight:700; font-size:15px; }
+  #msg button.sub { background:#2a363e; color:#fff; }
+  #toast { position:absolute; left:50%; transform:translateX(-50%); top:calc(env(safe-area-inset-top) + 64px); background:rgba(20,28,33,.92); color:#fff; border-radius:20px; padding:8px 14px; font-size:14px; z-index:4; white-space:nowrap; pointer-events:none; opacity:0; transition:opacity .25s; }
+  #toast.on { opacity:1; }
+  #b-unmute { position:absolute; left:50%; transform:translateX(-50%); top:calc(env(safe-area-inset-top) + 64px); z-index:5; padding:12px 18px; border-radius:24px; background:var(--acc); color:#04161e; font-weight:700; font-size:15px; white-space:nowrap; box-shadow:0 4px 16px rgba(0,0,0,.5); }
+
+  #ui { position:absolute; left:0; top:0; right:0; bottom:0; z-index:2; opacity:1; transition:opacity .25s; }
+  #ui.off { opacity:0; pointer-events:none; }
+  #ui .shade-t { position:absolute; left:0; right:0; top:0; height:110px; background:linear-gradient(rgba(0,0,0,.7),rgba(0,0,0,0)); pointer-events:none; }
+  #ui .shade-b { position:absolute; left:0; right:0; bottom:0; height:150px; background:linear-gradient(rgba(0,0,0,0),rgba(0,0,0,.75)); pointer-events:none; }
+  .ut { position:absolute; left:0; right:0; top:0; display:flex; align-items:center; gap:6px; padding:calc(env(safe-area-inset-top) + 6px) calc(env(safe-area-inset-right) + 8px) 6px calc(env(safe-area-inset-left) + 8px); }
+  .ut #ttl { flex:1; min-width:0; font-size:15px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-shadow:0 1px 3px #000; }
+  .ib { min-width:44px; height:44px; padding:0 10px; border-radius:22px; background:rgba(30,40,46,.72); font-size:16px; display:inline-flex; align-items:center; justify-content:center; white-space:nowrap; }
+  #b-rd { font-size:14px; }
+  a.ib { color:inherit; text-decoration:none; font-size:14px; }
+  .ib.on { background:var(--acc); color:#04161e; font-weight:700; }
+  .um { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); display:flex; align-items:center; gap:26px; }
+  .um .ib { width:58px; height:58px; border-radius:29px; font-size:22px; padding:0; }
+  .um #pp { width:76px; height:76px; border-radius:38px; font-size:30px; background:rgba(255,255,255,.9); color:#000; }
+  .ub { position:absolute; left:0; right:0; bottom:0; padding:0 calc(env(safe-area-inset-right) + 10px) calc(env(safe-area-inset-bottom) + 8px) calc(env(safe-area-inset-left) + 10px); }
+  .seekrow { display:flex; align-items:center; gap:10px; font-size:13px; font-variant-numeric:tabular-nums; text-shadow:0 1px 2px #000; }
+  #seek { flex:1; height:30px; margin:0; accent-color:var(--acc); }
+  .btns { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:4px; }
+  .btns .ib { height:40px; font-size:14px; }
+  #sn { min-width:56px; text-align:right; }
+</style>
+</head>
+<body>
+
+<!-- 一覧 -->
+<div id="home">
+  <div class="hbar"><button id="b-home-rd" class="hbtn hidden" type="button">‹ 英文リーダー</button><h1>🎬 字幕プレイヤー</h1><button id="b-re" class="hbtn" type="button">↻</button><button id="b-set" class="hbtn" type="button">⚙</button></div>
+  <div class="wrap">
+    <div id="setup" class="card hidden">
+      <h2>合言葉を入れてください</h2>
+      <p class="note">英文リーダーと同じ合言葉を使います。使っている端末の英文リーダーで「⚙ 翻訳の設定」を開き、出ている QR を読み取るか、「ペアリングコードを表示」で出た8文字を入力してください。</p>
+      <div id="scan-only" class="hidden">
+        <button id="scan-go" class="pbtn" type="button">📷 QRコードを読み取る</button>
+        <div class="or">または、ペアリングコード（8文字）を入力：</div>
+      </div>
+      <input id="code-in" class="code-in" type="text" maxlength="9" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="XXXX-XXXX">
+      <button id="code-go" class="pbtn" type="button">コードで設定する</button>
+      <p id="key-msg" class="note"></p>
+      <details>
+        <summary>合言葉（32文字）を直接入力する</summary>
+        <input id="key-in" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="xxxx-xxxx-xxxx-xxxx-xxxx-xxxx-xxxx-xxxx">
+        <button id="key-go" class="sbtn" type="button">この合言葉を使う</button>
+      </details>
+    </div>
+    <div id="sets" class="card hidden">
+      <h2>設定</h2>
+      <p class="note">合言葉：<span id="key-show"></span></p>
+      <button id="key-chg" class="sbtn" type="button">合言葉を入れ直す</button>
+      <h2 style="margin-top:18px">ドライブの動画をそのまま再生（APIキー）</h2>
+      <p class="note">Google ドライブ API のキーを入れると、取り込まずにドライブから直接再生できるようになります（ほかの端末にも届きます）。</p>
+      <input id="dk-in" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="AIza…">
+      <button id="dk-go" class="sbtn" type="button">保存する</button> <span id="dk-msg" class="note"></span>
+      <span id="pl-slot" data-cls="sbtn"></span>
+      <p class="note">ホーム画面に追加すると、Safari のバーが消えて画面いっぱいで見られます（共有ボタン →「ホーム画面に追加」）。</p>
+      <p class="note">再生中の操作：画面をタップでボタンの表示／非表示。左右のはしをダブルタップで前の文・次の文、まん中をダブルタップで再生／一時停止。キーボードでは スペース＝再生／一時停止、←→＝前の文・次の文、↑↓＝字幕の大きさ、R＝この文をくり返す。</p>
+    </div>
+    <p id="hmsg" class="note"></p>
+    <div id="list"></div>
+  </div>
+</div>
+
+<!-- QR 読み取り -->
+<div id="scanner" class="hidden">
+  <video id="scan-video" playsinline muted autoplay></video>
+  <div class="frame"></div>
+  <div class="scan-ui"><p id="scan-msg"></p><button id="scan-cancel" type="button">やめる</button></div>
+</div>
+
+<!-- 再生画面 -->
+<div id="stage" class="hidden">
+  <video id="vid" playsinline webkit-playsinline preload="auto"></video>
+  <div id="ytbox" class="hidden"><div id="ytp"></div><div id="ytshield"></div></div>
+  <div id="cap"><div id="capin"></div></div>
+  <div id="ui">
+    <div class="shade-t"></div><div class="shade-b"></div>
+    <div class="ut"><button id="b-back" class="ib" type="button">‹ 一覧</button><div id="ttl"></div><button id="b-rd" class="ib" type="button" title="英文リーダーで、この場面の英文を開く">📖 リーダー</button><a id="b-src" class="ib hidden" target="_blank" rel="noopener" title="元の動画を開く">🔗 元の動画</a><button id="b-fs" class="ib hidden" type="button" title="全画面">⛶</button></div>
+    <div id="um" class="um"><button id="b-prev" class="ib" type="button" title="前の文">⏮</button><button id="pp" class="ib" type="button" title="再生／一時停止">▶</button><button id="b-next" class="ib" type="button" title="次の文">⏭</button></div>
+    <div class="ub">
+      <div class="seekrow"><span id="tc">0:00</span><input id="seek" type="range" min="0" max="1000" step="1" value="0"><span id="td">0:00</span><span id="sn"></span></div>
+      <div class="btns">
+        <button id="b-mode" class="ib" type="button" title="字幕">英＋日</button>
+        <button id="b-rep" class="ib" type="button" title="この文をくり返す">🔁</button>
+        <button id="b-spd" class="ib" type="button" title="速さ">1.0×</button>
+        <button id="b-sm" class="ib" type="button" title="字幕を小さく">A−</button>
+        <button id="b-bg" class="ib" type="button" title="字幕を大きく">A＋</button>
+        <button id="b-sw" class="ib hidden" type="button" title="動画の読み込み元（この端末／ドライブ）を切り替える">📱 端末</button>
+        <button id="b-pos" class="ib" type="button" title="字幕の位置（自動＝縦画面では動画の下に分ける）">⇕ 自動</button>
+      </div>
+    </div>
+  </div>
+  <div id="toast"></div>
+  <button id="b-unmute" class="hidden" type="button">🔇 音を消して再生中 ― タップで音を出す</button>
+  <div id="msg" class="hidden"></div>
+</div>
+
+<script>
+/* どのアプリの英文を見るか（英文リーダー／手書きメモの英文リーダー）。build-reader-copy.sh がアプリごとに書き換える */
+var EP_CFG = { key: 'memo_key', gas: 'memo_gas', cache: 'memo_reader', idb: 'memo-video', jump: 'memo_jump', reader: 'https://ueda23201711-glitch.github.io/tegaki-memo/', inApp: /\/tegaki-memo\//, name: '手書きメモ' };
+</script>
+<script>
+(function () {
+  'use strict';
+  var C = window.EP_CFG;
+  var DB_URL = 'https://kiku990-a838d-default-rtdb.asia-southeast1.firebasedatabase.app';
+  var READER_URL = C.reader;
+  // 英文リーダーの中（/eibun-reader/player.html）で開いているとき：リーダーと同じアプリの中で行き来する（取り込んだ動画・合言葉も共通）
+  var IN_RD = C.inApp.test(location.pathname);
+
+  function $(id) { return document.getElementById(id); }
+  function on(e, ev, fn) { e.addEventListener(ev, fn, false); }
+  function each(a, f) { for (var i = 0; i < a.length; i++) f(a[i], i); }
+  function now() { return new Date().getTime(); }
+  function lsGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { window.localStorage.setItem(k, v); } catch (e) {} }
+  function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt !== undefined) e.textContent = txt; return e; }
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function fmt(t) { t = Math.max(0, Math.floor(t || 0)); var h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = t % 60; return (h ? h + ':' + pad2(m) : m) + ':' + pad2(s); }
+  function cleanTitle(t) { return String(t || '').replace(/^(🎞|🎬)\s*/, '') || '（無題）'; }
+  // 元の動画のページ（英文リーダーで入れたリンク。YouTube はその動画のページ）
+  function srcUrl(d, t) {
+    if (!d) return '';
+    if (d.yt) return 'https://www.youtube.com/watch?v=' + d.yt + (t > 5 ? '&t=' + Math.floor(t) + 's' : '');
+    return /^https?:\/\//.test(d.src || '') ? d.src : '';
+  }
+  function hostOf(u) { var m = /^https?:\/\/(?:www\.|m\.)?([^\/?#]+)/.exec(u || ''); return m ? m[1] : ''; }
+
+  /* ===================== 合言葉・設定 ===================== */
+  // 合言葉は英文リーダーと同じ場所（localStorage の eibun_key）。同じ github.io なので、Safari ならそのまま使える
+  function normKey(s) {
+    var t = String(s || ''), m = t.match(/[#&?]k=([A-Za-z0-9-]+)/); if (m) t = m[1];
+    var raw = t.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return raw.length === 32 ? raw.replace(/(.{4})(?!$)/g, '$1-') : null;
+  }
+  var KEY = lsGet(C.key) || '';
+  var hk = /[#&]d=/.test(location.hash) ? null : normKey(location.hash); if (hk) { KEY = hk; lsSet(C.key, hk); try { history.replaceState(null, '', location.pathname); } catch (e) {} }
+  var gasUrl = lsGet(C.gas) || '';
+  var driveKey = lsGet('ep_dkey') || '';   // Google ドライブ API のキー（memos/合言葉/settings/drivekey にも保存）
+  var pref = { mode: lsGet('ep_mode') || 'both', size: Number(lsGet('ep_size') || 1), pos: lsGet('ep_pos') || 'auto', rate: Number(lsGet('ep_rate') || 1) };
+  function savePref() { lsSet('ep_mode', pref.mode); lsSet('ep_size', String(pref.size)); lsSet('ep_pos', pref.pos); lsSet('ep_rate', String(pref.rate)); }
+
+  /* ===================== 通信 ===================== */
+  function api(path, cb) {
+    var x = new XMLHttpRequest();
+    try { x.open('GET', DB_URL + '/memos/' + KEY + path + '.json', true); } catch (e) { cb('net'); return; }
+    x.timeout = 30000;
+    x.onreadystatechange = function () {
+      if (x.readyState !== 4) return;
+      var d = null; try { d = JSON.parse(x.responseText); } catch (e) {}
+      cb(x.status >= 200 && x.status < 300 ? null : (x.status || 'net'), d);
+    };
+    try { x.send(); } catch (e) { cb('net'); }
+  }
+  var jsonpN = 0;
+  function gasCall(params, cb) {
+    if (!gasUrl) { cb(null, 'nourl'); return; }
+    var q = []; for (var k in params) q.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
+    var url = gasUrl + (gasUrl.indexOf('?') >= 0 ? '&' : '?') + q.join('&'), done = false;
+    var jsonp = function () {
+      var name = '__ep' + (++jsonpN) + '_' + now(), sc = document.createElement('script'), fin = false;
+      var end = function (d, e) { if (fin) return; fin = true; try { delete window[name]; } catch (er) { window[name] = undefined; } if (sc.parentNode) sc.parentNode.removeChild(sc); cb(d, e); };
+      window[name] = function (d) { end(d, null); };
+      sc.onerror = function () { end(null, 'net'); };
+      setTimeout(function () { end(null, 'timeout'); }, 45000);
+      sc.src = url + '&callback=' + name; document.head.appendChild(sc);
+    };
+    var x = new XMLHttpRequest();
+    try { x.open('GET', url, true); } catch (e) { jsonp(); return; }
+    x.timeout = 45000;
+    x.onreadystatechange = function () {
+      if (x.readyState !== 4 || done) return; done = true;
+      var d = null; if (x.status === 200) { try { d = JSON.parse(x.responseText); } catch (e) {} }
+      if (d) cb(d, null); else jsonp();
+    };
+    x.ontimeout = function () { if (done) return; done = true; jsonp(); };
+    try { x.send(); } catch (e) { if (!done) { done = true; jsonp(); } }
+  }
+
+  /* ===================== この端末の動画（英文リーダーと同じ IndexedDB） ===================== */
+  var idb = null, have = {};
+  function openIdb(cb) {
+    if (idb) { cb(idb); return; }
+    if (!window.indexedDB) { cb(null); return; }
+    try {
+      var rq = indexedDB.open(C.idb, 1);
+      rq.onupgradeneeded = function () { try { rq.result.createObjectStore('v'); } catch (e) {} };
+      rq.onsuccess = function () { idb = rq.result; cb(idb); };
+      rq.onerror = function () { cb(null); };
+    } catch (e) { cb(null); }
+  }
+  function idbKeys(cb) {
+    openIdb(function (db) {
+      if (!db) { cb({}); return; }
+      try {
+        var st = db.transaction('v', 'readonly').objectStore('v'); if (!st.getAllKeys) { cb({}); return; }
+        var rq = st.getAllKeys();
+        rq.onsuccess = function () { var h = {}; each(rq.result || [], function (k) { if (String(k).indexOf('#') < 0) h[k] = 1; }); cb(h); };
+        rq.onerror = function () { cb({}); };
+      } catch (e) { cb({}); }
+    });
+  }
+  function idbGet(id, cb) {
+    openIdb(function (db) {
+      if (!db) { cb(null); return; }
+      try { var rq = db.transaction('v', 'readonly').objectStore('v').get(id); rq.onsuccess = function () { cb(rq.result || null); }; rq.onerror = function () { cb(null); }; } catch (e) { cb(null); }
+    });
+  }
+
+  function idbPut(id, val, cb) {
+    openIdb(function (db) {
+      if (!db) { cb(false); return; }
+      try { var tx = db.transaction('v', 'readwrite'); tx.objectStore('v').put(val, id); tx.oncomplete = function () { cb(true); }; tx.onerror = tx.onabort = function () { cb(false); }; } catch (e) { cb(false); }
+    });
+  }
+  function idbDel(id) { openIdb(function (db) { if (!db) return; try { db.transaction('v', 'readwrite').objectStore('v')['delete'](id); } catch (e) {} }); }
+
+  /* ===================== 一覧 ===================== */
+  var docs = {};   // id → 英文リーダーのデータ（動画つきのものだけ）
+  function takeDocs(all) {
+    var out = {};
+    for (var id in all) { var d = all[id]; if (d && (d.lv || d.yt) && d.cues && d.cues.length) out[id] = d; }
+    return out;
+  }
+  function showSetup(on) { $('setup').className = on ? 'card' : 'card hidden'; if (on) { $('list').innerHTML = ''; $('hmsg').textContent = ''; } }
+  function loadList() {
+    if (!KEY) { showSetup(true); return; }
+    showSetup(false);
+    // まず英文リーダーがこの端末に残しているデータで、すぐに並べる（Safari で英文リーダーを使っているとき）
+    var local = null; try { local = JSON.parse(lsGet(C.cache) || 'null'); } catch (e) {}
+    if (local) { docs = takeDocs(local); render(); }
+    $('hmsg').textContent = '読み込んでいます…';
+    api('/reader', function (err, data) {
+      if (err) { $('hmsg').textContent = err === 401 || err === 403 ? '読み込めませんでした（合言葉を確かめてください）。' : '読み込めませんでした（電波を確かめて ↻ を押してください）。'; return; }
+      docs = takeDocs(data || {});
+      $('hmsg').textContent = '';
+      render();
+    });
+    api('/settings/gas', function (err, u) { if (!err && typeof u === 'string' && u) { gasUrl = u; lsSet(C.gas, u); } });
+    api('/settings/drivekey', function (err, u) { if (!err && typeof u === 'string') { driveKey = u; lsSet('ep_dkey', u); } });
+  }
+  function ids() { var a = []; for (var k in docs) a.push(k); a.sort(function (x, y) { return (docs[y].at || 0) - (docs[x].at || 0); }); return a; }
+  function render() {
+    idbKeys(function (h) {
+      have = h;
+      var box = $('list'), list = ids(); box.innerHTML = '';
+      if (!list.length) {
+        $('hmsg').textContent = $('hmsg').textContent || '動画つきの英文がまだありません。英文リーダーで YouTube のアドレスを入れるか、「🎞 手元の動画と字幕で読む」で動画と字幕（.srt）を入れてください。';
+        return;
+      }
+      each(list, function (id) {
+        var d = docs[id], b = el('button', 'item'); b.type = 'button';
+        var ic = el('div', 'ic', d.yt ? '📺' : '🎬'), tx = el('div', 'tx'), go = el('div', 'go', '▶');
+        tx.appendChild(el('div', 't', cleanTitle(d.title)));
+        var s = [], last = d.cues[d.cues.length - 1][0];
+        s.push(d.yt ? '▶ YouTube' : have[id] ? '📱 この端末' : d.lv.drive ? '☁ ドライブ' : '⚠ 動画なし');
+        s.push(d.tr && d.tr.length ? '英＋日' : '英語のみ');
+        s.push('約 ' + fmt(last + 3));
+        var p = Number(lsGet('ep_at_' + id) || 0); if (p > 5) s.push('続き ' + fmt(p));
+        if (!d.yt && srcUrl(d)) s.push('🔗 ' + hostOf(srcUrl(d)));
+        tx.appendChild(el('div', 's', s.join('・')));
+        b.appendChild(ic); b.appendChild(tx); b.appendChild(go);
+        on(b, 'click', function () { openDoc(id); });
+        box.appendChild(b);
+      });
+    });
+  }
+  on($('b-re'), 'click', loadList);
+  on($('b-set'), 'click', function () { var s = $('sets'); s.className = s.className.indexOf('hidden') >= 0 ? 'card' : 'card hidden'; $('key-show').textContent = KEY ? KEY.slice(0, 4) + '-••••-…-' + KEY.slice(-4) : '（なし）'; $('dk-in').value = driveKey; $('dk-msg').textContent = ''; });
+  on($('dk-go'), 'click', function () {
+    var k = String($('dk-in').value || '').replace(/\s+/g, '');
+    if (k && !/^AIza[0-9A-Za-z_\-]{30,}$/.test(k)) { $('dk-msg').textContent = 'APIキーは「AIza」で始まる文字です。'; return; }
+    driveKey = k; lsSet('ep_dkey', k); $('dk-msg').textContent = '保存しています…';
+    var x = new XMLHttpRequest();
+    try {
+      x.open('PATCH', DB_URL + '/memos/' + KEY + '/settings.json', true); x.setRequestHeader('Content-Type', 'application/json');
+      x.onreadystatechange = function () { if (x.readyState === 4) $('dk-msg').textContent = x.status >= 200 && x.status < 300 ? (k ? '保存しました。' : '消しました。') : 'この端末にだけ保存しました。'; };
+      x.send(JSON.stringify({ drivekey: k || null }));
+    } catch (e) { $('dk-msg').textContent = 'この端末にだけ保存しました。'; }
+  });
+  on($('key-chg'), 'click', function () { $('sets').className = 'card hidden'; $('key-in').value = ''; showSetup(true); });
+  function useKey(k) {
+    KEY = k; lsSet(C.key, k); $('key-msg').textContent = ''; $('code-in').value = ''; $('key-in').value = '';
+    try { localStorage.removeItem(C.cache); } catch (e) {}
+    docs = {}; loadList();
+  }
+  on($('key-go'), 'click', function () {
+    var k = normKey($('key-in').value);
+    if (!k) { $('key-msg').textContent = '合言葉は 32 文字です（ハイフンはあってもなくても大丈夫）。'; return; }
+    useKey(k);
+  });
+
+  /* ---- ペアリングコード（英文リーダーの「ペアリングコードを表示」で出た8文字。5分・1回だけ） ---- */
+  function rawGet(path, cb) {
+    var x = new XMLHttpRequest();
+    try { x.open('GET', DB_URL + path + '.json', true); } catch (e) { cb(0); return; }
+    x.timeout = 20000;
+    x.onreadystatechange = function () { if (x.readyState !== 4) return; var d = null; try { d = JSON.parse(x.responseText); } catch (e) {} cb(x.status >= 200 && x.status < 300 ? null : (x.status || 0), d); };
+    try { x.send(); } catch (e) { cb(0); }
+  }
+  function rawDel(path) { try { var x = new XMLHttpRequest(); x.open('DELETE', DB_URL + path + '.json', true); x.send(); } catch (e) {} }
+  function redeemCode() {
+    var code = String($('code-in').value || '').toLowerCase().replace(/[^a-z0-9]/g, ''), m = $('key-msg');
+    if (code.length !== 8) { m.textContent = 'ペアリングコードは8文字です。もう一度確認してください。'; return; }
+    m.textContent = '確認中…';
+    rawGet('/pair/' + code, function (err, data) {
+      var k = data && data.k ? normKey(data.k) : null;
+      if (err !== null || !k) { m.textContent = err === 0 ? '接続できません。ネットワークを確認してください。' : 'コードが見つからないか、期限切れです。英文リーダーでもう一度表示してください。'; return; }
+      rawDel('/pair/' + code);   // 1回使ったら消す（英文リーダーと同じ）
+      useKey(k);
+    });
+  }
+  on($('code-go'), 'click', redeemCode);
+  on($('code-in'), 'keydown', function (e) { if (e.keyCode === 13) redeemCode(); });
+  on($('code-in'), 'input', function () { var c = $('code-in').value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8); $('code-in').value = c.length > 4 ? c.slice(0, 4) + '-' + c.slice(4) : c; });
+
+  /* ---- QR 読み取り（英文リーダーの「⚙ 翻訳の設定」の QR） ---- */
+  var canScan = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  if (canScan) $('scan-only').className = '';
+  var scan = null;
+  function loadJsQR(cb) {
+    if (window.jsQR) { cb(); return; }
+    var sc = document.createElement('script');
+    sc.src = READER_URL + 'vendor/jsQR.js'; sc.onload = function () { cb(); }; sc.onerror = function () { cb(); };
+    document.head.appendChild(sc);
+  }
+  function stopScan() {
+    if (!scan) return;
+    clearTimeout(scan.timer);
+    if (scan.stream) each(scan.stream.getTracks(), function (t) { t.stop(); });
+    $('scan-video').srcObject = null; scan = null; $('scanner').className = 'hidden';
+  }
+  function scanFound(text) {
+    var k = /[#&?]k=/.test(text) || /^[A-Za-z0-9-]{32,40}$/.test(text) ? normKey(text) : null;
+    if (!k) { $('scan-msg').textContent = 'この QR は英文リーダーの合言葉ではありません'; return false; }
+    stopScan(); useKey(k); return true;
+  }
+  function scanLoop() {
+    if (!scan) return;
+    var sv = $('scan-video'), next = function () { if (scan) scan.timer = setTimeout(scanLoop, 200); };
+    if (sv.readyState < 2 || !sv.videoWidth) { next(); return; }
+    if (scan.detector) {
+      scan.detector.detect(sv).then(function (codes) { if (codes && codes.length && scanFound(codes[0].rawValue)) return; next(); },
+        function () { scan.detector = null; loadJsQR(next); });
+      return;
+    }
+    if (window.jsQR) {
+      var w = 480, h = Math.round(sv.videoHeight * 480 / sv.videoWidth), c = scan.canvas || (scan.canvas = document.createElement('canvas'));
+      c.width = w; c.height = h; var x = c.getContext('2d'); x.drawImage(sv, 0, 0, w, h);
+      var r = window.jsQR(x.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: 'dontInvert' });
+      if (r && r.data && scanFound(r.data)) return;
+    }
+    next();
+  }
+  on($('scan-go'), 'click', function () {
+    $('key-msg').textContent = '';
+    $('scan-msg').textContent = 'ほかの端末の英文リーダー「⚙ 翻訳の設定」に表示された QR を枠に合わせてください';
+    $('scanner').className = ''; scan = {};
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }).then(function (stream) {
+      if (!scan) { each(stream.getTracks(), function (t) { t.stop(); }); return; }
+      scan.stream = stream;
+      var sv = $('scan-video'); sv.srcObject = stream; var p = sv.play(); if (p && p['catch']) p['catch'](function () {});
+      if (window.BarcodeDetector) { try { scan.detector = new window.BarcodeDetector({ formats: ['qr_code'] }); } catch (e) { scan.detector = null; } }
+      if (scan.detector) scanLoop(); else loadJsQR(scanLoop);
+    }, function (e) {
+      stopScan();
+      $('key-msg').textContent = e && e.name === 'NotAllowedError' ? 'カメラの使用が許可されていません。ペアリングコードを使ってください。' : 'カメラを起動できませんでした。ペアリングコードを使ってください。';
+    });
+  });
+  on($('scan-cancel'), 'click', stopScan);
+  // カメラアプリで QR を読んで、このアプリの #k=… が開かれたとき
+  on(window, 'hashchange', function () { var k = /[#&]d=/.test(location.hash) ? null : normKey(location.hash); if (k) { try { history.replaceState(null, '', location.pathname); } catch (e) {} useKey(k); } });
+
+  /* ===================== 再生 ===================== */
+  /* P：いま使っている動画（手元の動画 <video> か YouTube）を同じ形で扱う */
+  var yt = null, ytReady = false, ytState = -1, ytWant = '', ytPollT = 0, ytStarted = false;
+  var P = {
+    kind: 'v',
+    t: function () { if (P.kind === 'yt') { try { return yt && ytReady ? yt.getCurrentTime() || 0 : 0; } catch (e) { return 0; } } return v.currentTime || 0; },
+    seek: function (x) { x = Math.max(0, x); if (P.kind === 'yt') { try { if (yt && ytReady) yt.seekTo(x, true); } catch (e) {} return; } try { v.currentTime = x; } catch (e) {} },
+    dur: function () { if (P.kind === 'yt') { try { return yt && ytReady ? yt.getDuration() || 0 : 0; } catch (e) { return 0; } } var d = v.duration || 0; return isFinite(d) ? d : 0; },
+    paused: function () { if (P.kind === 'yt') return ytState !== 1 && ytState !== 3; return v.paused || v.ended; },
+    play: function () {
+      if (P.kind === 'yt') { if (!yt || !ytReady) return; try { yt.playVideo(); } catch (e) {} ytNudge(); return; }
+      try { var p = v.play(); if (p && p['catch']) p['catch'](function () {}); } catch (e) {}
+    },
+    pause: function () { if (P.kind === 'yt') { try { if (yt && ytReady) yt.pauseVideo(); } catch (e) {} return; } try { v.pause(); } catch (e) {} },
+    rate: function () { if (P.kind === 'yt') { try { return yt && ytReady ? yt.getPlaybackRate() || pref.rate : pref.rate; } catch (e) { return pref.rate; } } return v.playbackRate || pref.rate; },
+    setRate: function (r) { if (P.kind === 'yt') { try { if (yt && ytReady) yt.setPlaybackRate(r); } catch (e) {} setTimeout(updBtns, 300); return; } v.playbackRate = r; },
+    ar: function () { if (P.kind === 'yt') return 16 / 9; return v.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : 16 / 9; },
+    has: function () { return P.kind === 'yt' ? !!(yt && ytReady) : !!v.getAttribute('src'); }
+  };
+  var v = $('vid'), cur = null, curId = '', blobUrl = '', links = [], linkErr = [], srcMode = '';
+  // btns: [[文字, 押したとき, 'sub'(控えめ)]]
+  function msg(t, link, btns) {
+    var m = $('msg');
+    if (!t) { m.className = 'hidden'; m.innerHTML = ''; return; }
+    m.className = ''; m.innerHTML = ''; m.appendChild(document.createTextNode(t));
+    if (btns && btns.length) { m.appendChild(el('br')); each(btns, function (b) { var x = el('button', b[2] || '', b[0]); x.type = 'button'; on(x, 'click', function (e) { e.stopPropagation(); b[1](); }); m.appendChild(x); }); }
+    if (link) { m.appendChild(el('br')); m.appendChild(el('br')); var a = el('a', '', '🔗 Safari で動画だけ開く'); a.href = link; a.target = '_blank'; a.rel = 'noopener'; m.appendChild(a); }
+  }
+  function dlBtn(id) { return ['⬇ この端末に取り込んで再生', function () { importDrive(id); }]; }
+
+  /* ---- ドライブからこの端末に取り込む（英文リーダーの「⬇ この端末に取り込む」と同じ方法・同じ保存場所）
+     Apps Script から 3MB ずつ受け取る。途中で止まっても、次は続きから ---- */
+  var imp = null;
+  function importDrive(id) {
+    var d = docs[id]; if (!d || !d.lv.drive) return;
+    if (!gasUrl) { msg('取り込むには、英文リーダーで「翻訳の設定（Apps Script）」が必要です。'); return; }
+    if (imp && imp.id === id && !imp.fail) return;
+    try { v.pause(); } catch (e) {}
+    v.removeAttribute('src'); try { v.load(); } catch (e) {}
+    var job = imp = { id: id, fail: false }, fid = d.lv.drive, parts = [], n = 0, got = 0, t0 = now(), wait = {}, busy = {};
+    var alive = function () { return imp === job && !job.fail; };
+    var show = function () {
+      if (curId !== id) return;
+      var left = got > 1 ? (now() - t0) / got * (n - got) / 1000 : 0;
+      msg('⬇ この端末に取り込んでいます… ' + (n ? Math.round(got * 100 / n) : 0) + '%' + (n ? '（' + got + ' / ' + n + (left ? '・残り約 ' + (left > 90 ? Math.round(left / 60) + ' 分' : Math.max(1, Math.round(left)) + ' 秒') : '') + '）' : '') + '\nこの画面を開いたままにしてください。');
+    };
+    var stopWith = function (e) {
+      job.fail = true;
+      if (curId === id) msg('取り込めませんでした（' + String(e || '').slice(0, 60) + '）。もう一度押すと、続きから取り込みます。', '', [dlBtn(id)]);
+    };
+    var finish = function () {
+      if (!alive()) return; job.fail = true;
+      var blob = new Blob(parts, { type: d.lv.type || 'video/mp4' });
+      if (curId === id) msg('取り込みました。この端末に保存しています…');
+      idbPut(id, blob, function (okp) {
+        for (var k = 0; k < n; k++) idbDel(id + '#' + k);   // 途中の分は消す
+        imp = null;
+        if (curId !== id) return;
+        if (blobUrl) { try { URL.revokeObjectURL(blobUrl); } catch (e) {} }
+        have[id] = 1; lsSet('ep_src_' + id, 'local');
+        blobUrl = URL.createObjectURL(blob); srcMode = 'local'; v.src = blobUrl; msg(''); updBtns();
+        toast(okp ? '📱 取り込みました。次からすぐ見られます' : '保存はできませんでした（空き容量）。今は見られます');
+      });
+    };
+    var take = function (k, a64) {
+      if (parts[k] || !alive()) return;
+      var bin = atob(a64), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+      parts[k] = u; got++;
+      idbPut(id + '#' + k, u, function () {});
+      show();
+      if (got === n) finish();
+    };
+    var ask = function (k, tries) {
+      if (!alive() || parts[k]) return;
+      busy[k] = 1; var my = {}; wait[k] = my;
+      var timer = setTimeout(function () { if (wait[k] === my && !parts[k]) { delete busy[k]; ask(k, tries + 1); } }, 150000);
+      gasCall({ f: 'get', id: fid, part: String(k) }, function (r, e) {
+        if (r && r.ok && typeof r.a === 'string') { clearTimeout(timer); delete busy[k]; take(k, r.a); pump(); return; }
+        if (wait[k] !== my || parts[k] || !alive()) return;
+        clearTimeout(timer); delete busy[k];
+        if (tries < 6) { setTimeout(function () { ask(k, tries + 1); }, 5000); return; }
+        stopWith((r && r.error) || e);
+      });
+    };
+    var pump = function () {
+      if (!alive()) return;
+      var fly = 0, k; for (k in busy) fly++;
+      for (k = 0; k < n && fly < 2; k++) if (!parts[k] && !busy[k]) { ask(k, 0); fly++; }
+    };
+    show();
+    gasCall({ f: 'get', id: fid, part: '0' }, function (r, e) {
+      if (!alive()) return;
+      if (!r || !r.ok || typeof r.a !== 'string') { stopWith((r && r.error) || e); return; }
+      n = r.n || 1;
+      var bin = atob(r.a), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+      parts[0] = u; got = 1; idbPut(id + '#0', u, function () {});
+      if (n === 1) { finish(); return; }
+      // 前に途中まで取り込んだ分を使う
+      var left = n - 1, check = function () { if (--left > 0) return; show(); if (got === n) finish(); else pump(); };
+      for (var k = 1; k < n; k++) (function (k2) { idbGet(id + '#' + k2, function (b) { if (b && !parts[k2]) { parts[k2] = b; got++; } check(); }); })(k);
+    });
+  }
+  var toastT = 0;
+  function toast(t) { var e = $('toast'); e.textContent = t; e.className = 'on'; clearTimeout(toastT); toastT = setTimeout(function () { e.className = ''; }, 1800); }
+
+  var autoStart = false;   // 行き来してきたとき：音を消して、その時間から自動で再生する
+  function openDoc(id, startAt, auto) {
+    autoStart = !!auto; muteOff();
+    var d = docs[id]; if (!d) return;
+    cur = d; curId = id; capKey = ''; rep = -1; $('b-rep').className = 'ib';
+    $('home').className = 'hidden'; $('stage').className = '';
+    $('ttl').textContent = cleanTitle(d.title);
+    $('capin').innerHTML = '';
+    v.removeAttribute('src'); try { v.load(); } catch (e) {}
+    P.kind = d.yt ? 'yt' : 'v';
+    v.style.display = d.yt ? 'none' : 'block';
+    $('ytbox').className = d.yt ? '' : 'hidden';
+    if (!d.yt) ytStop();
+    srcBtn();
+    setUi(true); updBtns(); layout();
+    msg('動画を用意しています…');
+    var resumeAt = Number(lsGet('ep_at_' + id) || 0);
+    pendingSeek = resumeAt > 5 && resumeAt < (d.cues[d.cues.length - 1][0] + 30) ? resumeAt - 2 : 0;
+    seekQuiet = false; resumePlay = false;
+    if (typeof startAt === 'number' && startAt >= 0) { pendingSeek = startAt; seekQuiet = true; if (startAt > 1) toast('英文リーダーの場面（' + fmt(startAt) + '）から'); }
+    if (d.yt) { ytOpen(d.yt); return; }
+    srcMode = '';
+    idbGet(id, function (blob) {
+      if (curId !== id) return;
+      have[id] = blob ? 1 : 0;
+      var wantDrive = lsGet('ep_src_' + id) === 'drive' && d.lv.drive && (driveKey || gasUrl);
+      if (blob && !wantDrive) { playLocal(blob); return; }
+      fromDrive(id);
+    });
+  }
+  function playLocal(blob) {
+    if (blobUrl) { try { URL.revokeObjectURL(blobUrl); } catch (e) {} }
+    blobUrl = URL.createObjectURL(blob); srcMode = 'local'; v.src = blobUrl; msg(''); updBtns();
+  }
+  // 読み込み元の切り替え：📱 この端末 ⇔ ☁ ドライブ（今の位置から続ける。動画ごとに覚える）
+  function switchSrc() {
+    if (!cur || !cur.lv || P.kind !== 'v') return;
+    var id = curId, d = cur, at = P.t(), was = !P.paused();
+    if (srcMode === 'local') {
+      if (!d.lv.drive || !(driveKey || gasUrl)) { toast('ドライブにはこの動画がありません'); return; }
+      lsSet('ep_src_' + id, 'drive'); P.pause();
+      pendingSeek = at; seekQuiet = true; resumePlay = was;
+      fromDrive(id); toast('☁ ドライブから再生します');
+      return;
+    }
+    // ドライブ → この端末（まだなければ取り込む）
+    idbGet(id, function (blob) {
+      if (curId !== id) return;
+      if (blob) { lsSet('ep_src_' + id, 'local'); P.pause(); pendingSeek = at; seekQuiet = true; resumePlay = was; playLocal(blob); toast('📱 この端末の動画で再生します'); return; }
+      var mb = d.lv.size ? '（約 ' + Math.max(1, Math.round(d.lv.size / 1048576)) + 'MB）' : '';
+      if (!window.confirm('この動画' + mb + 'を、この端末に取り込みますか？\n取り込むと、次からは電波がなくてもすぐ見られます。')) return;
+      lsSet('ep_src_' + id, 'local'); pendingSeek = at; seekQuiet = true; resumePlay = false;
+      importDrive(id);
+    });
+  }
+  on($('b-sw'), 'click', function (e) { e.stopPropagation(); switchSrc(); hideSoon(); });
+  function fromDrive(id) {
+    var d = docs[id];
+    if (!d.lv.drive) { msg('この動画は、まだドライブに送られていません。英文リーダーで動画を入れた端末から送り終えると、ここで見られます。'); return; }
+    var apiLink = driveKey ? 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(d.lv.drive) + '?alt=media&key=' + encodeURIComponent(driveKey) : '';
+    if (!gasUrl) {
+      if (apiLink) { links = []; linkErr = []; srcMode = 'drive'; d.lv.link = apiLink; v.src = apiLink; msg(''); updBtns(); return; }
+      msg('ドライブの動画を見るには、英文リーダーで「翻訳の設定（Apps Script）」が必要です。'); return;
+    }
+    msg('☁ ドライブの動画を読み込んでいます…');
+    gasCall({ f: 'link', id: d.lv.drive }, function (r, e) {
+      if (curId !== id) return;
+      if (!r || !r.ok || !r.url) { msg('ドライブの動画を読み込めませんでした（' + String((r && r.error) || e).slice(0, 60) + '）。', '', [dlBtn(id)]); return; }
+      var m = /[?&]id=([^&]+)/.exec(r.url);
+      links = m ? ['https://drive.usercontent.google.com/download?id=' + m[1] + '&export=download&confirm=t', r.url] : [r.url];
+      if (r.direct && r.direct !== links[0]) links.unshift(r.direct);
+      if (apiLink) links.unshift(apiLink);   // ドライブ API（動画として配信される・iPhone でも再生できる）を先に試す
+      linkErr = []; srcMode = 'drive'; d.lv.link = links[0];
+      v.src = links.shift(); msg(''); updBtns();
+    });
+  }
+  on(v, 'error', function () {
+    if (!cur || !v.getAttribute('src')) return;
+    var ec = v.error ? v.error.code : 0;
+    if (srcMode === 'drive') { linkErr.push(ec); if (links.length) { cur.lv.link = links[0]; v.src = links.shift(); try { v.load(); } catch (e) {} return; } }
+    var why = ec === 3 ? '動画の中身を再生できません。この端末には画質・形式が重すぎる可能性があります'
+      : ec === 4 ? (srcMode === 'drive' ? 'ドライブから動画として受け取れませんでした' : 'この端末が対応していない形式です')
+      : ec === 2 ? '読み込みの途中で通信が切れました' : '';
+    var webm = /webm/i.test(cur.lv.type || cur.lv.name || '');
+    if (srcMode === 'drive' && !webm && ec !== 3) { msg('ドライブから直接は再生できませんでした。いったんこの端末に取り込むと見られます（' + (cur.lv.size ? '約 ' + Math.max(1, Math.round(cur.lv.size / 1048576)) + 'MB。' : '') + '次からはすぐ再生できます）。', cur.lv.link, [dlBtn(curId)]); return; }
+    msg('この端末ではこの動画を再生できませんでした' + (webm ? '（webm は古い iPhone・iPad では再生できません。mp4 を使ってください）' : why ? '（' + why + '）' : '') + '。', srcMode === 'drive' ? cur.lv.link : '');
+  });
+  /* ---- YouTube（英文リーダーで読み込んだ YouTube の英文）。YouTube の字幕は使わず、自前で英日を出す ---- */
+  var ytApiWait = null;
+  function ytApi(cb) {
+    if (window.YT && window.YT.Player) { cb(); return; }
+    if (ytApiWait) { ytApiWait.push(cb); return; }
+    ytApiWait = [cb];
+    var prev = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = function () { if (prev) try { prev(); } catch (e) {} var w = ytApiWait; ytApiWait = null; each(w || [], function (f) { f(); }); };
+    var sc = document.createElement('script'); sc.src = 'https://www.youtube.com/iframe_api';
+    sc.onerror = function () { ytApiWait = null; msg('YouTube を読み込めませんでした。電波を確かめて、開き直してください。'); };
+    document.head.appendChild(sc);
+  }
+  function ytOpen(vid) {
+    ytWant = vid; ytStarted = false; ytState = -1; shield(false);
+    ytApi(function () {
+      if (!cur || !cur.yt || ytWant !== vid) return;
+      if (yt && ytReady) { ytReady = false; try { yt.cueVideoById(vid); } catch (e) {} ytReady = true; ytLoaded(); return; }
+      if (yt) return;   // 準備中（onReady で今の動画にする）
+      yt = new YT.Player('ytp', {
+        videoId: vid, width: '100%', height: '100%',
+        playerVars: { playsinline: 1, rel: 0, modestbranding: 1, controls: 0, disablekb: 1, fs: 0, iv_load_policy: 3, cc_load_policy: 0, origin: location.protocol + '//' + location.host },
+        events: {
+          onReady: function () { ytReady = true; if (cur && cur.yt && ytWant && ytWant !== vid) { try { yt.cueVideoById(ytWant); } catch (e) {} } ytLoaded(); },
+          onStateChange: function (e) { ytState = e.data; ytChanged(); },
+          onPlaybackRateChange: function () { updBtns(); },
+          onError: function (e) {
+            var c = e && e.data;
+            msg(c === 101 || c === 150 ? 'この動画は、投稿者が埋め込みを許可していないため、ここでは再生できません。' : c === 100 ? 'この動画は見つかりませんでした（削除・非公開の可能性）。' : 'YouTube の動画を再生できませんでした（コード ' + c + '）。', '', [['🔗 YouTube で開く', function () { window.open(srcUrl(cur, P.t()), '_blank'); }]]);
+          }
+        }
+      });
+    });
+  }
+  function ytLoaded() {
+    if (!cur || !cur.yt) return;
+    msg(''); P.setRate(pref.rate);
+    var at0 = pendingSeek;
+    if (pendingSeek > 0 && !autoStart) { var at = pendingSeek; pendingSeek = 0; try { yt.cueVideoById({ videoId: cur.yt, startSeconds: at }); } catch (e) {} if (!seekQuiet) toast('前回の続き（' + fmt(at) + '）から'); }
+    seekQuiet = false;
+    pendingSeek = 0;
+    if (autoStart) { autoStart = false; try { yt.mute(); if (at0 > 0) yt.loadVideoById({ videoId: cur.yt, startSeconds: at0 }); else yt.playVideo(); } catch (e) {} muteOn(); }
+    clearInterval(ytPollT);
+    ytPollT = setInterval(function () { if (P.kind !== 'yt' || !cur) return; updTime(); if (!P.paused()) { draw(); if (now() - posT > 5000) savePos(); } }, 250);
+    layout(); updTime();
+  }
+  function ytChanged() {
+    if (P.kind !== 'yt') return;
+    if (ytState === 1) { ytStarted = true; shield(true); msg(''); }
+    updBtns();
+    if (ytState === 1) { kick(); hideSoon(); }
+    else if (ytState === 2 || ytState === 0) { setUi(true); savePos(); }
+    capKey = ''; draw();
+  }
+  // 最初の再生は、iPhone では動画そのものを押さないと始まらないことがある
+  function ytNudge() {
+    if (ytStarted) return;
+    setTimeout(function () {
+      if (P.kind !== 'yt' || ytStarted || ytState === 1 || ytState === 3) return;
+      shield(false); setUi(false);
+      toast('動画をもう一度タップすると再生が始まります');
+    }, 1500);
+  }
+  function shield(onn) { $('ytshield').className = onn ? '' : 'pass'; }
+  function ytStop() { clearInterval(ytPollT); try { if (yt && ytReady) yt.stopVideo(); } catch (e) {} ytWant = ''; }
+
+  // 元の動画へのリンク
+  function srcBtn() {
+    var b = $('b-src'), u = srcUrl(cur, 0);
+    if (!u) { b.className = 'ib hidden'; return; }
+    b.className = 'ib'; b.href = u; b.textContent = cur.yt ? '🔗 YouTube' : '🔗 元の動画';
+    b.title = u;
+  }
+  on($('b-src'), 'click', function (e) { e.stopPropagation(); if (cur && cur.yt) { this.href = srcUrl(cur, P.t()); P.pause(); } });
+
+  var pendingSeek = 0, seekQuiet = false, resumePlay = false;
+  on(v, 'loadedmetadata', function () {
+    v.playbackRate = pref.rate;
+    if (pendingSeek > 0) { try { v.currentTime = pendingSeek; } catch (e) {} if (!seekQuiet) toast('前回の続き（' + fmt(pendingSeek) + '）から'); pendingSeek = 0; }
+    seekQuiet = false;
+    if (resumePlay) { resumePlay = false; P.play(); }
+    if (autoStart) { autoStart = false; v.muted = true; P.play(); muteOn(); }
+    layout(); updTime(); updBtns();
+  });
+  on(v, 'play', function () { updBtns(); kick(); hideSoon(); });
+  on(v, 'pause', function () { updBtns(); setUi(true); savePos(); });
+  on(v, 'ended', function () { updBtns(); setUi(true); });
+  on(v, 'timeupdate', function () { updTime(); if (now() - posT > 5000) savePos(); });
+  on(v, 'seeked', function () { draw(); updTime(); });
+  on(v, 'ratechange', updBtns);
+  var posT = 0;
+  function savePos() { if (!curId) return; posT = now(); var t = P.t(), dur = P.dur(); if (!t && P.kind === 'yt' && !ytStarted) return; lsSet('ep_at_' + curId, String(dur && t > dur - 10 ? 0 : Math.floor(t))); }
+
+  function back() {
+    savePos(); try { v.pause(); } catch (e) {}
+    v.removeAttribute('src'); try { v.load(); } catch (e) {}
+    if (P.kind === 'yt') ytStop();
+    if (blobUrl) { try { URL.revokeObjectURL(blobUrl); } catch (e) {} blobUrl = ''; }
+    cur = null; curId = ''; msg(''); muteOff(); autoStart = false;
+    exitFs();
+    $('stage').className = 'hidden'; $('home').className = '';
+    render();
+  }
+  on($('b-back'), 'click', back);
+
+  /* ---- 字幕 ---- */
+  function idxAt(t) {
+    var c = cur && cur.cues; if (!c || !c.length) return -1;
+    var lo = 0, hi = c.length - 1, k = -1;
+    while (lo <= hi) { var m = (lo + hi) >> 1; if (c[m][0] <= t + 0.05) { k = m; lo = m + 1; } else hi = m - 1; }
+    return k;
+  }
+  function endOf(k) { var c = cur.cues; return k + 1 < c.length ? c[k + 1][0] : Math.max(c[k][0] + 6, P.dur()); }
+  var capKey = '', rep = -1;
+  function draw() {
+    if (!cur) return;
+    var t = P.t(), c = cur.cues;
+    if (rep >= 0 && !P.paused() && t >= endOf(rep) - 0.08) { P.seek(c[rep][0]); t = c[rep][0]; }
+    var k = pref.mode === 'none' ? -1 : idxAt(t);
+    if (k >= 0 && k < c.length - 1 && c[k + 1][0] - c[k][0] > 12 && t - c[k][0] > 8) k = -1;   // 長い間セリフがないところは消す
+    if (k >= 0 && k === c.length - 1 && t - c[k][0] > 10) k = -1;
+    $('sn').textContent = idxAt(t) >= 0 ? (idxAt(t) + 1) + '/' + c.length : '';
+    var key = pref.mode + ':' + k; if (key === capKey) return; capKey = key;
+    var box = $('capin'); box.innerHTML = '';
+    if (k < 0) return;
+    var en = c[k][1], ja = cur.tr && cur.tr[k];
+    if (pref.mode === 'both') { box.appendChild(el('span', 'en', en)); if (ja) { box.appendChild(el('span', 'br')); box.appendChild(el('span', 'ja', ja)); } }
+    else if (pref.mode === 'en') box.appendChild(el('span', 'en', en));
+    else box.appendChild(ja ? el('span', 'ja', ja) : el('span', 'en', en));   // 訳がない文は英語で
+    fit();
+  }
+  var raf = 0;
+  function kick() { if (raf) return; var loop = function () { raf = 0; draw(); if (!P.paused() && cur) raf = (window.requestAnimationFrame || function (f) { return setTimeout(f, 100); })(loop); }; loop(); }
+
+  /* ---- 画面の割り付け ----
+     縦画面など、動画の下に十分な空きがあるとき：動画を上いっぱいに置き、その下の空き全部を字幕に使う
+     横画面など、空きがないとき：動画を画面いっぱいに置き、字幕を下に重ねる */
+  var safe = { t: 0, r: 0, b: 0, l: 0 }, capMode = 'over', capMax = 100, capBase = 24;
+  function readSafe() {
+    var p = $('safe-probe');
+    if (!p) { p = el('div'); p.id = 'safe-probe'; p.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;left:0;top:0;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)'; document.body.appendChild(p); }
+    var s = window.getComputedStyle(p);
+    safe = { t: parseFloat(s.paddingTop) || 0, r: parseFloat(s.paddingRight) || 0, b: parseFloat(s.paddingBottom) || 0, l: parseFloat(s.paddingLeft) || 0 };
+  }
+  function px(n) { return Math.round(n) + 'px'; }
+  function layout() {
+    if (!cur) return;
+    readSafe();
+    var W = window.innerWidth, H = window.innerHeight;
+    var ar = P.ar();
+    var aw = W - safe.l - safe.r, ah = H - safe.t - safe.b, cap = $('cap'), x, y, w, h;
+    var full = aw / ar, free = ah - full;
+    var sep = pref.pos !== 'over' && free >= Math.max(ah * 0.24, 130);
+    if (sep) {
+      // 動画は上に寄せる（字幕がたっぷり入るよう、空きが多すぎるときは少し下げてまん中寄りに）
+      w = aw; h = full; x = safe.l;
+      var top = safe.t + Math.max(0, Math.min(free * 0.18, 60));
+      y = top;
+      capMode = 'sep';
+      cap.className = 'sep';
+      var cTop = y + h + 14, cH = safe.t + ah - cTop - 8;
+      cap.style.left = px(safe.l + 14); cap.style.right = px(safe.r + 14); cap.style.top = px(cTop); cap.style.bottom = ''; cap.style.height = px(cH);
+      capMax = cH;
+      capBase = Math.min(Math.max(aw * 0.058, 19), 54);
+    } else {
+      if (aw / ah > ar) { h = ah; w = ah * ar; } else { w = aw; h = aw / ar; }
+      x = safe.l + (aw - w) / 2; y = safe.t + (ah - h) / 2;
+      capMode = 'over';
+      cap.className = 'over';
+      cap.style.left = px(safe.l + 12); cap.style.right = px(safe.r + 12); cap.style.top = ''; cap.style.height = '';
+      capMax = ah * 0.42;
+      capBase = Math.min(Math.max(Math.min(W, H) * 0.06, 17), 50);
+      posOverCap();
+    }
+    v.style.left = px(x); v.style.top = px(y); v.style.width = px(w); v.style.height = px(h);
+    var yb = $('ytbox'); yb.style.left = px(x); yb.style.top = px(y); yb.style.width = px(w); yb.style.height = px(h);
+    var um = $('um'); um.style.left = px(x + w / 2); um.style.top = px(y + h / 2);   // 再生ボタンは動画のまん中に（字幕にかぶせない）
+    fit();
+  }
+  function posOverCap() {
+    if (capMode !== 'over') return;
+    var lift = uiOn ? 118 : 14;
+    $('cap').style.bottom = px(safe.b + lift);
+  }
+  // 決めた大きさで入りきらなければ、入るまで小さくする
+  function fit() {
+    var box = $('capin'), en = box.querySelector('.en'), ja = box.querySelector('.ja');
+    if (!en && !ja) return;
+    var s = capBase * pref.size;
+    for (var i = 0; i < 14; i++) {
+      if (en) en.style.fontSize = px(s);
+      if (ja) ja.style.fontSize = px(s * 0.86);
+      if (box.offsetHeight <= capMax || s <= 12) break;
+      s *= 0.9;
+    }
+  }
+  on(window, 'resize', function () { layout(); });
+  on(window, 'orientationchange', function () { setTimeout(layout, 250); });
+
+  /* ---- ボタン ---- */
+  var uiOn = true, hideT = 0;
+  function setUi(onn) { uiOn = onn; $('ui').className = onn ? '' : 'off'; posOverCap(); if (onn) hideSoon(); }
+  function hideSoon() { clearTimeout(hideT); hideT = setTimeout(function () { if (cur && !P.paused()) setUi(false); }, 3500); }
+  var MODES = ['both', 'en', 'ja', 'none'], MODE_T = { both: '英＋日', en: '英語', ja: '日本語', none: '字幕なし' };
+  var RATES = [0.75, 0.85, 0.9, 1, 1.1, 1.25];
+  function updBtns() {
+    $('pp').textContent = !P.paused() ? '⏸' : '▶';
+    $('b-mode').textContent = MODE_T[pref.mode];
+    $('b-spd').textContent = (P.rate() || pref.rate).toFixed(2).replace(/0$/, '') + '×';
+    $('b-pos').textContent = pref.pos === 'over' ? '⇕ 重ねる' : '⇕ 自動';
+    var sw = $('b-sw'), canSw = cur && cur.lv && P.kind === 'v' && srcMode && (srcMode === 'drive' || (cur.lv.drive && (driveKey || gasUrl)));
+    sw.className = canSw ? 'ib' : 'ib hidden';
+    if (canSw) sw.textContent = srcMode === 'local' ? '📱 端末' : '☁ ドライブ';
+    var fsOk = fsEl() && !fsActive() && !isStandalone();
+    $('b-fs').className = fsOk || fsActive() ? 'ib' : 'ib hidden';
+    $('b-fs').textContent = fsActive() ? '⤡' : '⛶';
+  }
+  function updTime() {
+    var t = P.t(), d = P.dur();
+    $('tc').textContent = fmt(t); $('td').textContent = d && isFinite(d) ? fmt(d) : '';
+    if (!seeking && d && isFinite(d)) $('seek').value = String(Math.round(t / d * 1000));
+  }
+  function toggle() { if (!P.has()) return; if (P.paused()) P.play(); else P.pause(); }
+  function stop(e) { if (e) { e.stopPropagation(); } }
+  function seekTo(t) { P.seek(t); capKey = ''; draw(); if (P.kind === 'yt') setTimeout(function () { capKey = ''; draw(); updTime(); }, 350); }
+  function prevS() {
+    var t = P.t(), k = idxAt(t), to;
+    if (k < 0) { seekTo(0); return; }
+    to = t - cur.cues[k][0] > 1.5 || k === 0 ? k : k - 1;
+    seekTo(cur.cues[to][0]);
+    if (rep >= 0) rep = to;
+  }
+  function nextS() {
+    var k = idxAt(P.t());
+    if (k + 1 < cur.cues.length) seekTo(cur.cues[k + 1][0]);
+    if (rep >= 0) rep = Math.min(k + 1, cur.cues.length - 1);
+  }
+  function setRep() {
+    if (rep >= 0) { rep = -1; toast('くり返しをやめました'); }
+    else { var k = idxAt(P.t()); if (k < 0) k = 0; rep = k; toast('この文をくり返します'); }
+    $('b-rep').className = rep >= 0 ? 'ib on' : 'ib';
+  }
+  function size(d) { pref.size = Math.min(1.8, Math.max(0.6, Math.round((pref.size + d) * 10) / 10)); savePref(); fit(); toast('字幕の大きさ ' + Math.round(pref.size * 100) + '%'); }
+  on($('pp'), 'click', function (e) { stop(e); toggle(); hideSoon(); });
+  on($('b-prev'), 'click', function (e) { stop(e); prevS(); hideSoon(); });
+  on($('b-next'), 'click', function (e) { stop(e); nextS(); hideSoon(); });
+  on($('b-rep'), 'click', function (e) { stop(e); setRep(); hideSoon(); });
+  on($('b-mode'), 'click', function (e) { stop(e); pref.mode = MODES[(MODES.indexOf(pref.mode) + 1) % MODES.length]; savePref(); updBtns(); capKey = ''; draw(); hideSoon(); });
+  on($('b-spd'), 'click', function (e) {
+    stop(e); var r = P.rate() || 1, i = 0; for (var j = 0; j < RATES.length; j++) if (Math.abs(RATES[j] - r) < 0.01) i = j;
+    pref.rate = RATES[(i + 1) % RATES.length]; P.setRate(pref.rate); savePref(); updBtns(); hideSoon();
+  });
+  on($('b-sm'), 'click', function (e) { stop(e); size(-0.1); hideSoon(); });
+  on($('b-bg'), 'click', function (e) { stop(e); size(0.1); hideSoon(); });
+  on($('b-pos'), 'click', function (e) { stop(e); pref.pos = pref.pos === 'over' ? 'auto' : 'over'; savePref(); updBtns(); layout(); hideSoon(); });
+  each(['b-back', 'b-fs', 'seek'], function (x) { on($(x), 'click', stop); });
+  var seeking = false;
+  on($('seek'), 'input', function () { seeking = true; var d = P.dur(); if (d && isFinite(d)) { $('tc').textContent = fmt(Number($('seek').value) / 1000 * d); } clearTimeout(hideT); });
+  on($('seek'), 'change', function () { var d = P.dur(); if (d && isFinite(d)) seekTo(Number($('seek').value) / 1000 * d); seeking = false; if (rep >= 0) { rep = -1; $('b-rep').className = 'ib'; } hideSoon(); });
+
+  // 画面のタップ：1回＝ボタンの表示／非表示、2回＝左はし前の文・右はし次の文・まん中 再生／一時停止
+  var tapT = 0, tapX = -1, tapTimer = 0;
+  on($('stage'), 'click', function (e) {
+    if (!cur) return;
+    var tg = e.target; if (tg && (tg.tagName === 'BUTTON' || tg.tagName === 'INPUT' || tg.tagName === 'A')) return;
+    if (P.kind === 'yt' && !ytStarted) return;   // YouTube の最初の再生は、動画を直接タップ
+    var x = e.clientX, W = window.innerWidth;
+    if (tapT && now() - tapT < 300 && Math.abs(x - tapX) < 80) {
+      clearTimeout(tapTimer); tapT = 0;
+      if (x < W * 0.33) { prevS(); toast('⏮ 前の文'); } else if (x > W * 0.67) { nextS(); toast('次の文 ⏭'); } else toggle();
+      return;
+    }
+    tapT = now(); tapX = x;
+    tapTimer = setTimeout(function () { tapT = 0; setUi(!uiOn); }, 300);
+  });
+
+  // キーボード（iPad のキーボードなど）
+  on(document, 'keydown', function (e) {
+    if (!cur) return;
+    var k = e.key || '', c = e.keyCode;
+    if (k === ' ' || c === 32) { e.preventDefault(); toggle(); }
+    else if (k === 'ArrowLeft' || c === 37) { e.preventDefault(); prevS(); }
+    else if (k === 'ArrowRight' || c === 39) { e.preventDefault(); nextS(); }
+    else if (k === 'ArrowUp' || c === 38) { e.preventDefault(); size(0.1); }
+    else if (k === 'ArrowDown' || c === 40) { e.preventDefault(); size(-0.1); }
+    else if (k === 'r' || k === 'R' || c === 82) { setRep(); }
+    else if (k === 'Escape' || c === 27) { if (!fsActive()) back(); }
+  });
+
+  /* ---- 全画面（iPad の Safari など。iPhone の Safari ではホーム画面に追加して使う） ---- */
+  function fsEl() { var s = $('stage'); return s.requestFullscreen || s.webkitRequestFullscreen ? s : null; }
+  function fsActive() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+  function isStandalone() { return !!(window.navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)); }
+  function exitFs() { try { if (document.exitFullscreen && document.fullscreenElement) document.exitFullscreen(); else if (document.webkitExitFullscreen && document.webkitFullscreenElement) document.webkitExitFullscreen(); } catch (e) {} }
+  on($('b-fs'), 'click', function () {
+    if (fsActive()) { exitFs(); return; }
+    var s = fsEl(); if (!s) return;
+    try { var p = s.requestFullscreen ? s.requestFullscreen() : s.webkitRequestFullscreen(); if (p && p['catch']) p['catch'](function () {}); } catch (e) {}
+  });
+  on(document, 'fullscreenchange', function () { updBtns(); setTimeout(layout, 100); });
+  on(document, 'webkitfullscreenchange', function () { updBtns(); setTimeout(layout, 100); });
+
+  on(document, 'visibilitychange', function () { if (document.hidden) savePos(); });
+  on(window, 'pagehide', savePos);
+
+  /* ---- 音を消した自動再生（iPhone は、画面を触らないと音ありで再生を始められない） ---- */
+  function muteOn() { $('b-unmute').className = ''; }
+  function muteOff() { $('b-unmute').className = 'hidden'; }
+  function unmute() {
+    muteOff();
+    if (P.kind === 'yt') { try { if (yt && ytReady) { yt.unMute(); yt.setVolume(100); if (P.paused()) yt.playVideo(); } } catch (e) {} return; }
+    v.muted = false; if (P.paused()) P.play();
+  }
+  on($('b-unmute'), 'click', function (e) { e.stopPropagation(); unmute(); });
+
+  /* ---- 英文リーダーとの行き来 ----
+     リーダーへ：#src=英文ID.文の番号&t=秒&ok=通行証（My単語帳と同じ形。リーダーはその文を光らせ、動画をその場面に合わせる）
+     リーダーから：#d=英文ID&t=秒&ok=通行証。ホーム画面アプリどうしで #… が届かないときのため、置き手紙（ep_jump）も見る */
+  var RD_JUMP_MAX = 90000;
+  on($('b-rd'), 'click', function (e) {
+    e.stopPropagation();
+    if (!cur) return;
+    var t = P.t(), k = idxAt(t), was = !P.paused(); if (k < 0) k = 0;
+    P.pause(); savePos();
+    var url = READER_URL + '#src=' + curId + '.' + k + '&t=' + (Math.round(t * 10) / 10) + (was ? '&p=1' : '');
+    var tk = window.PinLock && window.PinLock.ticket ? window.PinLock.ticket() : '';
+    if (tk) url += '&ok=' + tk;
+    if (IN_RD) { location.href = './' + url.slice(url.indexOf('#')); return; }   // 同じアプリの中で、リーダーへ
+    try { localStorage.setItem(C.jump, JSON.stringify({ h: url.slice(url.indexOf('#')), t: now() })); } catch (er) {}
+    window.open(url, '_blank');
+  });
+  if (IN_RD) { $('b-home-rd').className = 'hbtn'; $('b-home-rd').textContent = '‹ ' + C.name; on($('b-home-rd'), 'click', function () { location.href = './'; }); }
+  function parseJump(h) {
+    var m = /[#&]d=([A-Za-z0-9_-]+)/.exec(h || ''); if (!m) return null;
+    var t = /[#&]t=(\d+(?:\.\d+)?)/.exec(h), ok = /[#&]ok=([0-9]+\.[0-9a-f]+)/.exec(h);
+    if (ok) { if (window.PinLock && window.PinLock.pass) window.PinLock.pass(ok[1]); else window.__pinPass = ok[1]; }
+    return { id: m[1], t: t ? Number(t[1]) : 0, p: /[#&]p=1/.test(h) };
+  }
+  function readJump() {
+    var j = parseJump(location.hash);
+    if (j) { try { localStorage.removeItem('ep_jump'); } catch (e) {} try { history.replaceState(null, '', location.pathname); } catch (e) {} return j; }
+    var v = null; try { v = JSON.parse(lsGet('ep_jump') || 'null'); } catch (e) {}
+    if (!v || !v.h) return null;
+    try { localStorage.removeItem('ep_jump'); } catch (e) {}
+    if (Math.abs(now() - Number(v.t || 0)) > RD_JUMP_MAX) return null;
+    return parseJump(String(v.h));
+  }
+  function doJump(j) {
+    if (!j || !KEY) return;
+    if (docs[j.id]) { openDoc(j.id, j.t, j.p); return; }
+    api('/reader/' + j.id, function (err, d) {
+      if (!err && d && (d.lv || d.yt) && d.cues && d.cues.length) { docs[j.id] = d; openDoc(j.id, j.t, j.p); }
+      else toast('この英文には動画がないか、見つかりませんでした');
+    });
+  }
+  function checkJump() { var j = readJump(); if (j) doJump(j); }
+  on(window, 'hashchange', checkJump);
+  on(document, 'visibilitychange', function () { if (!document.hidden) checkJump(); });
+  on(window, 'pageshow', checkJump);
+  on(window, 'focus', checkJump);
+
+  /* ---- はじめ ---- */
+  loadList();
+  checkJump();
+})();
+</script>
+</body>
+</html>

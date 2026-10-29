@@ -1,8 +1,9 @@
 // 手書きメモ用 Service Worker（iOS 9 では使われない。新しい端末でのオフライン起動用）
-const CACHE = "tegaki-memo-v107";
+const CACHE = "tegaki-memo-v108";
 const ASSETS = [
   "./",
   "./index.html",
+  "./player.html",
   "./fileshare.js",
   "./manifest.webmanifest",
   "./icons/icon-v2-192.png",
@@ -35,11 +36,12 @@ self.addEventListener("fetch", (event) => {
   if (new URL(req.url).origin !== self.location.origin) return;
 
   if (req.mode === "navigate") {
-    // ページ本体：ネット優先（更新がすぐ届く）。つながらないときはキャッシュ
+    // ページ本体：ネット優先（更新がすぐ届く）。つながらないときはキャッシュ。字幕プレイヤー（player.html）は別に置く
+    const page = /\/player\.html$/.test(new URL(req.url).pathname) ? "./player.html" : "./index.html";
     event.respondWith(
       fetch(req)
-        .then((res) => { const copy = res.clone(); caches.open(CACHE).then((c) => c.put("./index.html", copy)); return res; })
-        .catch(() => caches.match("./index.html"))
+        .then((res) => { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(page, copy)); return res; })
+        .catch(() => caches.match(page).then((c) => c || caches.match("./index.html")))
     );
     return;
   }
