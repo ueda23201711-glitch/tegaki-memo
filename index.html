@@ -5690,7 +5690,7 @@
   }
   function openReader(text) {
     if (!KEY) return;
-    show('scr-reader'); rdPullHistory();
+    show('scr-reader'); rdListY = 0; rdPullHistory();
     if (text) { $('rd-in').value = text; rdLoad(); }
     else rdShowInput();
   }
@@ -5768,6 +5768,8 @@
     $('rd-input').className = ''; $('rd-view').className = 'hidden';
     $('rd-paste').className = (navigator.clipboard && navigator.clipboard.readText) ? '' : 'hidden';
     renderRdHistory(); syncMsg(''); rdSyncNew(true);
+    var y = rdListY, b = $('rd-body'); b.scrollTop = y;
+    setTimeout(function () { if (!rdCur && b.scrollTop !== y) b.scrollTop = y; }, 0);
   }
   // 記事のアドレスから本文を取り込む（Apps Script がページを読みに行く）
   function rdFetchUrl(url) {
@@ -5921,8 +5923,10 @@
     abLabel(); markSentence(rdIdx);
   }
   function abReset() { abA = abB = -1; abLabel(); }
+  var rdListY = 0;   // 英文一覧のスクロール位置（読み終えて戻ったとき、同じ所を表示する）
   function openRdDoc(id, isNew) {
     var d = rdDocs[id]; if (!d) return;
+    if (!rdCur) rdListY = $('rd-body').scrollTop;
     stopSpeak(); abReset();
     rdCur = { id: id, d: d };
     $('rd-input').className = 'hidden'; $('rd-view').className = '';
