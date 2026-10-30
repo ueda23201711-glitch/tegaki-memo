@@ -4709,14 +4709,14 @@
       lvApiOnly = !!gasUrl;
       lvLinks = apiLink ? [apiLink] : []; lvLinkInfo = ''; lvLinkErr = []; d.lv.link = apiLink || '';
       $('lv-sub').className = 'hidden'; $('lv-get').className = 'hidden'; $('lv-video').style.display = 'block';
-      $('lv-video').src = rl; lvSrc('☁ ドライブから直接再生しています（大きい動画は始まるまで少しかかります）'); return;
+      $('lv-video').src = rl; lvSrc('☁ ドライブから直接再生しています（大きい動画は始まるまで少しかかります）'); lvSaveBtn(!!gasUrl); return;
     }
     // キーがあれば、まず Apps Script を通さずにドライブ API で再生（Apps Script が止まっていても見られる）
     if (d.lv.drive && apiLink && (!viaGas || !gasUrl)) {
       lvApiOnly = !!gasUrl;
       lvLinks = []; lvLinkInfo = ''; lvLinkErr = []; d.lv.link = apiLink;
       $('lv-sub').className = 'hidden'; $('lv-get').className = 'hidden'; $('lv-video').style.display = 'block';
-      $('lv-video').src = apiLink; lvSrc('☁ ドライブから直接再生しています'); return;
+      $('lv-video').src = apiLink; lvSrc('☁ ドライブから直接再生しています'); lvSaveBtn(!!gasUrl); return;
     }
     if (!d.lv.drive || !gasUrl) { lvAsk(d); return; }
     $('rd-status').textContent = '🎞 ドライブの動画を読み込んでいます…';

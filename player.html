@@ -177,6 +177,7 @@
         <button id="b-sm" class="ib" type="button" title="字幕を小さく">A−</button>
         <button id="b-bg" class="ib" type="button" title="字幕を大きく">A＋</button>
         <button id="b-sw" class="ib hidden" type="button" title="動画の読み込み元（この端末／ドライブ）を切り替える">📱 端末</button>
+        <button id="b-dl" class="ib hidden" type="button" title="見ながら、この端末に取り込む（終わったら、同じ場面からこの端末の動画に切り替わる）">⬇ 取り込む</button>
         <button id="b-pos" class="ib" type="button" title="字幕の位置（自動＝縦画面では動画の下に分ける）">⇕ 自動</button>
       </div>
     </div>
@@ -560,31 +561,42 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
   /* ---- ドライブからこの端末に取り込む（英文リーダーの「⬇ この端末に取り込む」と同じ方法・同じ保存場所）
      Apps Script から 3MB ずつ受け取る。途中で止まっても、次は続きから ---- */
   var imp = null;
-  function importDrive(id) {
+  // bg：ドライブから再生したまま、裏で取り込む（終わったら同じ場面から、この端末の動画に切り替える）
+  function importDrive(id, bg) {
     var d = docs[id]; if (!d || !d.lv.drive) return;
     if (!gasUrl) { msg('取り込むには、英文リーダーで「翻訳の設定（Apps Script）」が必要です。'); return; }
     if (imp && imp.id === id && !imp.fail) return;
-    try { v.pause(); } catch (e) {}
-    v.removeAttribute('src'); try { v.load(); } catch (e) {}
-    var job = imp = { id: id, fail: false }, fid = d.lv.drive, parts = [], n = 0, got = 0, t0 = now(), wait = {}, busy = {};
+    if (!bg) {
+      try { v.pause(); } catch (e) {}
+      v.removeAttribute('src'); try { v.load(); } catch (e) {}
+    }
+    var job = imp = { id: id, fail: false, bg: !!bg, pct: 0 }, fid = d.lv.drive, parts = [], n = 0, got = 0, t0 = now(), wait = {}, busy = {};
     var alive = function () { return imp === job && !job.fail; };
     var show = function () {
+      job.pct = n ? Math.round(got * 100 / n) : 0;
+      if (bg) { if (curId === id) updBtns(); return; }
       if (curId !== id) return;
       var left = got > 1 ? (now() - t0) / got * (n - got) / 1000 : 0;
       msg('⬇ この端末に取り込んでいます… ' + (n ? Math.round(got * 100 / n) : 0) + '%' + (n ? '（' + got + ' / ' + n + (left ? '・残り約 ' + (left > 90 ? Math.round(left / 60) + ' 分' : Math.max(1, Math.round(left)) + ' 秒') : '') + '）' : '') + '\nこの画面を開いたままにしてください。');
     };
     var stopWith = function (e) {
       job.fail = true;
+      if (bg) { if (curId === id) { updBtns(); toast('取り込めませんでした。もう一度「⬇ 取り込む」を押すと続きから'); } return; }
       if (curId === id) msg('取り込めませんでした（' + String(e || '').slice(0, 60) + '）。もう一度押すと、続きから取り込みます。', '', [dlBtn(id)]);
     };
     var finish = function () {
       if (!alive()) return; job.fail = true;
       var blob = new Blob(parts, { type: d.lv.type || 'video/mp4' });
-      if (curId === id) msg('取り込みました。この端末に保存しています…');
+      if (curId === id && !bg) msg('取り込みました。この端末に保存しています…');
       idbPut(id, blob, function (okp) {
         for (var k = 0; k < n; k++) idbDel(id + '#' + k);   // 途中の分は消す
         imp = null;
+        if (okp) { have[id] = 1; lsSet('ep_src_' + id, 'local'); }
         if (curId !== id) return;
+        if (bg) {   // 見ている場面のまま、この端末の動画に切り替える
+          if (srcMode === 'drive' && P.kind === 'v') { pendingSeek = P.t(); seekQuiet = true; resumePlay = !P.paused(); }
+          else if (srcMode === 'local') { updBtns(); return; }
+        }
         if (blobUrl) { try { URL.revokeObjectURL(blobUrl); } catch (e) {} }
         have[id] = 1; lsSet('ep_src_' + id, 'local');
         blobUrl = URL.createObjectURL(blob); srcMode = 'local'; v.src = blobUrl; msg(''); updBtns();
@@ -688,6 +700,14 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     });
   }
   on($('b-sw'), 'click', function (e) { e.stopPropagation(); switchSrc(); hideSoon(); });
+  on($('b-dl'), 'click', function (e) {
+    e.stopPropagation(); hideSoon();
+    if (!cur || !cur.lv || !cur.lv.drive) return;
+    if (imp && imp.id === curId && !imp.fail) { toast('取り込んでいます… ' + (imp.pct || 0) + '%（見ながらで大丈夫です）'); return; }
+    var mb = cur.lv.size ? '（約 ' + Math.max(1, Math.round(cur.lv.size / 1048576)) + 'MB）' : '';
+    if (!window.confirm('この動画' + mb + 'を、見ながらこの端末に取り込みますか？\n終わると、同じ場面からこの端末の動画に切り替わります。次からは電波がなくてもすぐ見られます。\n（取り込み中は、この画面を開いたままにしてください）')) return;
+    importDrive(curId, true); updBtns(); toast('⬇ 取り込みを始めました');
+  });
   var apiOnly = '';   // いまドライブ API だけで再生している英文（だめなら Apps Script のリンクを取りに行く）
   function fromDrive(id, viaGas) {
     var d = docs[id];
@@ -986,6 +1006,9 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     var sw = $('b-sw'), canSw = !OLD && cur && cur.lv && P.kind === 'v' && srcMode && (srcMode === 'drive' || (cur.lv.drive && (driveKey || gasUrl)));
     sw.className = canSw ? 'ib' : 'ib hidden';
     if (canSw) sw.textContent = srcMode === 'local' ? '📱 端末' : '☁ ドライブ';
+    var dl = $('b-dl'), canDl = !OLD && cur && cur.lv && cur.lv.drive && gasUrl && P.kind === 'v' && srcMode === 'drive' && !have[curId];
+    dl.className = canDl ? 'ib' : 'ib hidden';
+    if (canDl) dl.textContent = imp && imp.id === curId && !imp.fail ? '⬇ ' + (imp.pct || 0) + '%' : '⬇ 取り込む';
     var fsOk = fsEl() && !fsActive() && !isStandalone();
     $('b-fs').className = fsOk || fsActive() ? 'ib' : 'ib hidden';
     $('b-fs').textContent = fsActive() ? '⤡' : '⛶';
