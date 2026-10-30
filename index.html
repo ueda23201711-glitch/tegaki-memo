@@ -173,6 +173,17 @@
   #rd-src-box a { color: #2f6f8f; }
   #rd-title-box .ed { font-weight: 400; font-size: 13px; color: #2f6f8f; margin-left: 6px; white-space: nowrap; }
   .rd-hrow button { float: right; padding: 5px 9px; font-size: 12px; background: #f1f4f6; color: #a3301f; margin-left: 8px; }
+  /* 一覧の行：題名を幅いっぱいに（2 行まで）、ボタンは 2 行目の右へ */
+  .rd-hrow b.rd-t2 { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; line-height: 1.35; word-break: break-word; }
+  .rd-hrow .rd-line { display: flex; align-items: flex-end; gap: 6px; margin-top: 4px; }
+  .rd-hrow .rd-info { flex: 1; min-width: 0; line-height: 1.5; }
+  .rd-hrow .rd-info .rd-badge { margin-left: 6px; }
+  .rd-hrow .rd-acts { flex: none; display: flex; align-items: center; gap: 2px; white-space: nowrap; }
+  .rd-hrow .rd-acts button { float: none; margin: 0; padding: 4px 7px; font-size: 12px; }
+  .rd-hrow .rd-acts .rd-fav { font-size: 14px; padding: 4px 4px; letter-spacing: 0; }
+  .rd-hrow .rd-acts .rd-fav { background: transparent; color: #b7bfc6; box-shadow: none; }
+  .rd-hrow .rd-acts .rd-fav.on { color: #e8a317; }
+  .rd-hrow .rd-acts .rd-ren { color: #2f4a57; }
   #rd-ctrl { position: -webkit-sticky; position: sticky; top: 0; z-index: 3; background: #f7f9fa; border-bottom: 1px solid #d7dee3; padding: 8px 12px; }
   #rd-ctrl button, #rd-ctrl select { margin: 2px 6px 2px 0; }
   #rd-ctrl select { font-size: 15px; padding: 6px; border-radius: 8px; border: 1px solid #c9d2d8; background: #fff; }
@@ -5942,7 +5953,12 @@
       }
       var fv = document.createElement('button'); fv.type = 'button'; fv.className = 'rd-fav' + (d.fav ? ' on' : ''); fv.textContent = favStr(d.fav); fv.title = '好み（押すたびに ★1→★2→★3→なし）';
       on(fv, 'click', function (e) { e.stopPropagation(); var n = ((d.fav || 0) + 1) % 4; setFav(id, n); fv.textContent = favStr(n); fv.className = 'rd-fav' + (n ? ' on' : ''); if (lsGet(SORT_KEY) === 'fav') renderRdHistory(); });
-      row.appendChild(del); row.appendChild(ren); row.appendChild(fv); row.appendChild(b); row.appendChild(sp); row.appendChild(bd);
+      // 1 行目は題名だけ（幅いっぱい・2 行まで）。2 行目の左に日時と状態、右に ★・✎・削除
+      var line = document.createElement('div'); line.className = 'rd-line';
+      var info = document.createElement('div'); info.className = 'rd-info'; info.appendChild(sp); info.appendChild(bd);
+      var acts = document.createElement('div'); acts.className = 'rd-acts'; acts.appendChild(fv); acts.appendChild(ren); acts.appendChild(del);
+      line.appendChild(info); line.appendChild(acts);
+      b.className = 'rd-t2'; row.appendChild(b); row.appendChild(line);
       on(row, 'click', function () { useBump(id); openRdDoc(id); });
       box.appendChild(row);
     });    mkBanner();
