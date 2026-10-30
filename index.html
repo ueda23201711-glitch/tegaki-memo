@@ -149,6 +149,8 @@
   .rd-hrow b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .rd-hrow span { font-size: 12px; color: #6b7a83; }
   .rd-selbtn { font-size: 13px; padding: 4px 10px; margin-left: 10px; font-weight: 400; vertical-align: middle; }
+  .rd-fav { float: right; margin-left: 6px; padding: 2px 6px; font-size: 15px; letter-spacing: 1px; color: #b7bfc6; background: transparent; border: none; box-shadow: none; }
+  .rd-fav.on { color: #e8a317; }
   #rd-selbar { position: -webkit-sticky; position: sticky; top: 0; z-index: 5; background: #e6f1f6; border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; }
   #rd-selbar span { font-weight: 700; margin-right: 6px; }
   #rd-selbar button { padding: 6px 10px; font-size: 13px; margin: 2px 4px 2px 0; }
@@ -584,7 +586,7 @@
         </div>
       </div>
       <p class="note">保存した単語・熟語は <a href="/kiku-memo/" target="_blank">📚 メモ単語帳</a> で学習できます（iPad 2/3 は <a href="/kiku-memo/ipad.html" target="_blank">こちら</a>）。</p>
-      <h3 id="rd-hist-h" class="rd-h">これまでの英文 <button id="rd-sync" type="button" class="rd-selbtn" title="ほかの端末で追加・変更した英文を読み込む">🔄 最新にする</button> <button id="rd-quota" type="button" class="rd-selbtn" title="Google ドライブの使用量と、動画の一覧（消して空ける）">☁ ドライブの容量</button> <button id="rd-sort" type="button" class="rd-selbtn" title="よく見る・読む英文を上に（もう一度押すと、追加した順に戻る）">⭐ よく見る順</button> <button id="rd-sel" type="button" class="rd-selbtn">☑ 選んで削除</button></h3>
+      <h3 id="rd-hist-h" class="rd-h">これまでの英文 <button id="rd-sync" type="button" class="rd-selbtn" title="ほかの端末で追加・変更した英文を読み込む">🔄 最新にする</button> <button id="rd-quota" type="button" class="rd-selbtn" title="Google ドライブの使用量と、動画の一覧（消して空ける）">☁ ドライブの容量</button> <button id="rd-sort" type="button" class="rd-selbtn" title="よく見る・読む英文を上に（もう一度押すと、追加した順に戻る）">👁 よく見る順</button> <button id="rd-fsort" type="button" class="rd-selbtn" title="★の多い英文を上に（もう一度押すと、追加した順に戻る）">⭐ 好み順</button> <button id="rd-sel" type="button" class="rd-selbtn">☑ 選んで削除</button></h3>
       <p class="note" id="rd-sync-msg"></p>
       <div id="rd-selbar" class="hidden"><span id="rd-selcount">0 件を選択</span>
         <button id="rd-selall" type="button">すべて選ぶ</button>
@@ -5028,6 +5030,7 @@
   }
   on($('rd-quota'), 'click', dqOpen);
   on($('rd-sort'), 'click', function () { if (lsGet(SORT_KEY) === 'pop') lsDel(SORT_KEY); else lsSet(SORT_KEY, 'pop'); renderRdHistory(); });
+  on($('rd-fsort'), 'click', function () { if (lsGet(SORT_KEY) === 'fav') lsDel(SORT_KEY); else lsSet(SORT_KEY, 'fav'); renderRdHistory(); });
   on($('dq-re'), 'click', dqLoad);
   on($('dq-close'), 'click', function () { $('dq-dlg').className = 'hidden'; });
   on($('dq-x'), 'click', function () { $('dq-dlg').className = 'hidden'; });
@@ -5413,6 +5416,14 @@
   var USE_KEY = 'memo_reader_use', SORT_KEY = 'memo_reader_sort';
   function useMap() { var m = null; try { m = JSON.parse(lsGet(USE_KEY) || 'null'); } catch (e) {} return m && typeof m === 'object' ? m : {}; }
   function useBump(id) { var m = useMap(), u = m[id] || [0, 0]; m[id] = [u[0] + 1, now()]; lsSet(USE_KEY, JSON.stringify(m)); }
+  // 好み（★1〜3。0 はなし）。英文のデータ（reader/ID/fav）に保存するので、ほかの端末・字幕プレイヤーでも同じ
+  function favStr(n) { n = n || 0; return '★★★'.slice(0, n) + '☆☆☆'.slice(0, 3 - n); }
+  function setFav(id, n) {
+    var d = rdDocs[id]; if (!d) return;
+    if (n) d.fav = n; else delete d.fav;
+    rdSaveLocal();
+    if (KEY) { var b = {}; b['reader/' + id + '/fav'] = n || null; api('PATCH', '', b, function () {}); }
+  }
   function rdSerials() { var a = rdIds(), m = {}; for (var i = 0; i < a.length; i++) m[a[i]] = a.length - i; return m; }
   // 選んで削除：rdSel = {id: 1}（選んでいないときは null）
   var rdSel = null;
@@ -5877,9 +5888,13 @@
     cvLoad(); if (lvCanPlay && !lvOld) lvScan();
     var box = $('rd-hist'); box.innerHTML = '';
     var ids = rdIds();
-    var sn = rdSerials(), pop = lsGet(SORT_KEY) === 'pop', um = useMap();
-    if (pop) ids.sort(function (x, y) { var a = um[x] || [0, 0], b = um[y] || [0, 0]; return (b[0] - a[0]) || (b[1] - a[1]) || ((rdDocs[y].at || 0) - (rdDocs[x].at || 0)); });
-    $('rd-sort').textContent = pop ? '🕒 追加した順に戻す' : '⭐ よく見る順';
+    var sn = rdSerials(), mode = lsGet(SORT_KEY) || '', pop = mode === 'pop', um = useMap();
+    var useCmp = function (x, y) { var a = um[x] || [0, 0], b = um[y] || [0, 0]; return (b[0] - a[0]) || (b[1] - a[1]); };
+    var atCmp = function (x, y) { return (rdDocs[y].at || 0) - (rdDocs[x].at || 0); };
+    if (pop) ids.sort(function (x, y) { return useCmp(x, y) || atCmp(x, y); });
+    if (mode === 'fav') ids.sort(function (x, y) { return ((rdDocs[y].fav || 0) - (rdDocs[x].fav || 0)) || useCmp(x, y) || atCmp(x, y); });
+    $('rd-sort').textContent = pop ? '🕒 追加した順に戻す' : '👁 よく見る順';
+    $('rd-fsort').textContent = mode === 'fav' ? '🕒 追加した順に戻す' : '⭐ 好み順';
     $('rd-hist-h').style.display = ids.length ? '' : 'none';
     if (rdSel && !ids.length) rdSel = null;
     $('rd-selbar').className = rdSel ? '' : 'hidden';
@@ -5924,7 +5939,9 @@
         box.appendChild(row);
         return;
       }
-      row.appendChild(del); row.appendChild(ren); row.appendChild(b); row.appendChild(sp); row.appendChild(bd);
+      var fv = document.createElement('button'); fv.type = 'button'; fv.className = 'rd-fav' + (d.fav ? ' on' : ''); fv.textContent = favStr(d.fav); fv.title = '好み（押すたびに ★1→★2→★3→なし）';
+      on(fv, 'click', function (e) { e.stopPropagation(); var n = ((d.fav || 0) + 1) % 4; setFav(id, n); fv.textContent = favStr(n); fv.className = 'rd-fav' + (n ? ' on' : ''); if (lsGet(SORT_KEY) === 'fav') renderRdHistory(); });
+      row.appendChild(del); row.appendChild(ren); row.appendChild(fv); row.appendChild(b); row.appendChild(sp); row.appendChild(bd);
       on(row, 'click', function () { useBump(id); openRdDoc(id); });
       box.appendChild(row);
     });    mkBanner();
