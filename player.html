@@ -481,6 +481,20 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     has: function () { return P.kind === 'yt' ? !!(yt && ytReady) : !!v.getAttribute('src'); }
   };
   var apiTried = false;
+  /* ドライブの動画を中継するサービスワーカー（drive-sw.js）。iPhone の <video> がドライブ API を直接読めないため。
+     字幕プレイヤー単体（/eibun-player/）だけで使う（英文リーダー・手書きメモの中の player.html は、そのアプリの仕組みとぶつからないよう使わない） */
+  var swOk = false;
+  if (!OLD && 'serviceWorker' in navigator && /\/eibun-player\/|^\/(index\.html)?$/.test(location.pathname)) {
+    try {
+      navigator.serviceWorker.register('drive-sw.js').then(function () { return navigator.serviceWorker.ready; }).then(function () { swOk = !!navigator.serviceWorker.controller; }, function () {});
+      navigator.serviceWorker.addEventListener('controllerchange', function () { swOk = true; });
+      swOk = !!navigator.serviceWorker.controller;
+    } catch (e) {}
+  }
+  function relayLink(d) {
+    if (!swOk || !driveKey || !d.lv.drive) return '';
+    return '__drive__?id=' + encodeURIComponent(d.lv.drive) + '&key=' + encodeURIComponent(driveKey) + (d.lv.size ? '&size=' + d.lv.size : '') + '&type=' + encodeURIComponent(d.lv.type || 'video/mp4');
+  }
   var v = $('vid'), cur = null, curId = '', blobUrl = '', links = [], linkErr = [], srcMode = '';
   // btns: [[文字, 押したとき, 'sub'(控えめ)]]
   function msg(t, link, btns) {
@@ -637,7 +651,7 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     var apiLink = driveKey ? 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(d.lv.drive) + '?alt=media&key=' + encodeURIComponent(driveKey) : '';
     apiOnly = '';
     // キーがあれば、まず Apps Script を通さずにドライブ API で再生（Apps Script が止まっていても見られる）
-    if (apiLink && (!viaGas || !gasUrl)) { apiOnly = gasUrl ? id : ''; links = []; linkErr = []; srcMode = 'drive'; d.lv.link = apiLink; v.src = apiLink; msg(''); updBtns(); return; }
+    if (apiLink && (!viaGas || !gasUrl)) { apiOnly = gasUrl ? id : ''; var rl = relayLink(d); links = rl ? [apiLink] : []; linkErr = []; srcMode = 'drive'; d.lv.link = apiLink; v.src = rl || apiLink; msg(''); updBtns(); return; }   // 中継（サービスワーカー）が使えればそれを先に
     if (!gasUrl) {
       msg('ドライブの動画を見るには、英文リーダーで「翻訳の設定（Apps Script）」が必要です。'); return;
     }
@@ -649,7 +663,8 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
       links = m ? ['https://drive.usercontent.google.com/download?id=' + m[1] + '&export=download&confirm=t', r.url] : [r.url];
       if (r.direct && r.direct !== links[0]) links.unshift(r.direct);
       if (apiLink) links.unshift(apiLink);   // ドライブ API（動画として配信される・iPhone でも再生できる）を先に試す
-      linkErr = []; srcMode = 'drive'; d.lv.link = links[0];
+      if (relayLink(d)) links.unshift(relayLink(d));   // いちばん先：サービスワーカーで中継（iPhone でも取り込まずに見られる）
+      linkErr = []; srcMode = 'drive'; d.lv.link = /^__drive__/.test(links[0]) ? (links[1] || links[0]) : links[0];
       v.src = links.shift(); msg(''); updBtns();
     });
   }
@@ -675,9 +690,9 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
   on(v, 'error', function () {
     if (!cur || !v.getAttribute('src')) return;
     var ec = v.error ? v.error.code : 0;
-    if (srcMode === 'drive' && apiOnly && apiOnly === curId) { var aid = apiOnly; apiOnly = ''; linkErr.push(ec); fromDrive(aid, true); return; }   // API だけではだめ：共有の設定をして、ほかのリンクも試す
+    if (srcMode === 'drive' && apiOnly && apiOnly === curId && !links.length) { var aid = apiOnly; apiOnly = ''; linkErr.push(ec); fromDrive(aid, true); return; }   // API だけではだめ：共有の設定をして、ほかのリンクも試す
     if (srcMode === 'drive' && driveKey && !apiTried && cur.lv.drive) { apiTried = true; links = []; var al = 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(cur.lv.drive) + '?alt=media&key=' + encodeURIComponent(driveKey); cur.lv.link = al; v.src = al; try { v.load(); } catch (e) {} return; }
-    if (srcMode === 'drive') { linkErr.push(ec); if (links.length) { cur.lv.link = links[0]; v.src = links.shift(); try { v.load(); } catch (e) {} return; } }
+    if (srcMode === 'drive') { linkErr.push(ec); if (links.length) { if (!/^__drive__/.test(links[0])) cur.lv.link = links[0]; v.src = links.shift(); try { v.load(); } catch (e) {} return; } }
     var why = ec === 3 ? '動画の中身を再生できません。この端末には画質・形式が重すぎる可能性があります'
       : ec === 4 ? (srcMode === 'drive' ? 'ドライブから動画として受け取れませんでした' : 'この端末が対応していない形式です')
       : ec === 2 ? '読み込みの途中で通信が切れました' : '';
