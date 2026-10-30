@@ -623,7 +623,8 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     });
   }
   on($('b-sw'), 'click', function (e) { e.stopPropagation(); switchSrc(); hideSoon(); });
-  function fromDrive(id) {
+  var apiOnly = '';   // いまドライブ API だけで再生している英文（だめなら Apps Script のリンクを取りに行く）
+  function fromDrive(id, viaGas) {
     var d = docs[id];
     // キーをまだ読み込んでいない（開いた直後に英文リーダーから来たときなど）：読み込んでから（最大 5 秒）
     if (!driveKey && !keyLoaded && KEY && d.lv.drive) {
@@ -634,8 +635,10 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     if (!d.lv.drive) { msg('この動画は、まだドライブに送られていません。英文リーダーで動画を入れた端末から送り終えると、ここで見られます。'); return; }
     apiTried = !!driveKey;
     var apiLink = driveKey ? 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(d.lv.drive) + '?alt=media&key=' + encodeURIComponent(driveKey) : '';
+    apiOnly = '';
+    // キーがあれば、まず Apps Script を通さずにドライブ API で再生（Apps Script が止まっていても見られる）
+    if (apiLink && (!viaGas || !gasUrl)) { apiOnly = gasUrl ? id : ''; links = []; linkErr = []; srcMode = 'drive'; d.lv.link = apiLink; v.src = apiLink; msg(''); updBtns(); return; }
     if (!gasUrl) {
-      if (apiLink) { links = []; linkErr = []; srcMode = 'drive'; d.lv.link = apiLink; v.src = apiLink; msg(''); updBtns(); return; }
       msg('ドライブの動画を見るには、英文リーダーで「翻訳の設定（Apps Script）」が必要です。'); return;
     }
     msg('☁ ドライブの動画を読み込んでいます…');
@@ -672,6 +675,7 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
   on(v, 'error', function () {
     if (!cur || !v.getAttribute('src')) return;
     var ec = v.error ? v.error.code : 0;
+    if (srcMode === 'drive' && apiOnly && apiOnly === curId) { var aid = apiOnly; apiOnly = ''; linkErr.push(ec); fromDrive(aid, true); return; }   // API だけではだめ：共有の設定をして、ほかのリンクも試す
     if (srcMode === 'drive' && driveKey && !apiTried && cur.lv.drive) { apiTried = true; links = []; var al = 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(cur.lv.drive) + '?alt=media&key=' + encodeURIComponent(driveKey); cur.lv.link = al; v.src = al; try { v.load(); } catch (e) {} return; }
     if (srcMode === 'drive') { linkErr.push(ec); if (links.length) { cur.lv.link = links[0]; v.src = links.shift(); try { v.load(); } catch (e) {} return; } }
     var why = ec === 3 ? '動画の中身を再生できません。この端末には画質・形式が重すぎる可能性があります'

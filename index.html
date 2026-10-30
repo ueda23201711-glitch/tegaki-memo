@@ -4536,6 +4536,7 @@
       var d = rdCur.d, id = rdCur.id;
       $('lv-sub').className = 'hidden';
       if (lvMode === 'drive') lvLinkErr.push(v.error ? v.error.code : 0);
+      if (lvMode === 'drive' && lvApiOnly && gasUrl) { lvApiOnly = false; lvStream(d, true); return; }   // API だけではだめ：共有の設定をして、ほかのリンクも試す
       if (lvMode === 'drive' && lvLinks.length) { d.lv.link = lvLinks[0]; v.src = lvLinks.shift(); try { v.load(); } catch (er) {} return; }   // 別の形のリンクで試す
       if (lvMode === 'drive' && !lvOld && (lvHave[id] || lvMem[id])) {   // 端末の動画に戻す
         lsSet('memo_lvsrc_' + id, 'local'); lvMode = 'local'; lvSwitchTo(false);
@@ -4688,10 +4689,14 @@
     if (!ytTimer) ytTimer = setInterval(ytTick, 250);
   }
   // 古い iPad：ドライブの動画を直接再生する（リンクで見られるようにして、その場所を再生）
-  function lvStream(d) {
+  var lvApiOnly = false;   // いまドライブ API だけで再生している（だめなら Apps Script のリンクを取りに行く）
+  function lvStream(d, viaGas) {
     var id = rdCur.id;
     var apiLink = lvApiLink(d.lv.drive);
-    if (d.lv.drive && !gasUrl && apiLink) {
+    lvApiOnly = false;
+    // キーがあれば、まず Apps Script を通さずにドライブ API で再生（Apps Script が止まっていても見られる）
+    if (d.lv.drive && apiLink && (!viaGas || !gasUrl)) {
+      lvApiOnly = !!gasUrl;
       lvLinks = []; lvLinkInfo = ''; lvLinkErr = []; d.lv.link = apiLink;
       $('lv-sub').className = 'hidden'; $('lv-get').className = 'hidden'; $('lv-video').style.display = 'block';
       $('lv-video').src = apiLink; lvSrc('☁ ドライブから直接再生しています'); return;
