@@ -184,7 +184,7 @@
 
 <script>
 /* どのアプリの英文を見るか（英文リーダー／手書きメモの英文リーダー）。build-reader-copy.sh がアプリごとに書き換える */
-var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo_reader', idb: 'memo-video', jump: 'memo_jump', reader: 'https://ueda23201711-glitch.github.io/tegaki-memo/', inApp: /\/tegaki-memo\//, name: '手書きメモ' };
+var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo_reader', idb: 'memo-video', jump: 'memo_jump', reader: 'https://ueda23201711-glitch.github.io/tegaki-memo/', inApp: /\/tegaki-memo\//, name: '手書きメモ', sw: 'sw.js' };
 </script>
 <script>
 (function () {
@@ -482,11 +482,12 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
   };
   var apiTried = false;
   /* ドライブの動画を中継するサービスワーカー（drive-sw.js）。iPhone の <video> がドライブ API を直接読めないため。
-     字幕プレイヤー単体（/eibun-player/）だけで使う（英文リーダー・手書きメモの中の player.html は、そのアプリの仕組みとぶつからないよう使わない） */
+     字幕プレイヤー単体では drive-sw.js、英文リーダー・手書きメモの中では各アプリの sw.js（drive-sw.js を取り込み済み）を使う */
   var swOk = false;
-  if (!OLD && 'serviceWorker' in navigator && /\/eibun-player\/|^\/(index\.html)?$/.test(location.pathname)) {
+  // 英文リーダー・手書きメモの中（EP_CFG.sw あり）では、そのアプリの sw.js に中継が組み込んであるので、それを登録する（ぶつからない）
+  if (!OLD && 'serviceWorker' in navigator && (EP_CFG.sw || /\/eibun-player\/|^\/(index\.html)?$/.test(location.pathname))) {
     try {
-      navigator.serviceWorker.register('drive-sw.js').then(function () { return navigator.serviceWorker.ready; }).then(function () { swOk = !!navigator.serviceWorker.controller; }, function () {});
+      navigator.serviceWorker.register(EP_CFG.sw || 'drive-sw.js', { updateViaCache: 'none' }).then(function (reg) { try { reg.update(); } catch (e) {} return navigator.serviceWorker.ready; }).then(function () { swOk = !!navigator.serviceWorker.controller; }, function () {});
       navigator.serviceWorker.addEventListener('controllerchange', function () { swOk = true; });
       swOk = !!navigator.serviceWorker.controller;
     } catch (e) {}
@@ -687,6 +688,21 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
       }, function (e) { fin('ドライブ API：つながりません（' + String(e && e.message || e).slice(0, 40) + '）'); });
     } catch (e) { fin(''); }
   }
+  // 調べる：中継（サービスワーカー）が何を返すか。先頭 2 バイトを頼んで、状態・長さ・範囲を見る
+  function diagRelay(rl, cb) {
+    if (!window.fetch) { cb(''); return; }
+    if (!rl) { cb('中継：' + (!('serviceWorker' in navigator) ? '非対応' : !navigator.serviceWorker.controller ? '未起動（いちど開き直すと使えます）' : '使えません')); return; }
+    var done = false, fin = function (t) { if (!done) { done = true; cb(t); } };
+    setTimeout(function () { fin('中継：時間切れ'); }, 15000);
+    try {
+      fetch(rl, { headers: { Range: 'bytes=0-1' }, cache: 'no-store' }).then(function (res) {
+        var ver = res.headers.get('x-relay') || '旧版';
+        return res.arrayBuffer().then(function (b) {
+          fin('中継 ' + ver + '：' + res.status + '・' + b.byteLength + 'B' + (res.headers.get('content-range') ? '・' + res.headers.get('content-range') : '') + (res.status >= 400 ? '・' + String.fromCharCode.apply(null, new Uint8Array(b.slice(0, 60))) : ''));
+        });
+      }, function (e) { fin('中継：つながりません（' + String(e && e.message || e).slice(0, 40) + '）'); });
+    } catch (e) { fin(''); }
+  }
   on(v, 'error', function () {
     if (!cur || !v.getAttribute('src')) return;
     var ec = v.error ? v.error.code : 0;
@@ -700,7 +716,10 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     if (srcMode === 'drive' && !webm && ec !== 3) {
       var base = 'ドライブから直接は再生できませんでした（コード ' + ec + (linkErr.length > 1 ? '・' + linkErr.join('→') : '') + '）。' + (driveKey ? '' : '一覧の「⚙」でドライブ API のキーを入れると、取り込まずに見られます。') + 'いったんこの端末に取り込んでも見られます（' + (cur.lv.size ? '約 ' + Math.max(1, Math.round(cur.lv.size / 1048576)) + 'MB。' : '') + '次からはすぐ再生できます）。', id0 = curId, lk = cur.lv.link;
       msg(base + '\n（原因を調べています…）', lk, [dlBtn(curId)]);
-      diagDrive(cur.lv.drive, function (t) { if (curId === id0) msg(base + (t ? '\n［' + t + '］' : ''), lk, [dlBtn(id0)]); });
+      var rl0 = relayLink(cur);
+      diagDrive(cur.lv.drive, function (t) {
+        diagRelay(rl0, function (t2) { if (curId === id0) msg(base + (t || t2 ? '\n［' + [t, t2].filter(Boolean).join('／') + '］' : ''), lk, [dlBtn(id0)]); });
+      });
       return;
     }
     msg('この端末ではこの動画を再生できませんでした' + (webm ? '（webm は古い iPhone・iPad では再生できません。mp4 を使ってください）' : why ? '（' + why + '）' : '') + '。', srcMode === 'drive' ? cur.lv.link : '');
