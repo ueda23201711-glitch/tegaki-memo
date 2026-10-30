@@ -3913,7 +3913,8 @@
     var out = [], t = cvText(id);
     if (d.lv) {
       var here = lvHave[id] || lvMem[id];
-      out.push(lvUp[id] ? '🎞 動画：ドライブに送信中（📱 この端末にあり）' : '🎞 動画：' + (here ? '📱 この端末にあり' : lvOld ? '▶ ドライブから再生' : '📱 この端末にはまだない') + (d.lv.drive ? '・☁ ドライブにあり' : '・ドライブにはない'));
+      // 狭い画面でも切れないよう短く（有端末＝この端末に保存してある／無端末＝まだない）
+      out.push(lvUp[id] ? '🎞 有端末・ドライブへ送信中' : '🎞 ' + (here ? '有端末' : lvOld ? 'ドライブ再生' : '無端末') + (d.lv.drive ? '・有ドライブ' : '・無ドライブ'));
     }
     if (t) out.push('☁ ' + t);
     if (/^gm:/.test(rdVoiceName)) {
