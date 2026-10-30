@@ -4547,7 +4547,8 @@
         lvAsk(d); lvMsg('ドライブから直接は再生できませんでした。「⬇ ドライブから取り込む」で見られます。'); return;
       }
       var why = ec === 3 ? '動画の中身を再生できません（この端末には画質・形式が重すぎる可能性。小さい画質の mp4 なら見られることがあります）'
-        : ec === 4 ? (lvMode === 'drive' ? 'ドライブから動画として受け取れませんでした' : 'この端末が対応していない形式です')
+        : ec === 4 ? (lvMode === 'drive' && /^20[06] video/.test(lvLinkInfo) ? '動画はドライブから届いていますが、この端末ではこの動画の形式・画質を再生できません。古い iPad では 720p 以下（iPad 2 は 540p 程度）の mp4 に変換したものなら見られます'
+          : lvMode === 'drive' ? 'ドライブから動画として受け取れませんでした' : 'この端末が対応していない形式です')
         : ec === 2 ? '読み込みの途中で通信が切れました' : '';
       $('rd-status').textContent = 'この端末ではこの動画を再生できませんでした' + (/webm/i.test(d.lv.type || d.lv.name) ? '（webm は古い iPhone・iPad では再生できません。mp4 を使ってください）' : why ? '（' + why + (ec ? '・コード ' + ec : '') + (lvMode === 'drive' && lvLinkInfo ? '・' + lvLinkInfo : '') + (lvMode === 'drive' && lvLinkErr.length > 1 ? '・試したリンクのコード ' + lvLinkErr.join('→') : '') + '）' : '') + '。';
       if (d.lv.link) { $('lv-get').className = ''; $('lv-video').style.display = 'none'; $('lv-get-t').innerHTML = ''; var a = document.createElement('a'); a.href = d.lv.link; a.target = '_blank'; a.style.color = '#fff'; a.textContent = '🔗 Safari で動画を開く（別の画面で再生）'; $('lv-get-t').appendChild(a); $('lv-dl').style.display = 'none'; }
