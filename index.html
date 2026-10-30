@@ -4354,7 +4354,31 @@
       lvNote(id, '🎞 動画をドライブに送りました。ほかの端末でも見られます。');
       setTimeout(function () { var bn = $('mk-banner'); if (bn && /🎞/.test(bn.textContent)) bn.className = 'hidden'; }, 5000);
     };
-    var up = null;
+    var up = null, loc = null, sentDirect = false;   // loc：ドライブの送り先（あれば、Apps Script を通さずにこの端末から直接送る）
+    // この端末から直接ドライブへ（8MB ずつ。base64 にしないので速い）。だめなら Apps Script 経由に切り替える
+    var put = function (off) {
+      if (!rdDocs[id]) { clearInterval(tick); return; }
+      var CH = 8 * 1024 * 1024, end = Math.min(file.size, off + CH), x = new XMLHttpRequest(), lastPc = -1;
+      var el = off > off0 && now() > t0 ? (now() - t0) / Math.max(1, off - off0) * (file.size - off) / 1000 : 0;
+      var tail = el > 5 ? '（残り約 ' + (el > 90 ? Math.round(el / 60) + ' 分' : Math.round(el) + ' 秒') + '・直接送信）' : '（直接送信）';
+      showStep('🎞 動画をドライブに送っています… ' + pctOf(off) + '%' + tail + '（この画面を閉じないでください）');
+      try { x.open('PUT', loc, true); x.setRequestHeader('Content-Range', 'bytes ' + off + '-' + (end - 1) + '/' + file.size); } catch (e) { loc = null; check(); return; }
+      if (x.upload) x.upload.onprogress = function (ev) { var pc = pctOf(off + (ev.loaded || 0)); if (pc !== lastPc) { lastPc = pc; lvNote(id, '🎞 動画をドライブに送っています… ' + pc + '%' + tail + '（この画面を閉じないでください）'); } };
+      x.onload = function () {
+        if (x.status === 308) { sentDirect = true; fails = 0; got0 = end; lsSet(SK, JSON.stringify({ v: 2, up: up, off: end, size: file.size, loc: loc, at: (saved && saved.at) || now() })); saved = lsJSON(SK, null); put(end); return; }
+        if (x.status === 200 || x.status === 201) { var j = null; try { j = JSON.parse(x.responseText); } catch (e) {} if (j && j.id) finish(j.id); else check(); return; }
+        if (x.status === 404 || x.status === 410) { if (!restarted) { restarted = true; lsDel(SK); saved = null; begin(); return; } }
+        if (++fails > 6) { stop('動画をドライブに送れませんでした（ドライブ ' + x.status + '）。英文を開き直すと続きから送ります。'); return; }
+        setTimeout(check, Math.min(60000, 3000 * fails));
+      };
+      x.onerror = x.ontimeout = function () {
+        if (!sentDirect) { loc = null; lsSet('lv_direct_ng', String(now())); }   // 最初から送れない（ドライブが許可しない）：Apps Script 経由に
+        else if (++fails > 6) { stop('動画をドライブに送れませんでした（通信が切れました）。英文を開き直すと続きから送ります。'); return; }
+        setTimeout(check, sentDirect ? Math.min(60000, 3000 * fails) : 0);
+      };
+      x.timeout = 300000;
+      x.send(file.slice(off, end));
+    };
     // ドライブが受け取った量を確かめて、続きを送る
     var check = function () {
       if (!rdDocs[id]) { clearInterval(tick); return; }
@@ -4371,8 +4395,8 @@
         else fails = 0;
         if (got0 < 0) { t0 = now(); off0 = got; }
         got0 = got;
-        lsSet(SK, JSON.stringify({ v: 2, up: up, off: got, size: file.size, at: (saved && saved.at) || now() })); saved = lsJSON(SK, null);
-        send(got);
+        lsSet(SK, JSON.stringify({ v: 2, up: up, off: got, size: file.size, loc: loc, at: (saved && saved.at) || now() })); saved = lsJSON(SK, null);
+        if (loc) put(got); else send(got);
       });
     };
     var send = function (off) {
@@ -4385,14 +4409,22 @@
     };
     var begin = function () {
       showStep('🎞 動画をドライブに送っています…（準備中：Apps Script に問い合わせ中）');
-      gasCall({ f: 'up0', name: '🎞 ' + d.lv.name, type: type, size: file.size }, function (r, e) {
-        if (r && r.ok && r.up && r.v === 2) { up = r.up; lsSet(SK, JSON.stringify({ v: 2, up: up, off: 0, size: file.size, at: now() })); saved = lsJSON(SK, null); got0 = -1; send(0); return; }
+      // 直接送れなかったことが最近（1日以内）あれば、はじめから Apps Script 経由で
+      var tryDirect = window.XMLHttpRequest && window.Blob && now() - Number(lsGet('lv_direct_ng') || 0) > 86400000;
+      var q0 = { f: 'up0', name: '🎞 ' + d.lv.name, type: type, size: file.size }; if (tryDirect) q0.o = location.protocol + '//' + location.host;
+      gasCall(q0, function (r, e) {
+        if (r && r.ok && r.up && r.v === 2) {
+          up = r.up; loc = tryDirect && /^https:\/\/www\.googleapis\.com\/upload\//.test(r.loc || '') ? r.loc : null; sentDirect = false;
+          lsSet(SK, JSON.stringify({ v: 2, up: up, off: 0, size: file.size, loc: loc, at: now() })); saved = lsJSON(SK, null); got0 = -1; t0 = now(); off0 = 0;
+          if (loc) put(0); else send(0);
+          return;
+        }
         clearInterval(tick);
         if (r && !r.ok && /notshared|act/.test(String(r.error))) { lvUploadOld(id, file); return; }   // Apps Script が古い：今までの送り方
         lvNote(id, '動画をドライブに送れませんでした（' + (r ? String(r.error).slice(0, 100) : trErrText(e)) + '）。英文を開き直すと送り直せます。');
       });
     };
-    if (saved && saved.v === 2 && saved.up) { up = saved.up; showStep('🎞 動画をドライブに送っています…（前回の続きを確かめています）'); check(); }
+    if (saved && saved.v === 2 && saved.up) { up = saved.up; loc = saved.loc || null; sentDirect = !!saved.loc; showStep('🎞 動画をドライブに送っています…（前回の続きを確かめています）'); check(); }
     else begin();
   }
   function lvUploadOld(id, file) {
@@ -6507,19 +6539,26 @@
     "}",
     "// 受け取る（3MB ずつ）・リンクを作る・削除する",
     "// 動画を送る準備（up0）と、ドライブが受け取った量の確認（ups）",
+    "function directOrigin(p) { var o = String(p.o || \"\"); return /^https:\\/\\/[a-z0-9-]+\\.github\\.io$/.test(o) ? o : \"\"; }",
+    "function upHeaders(p) {",
+    "  var h = { Authorization: \"Bearer \" + ScriptApp.getOAuthToken(), \"X-Upload-Content-Type\": p.type || \"application/octet-stream\", \"X-Upload-Content-Length\": String(p.size) };",
+    "  if (directOrigin(p)) h.Origin = directOrigin(p);   // この場所のアプリから直接送れるように（ドライブがその場所を許可する）",
+    "  return h;",
+    "}",
     "function upAct(p) {",
     "  var cache = CacheService.getScriptCache();",
     "  if (p.f === \"up0\") {",
     "    var res = UrlFetchApp.fetch(\"https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id\", {",
     "      method: \"post\", contentType: \"application/json; charset=UTF-8\", muteHttpExceptions: true,",
-    "      headers: { Authorization: \"Bearer \" + ScriptApp.getOAuthToken(), \"X-Upload-Content-Type\": p.type || \"application/octet-stream\", \"X-Upload-Content-Length\": String(p.size) },",
+    "      headers: upHeaders(p),",
     "      payload: JSON.stringify({ name: String(p.name || \"file\").slice(0, 200), parents: [shareFolder().getId()] })",
     "    });",
     "    var h = res.getHeaders(), loc = h[\"Location\"] || h[\"location\"];",
     "    if (!loc) throw new Error(\"upload start \" + res.getResponseCode() + \" \" + res.getContentText().slice(0, 200));",
     "    var up = Utilities.getUuid();",
     "    cache.put(\"up_\" + up, loc, 21600);",
-    "    return { ok: true, up: up, v: 2 };",
+    "    // o（アプリの場所）があるとき：送り先をアプリに渡して、アプリから直接ドライブへ送れるようにする（この1ファイルを送るためだけの送り先）",
+    "    return directOrigin(p) ? { ok: true, up: up, v: 2, loc: loc } : { ok: true, up: up, v: 2 };",
     "  }",
     "  var loc2 = cache.get(\"up_\" + p.up);",
     "  if (!loc2) return { ok: false, error: \"upload expired\" };",
