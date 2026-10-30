@@ -633,6 +633,25 @@ var EP_CFG = { key: 'memo_key', gas: 'memo_gas', cache: 'memo_reader', idb: 'mem
       v.src = links.shift(); msg(''); updBtns();
     });
   }
+  // 調べる：ドライブ API が何を返すか（状態・理由）と、動画の作り（moov が先頭か）。結果は cb(文)
+  function diagDrive(fid, cb) {
+    if (!driveKey || !fid || !window.fetch) { cb(''); return; }
+    var u = 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(fid) + '?alt=media&key=' + encodeURIComponent(driveKey), done = false;
+    var fin = function (t) { if (!done) { done = true; cb(t); } };
+    setTimeout(function () { fin('調べる：時間切れ'); }, 20000);
+    try {
+      fetch(u, { headers: { Range: 'bytes=0-65535' } }).then(function (res) {
+        var st = res.status, ct = res.headers.get('content-type') || '';
+        if (st >= 400) return res.text().then(function (t) { var why = ''; try { var j = JSON.parse(t); why = (j.error && (j.error.errors && j.error.errors[0] && j.error.errors[0].reason || j.error.message)) || ''; } catch (e) { why = t.slice(0, 80); } fin('ドライブ API：' + st + ' ' + why); });
+        return res.arrayBuffer().then(function (buf) {
+          var b = new Uint8Array(buf), at = function (tag) { for (var i = 0; i + 3 < b.length; i++) if (b[i] === tag.charCodeAt(0) && b[i + 1] === tag.charCodeAt(1) && b[i + 2] === tag.charCodeAt(2) && b[i + 3] === tag.charCodeAt(3)) return i; return -1; };
+          var mv = at('moov'), md = at('mdat'), ft = at('ftyp'), brand = ft >= 0 ? String.fromCharCode(b[ft + 4], b[ft + 5], b[ft + 6], b[ft + 7]) : '?';
+          var codec = at('hvc1') >= 0 || at('hev1') >= 0 ? 'H.265' : at('avc1') >= 0 ? 'H.264' : '';
+          fin('ドライブ API：' + st + ' ' + ct + '・形式 ' + brand + (codec ? '・' + codec : '') + '・' + (mv >= 0 && (md < 0 || mv < md) ? '再生情報が先頭' : '再生情報が末尾（または先頭 64KB に無い）'));
+        });
+      }, function (e) { fin('ドライブ API：つながりません（' + String(e && e.message || e).slice(0, 40) + '）'); });
+    } catch (e) { fin(''); }
+  }
   on(v, 'error', function () {
     if (!cur || !v.getAttribute('src')) return;
     var ec = v.error ? v.error.code : 0;
@@ -641,7 +660,12 @@ var EP_CFG = { key: 'memo_key', gas: 'memo_gas', cache: 'memo_reader', idb: 'mem
       : ec === 4 ? (srcMode === 'drive' ? 'ドライブから動画として受け取れませんでした' : 'この端末が対応していない形式です')
       : ec === 2 ? '読み込みの途中で通信が切れました' : '';
     var webm = /webm/i.test(cur.lv.type || cur.lv.name || '');
-    if (srcMode === 'drive' && !webm && ec !== 3) { msg('ドライブから直接は再生できませんでした。' + (driveKey ? '' : '一覧の「⚙」でドライブ API のキーを入れると、取り込まずに見られます。') + 'いったんこの端末に取り込んでも見られます（' + (cur.lv.size ? '約 ' + Math.max(1, Math.round(cur.lv.size / 1048576)) + 'MB。' : '') + '次からはすぐ再生できます）。', cur.lv.link, [dlBtn(curId)]); return; }
+    if (srcMode === 'drive' && !webm && ec !== 3) {
+      var base = 'ドライブから直接は再生できませんでした（コード ' + ec + (linkErr.length > 1 ? '・' + linkErr.join('→') : '') + '）。' + (driveKey ? '' : '一覧の「⚙」でドライブ API のキーを入れると、取り込まずに見られます。') + 'いったんこの端末に取り込んでも見られます（' + (cur.lv.size ? '約 ' + Math.max(1, Math.round(cur.lv.size / 1048576)) + 'MB。' : '') + '次からはすぐ再生できます）。', id0 = curId, lk = cur.lv.link;
+      msg(base + '\n（原因を調べています…）', lk, [dlBtn(curId)]);
+      diagDrive(cur.lv.drive, function (t) { if (curId === id0) msg(base + (t ? '\n［' + t + '］' : ''), lk, [dlBtn(id0)]); });
+      return;
+    }
     msg('この端末ではこの動画を再生できませんでした' + (webm ? '（webm は古い iPhone・iPad では再生できません。mp4 を使ってください）' : why ? '（' + why + '）' : '') + '。', srcMode === 'drive' ? cur.lv.link : '');
   });
   /* ---- YouTube（英文リーダーで読み込んだ YouTube の英文）。YouTube の字幕は使わず、自前で英日を出す ---- */
