@@ -266,7 +266,9 @@
   /* ドライブの容量 */
   #dq-dlg { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(20,28,32,.45); z-index: 80; }
   #dq-dlg .dlg { position: absolute; left: 4%; right: 4%; top: 5%; max-width: 560px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 16px; box-sizing: border-box; max-height: 90%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-  #dq-dlg h3 { margin: 0 0 10px; font-size: 17px; }
+  #dq-dlg .dq-top { position: -webkit-sticky; position: sticky; top: -16px; z-index: 2; background: #fff; margin: -16px -16px 6px; padding: 12px 12px 8px 16px; display: -webkit-box; display: -webkit-flex; display: flex; -webkit-box-align: center; -webkit-align-items: center; align-items: center; border-bottom: 1px solid #eef1f3; }
+  #dq-dlg h3 { margin: 0; font-size: 17px; -webkit-box-flex: 1; -webkit-flex: 1; flex: 1; }
+  #dq-x { width: 40px; height: 40px; border-radius: 20px; padding: 0; margin: 0; font-size: 18px; background: #e3e7ea; color: #1f2a30; -webkit-box-flex: 0; -webkit-flex: none; flex: none; }
   #dq-dlg .row button { margin: 10px 6px 0 0; }
   .dq-hero { font-size: 15px; color: #52514e; margin: 0 0 8px; }
   .dq-hero b { font-size: 26px; color: #1f2a30; font-variant-numeric: tabular-nums; }
@@ -650,7 +652,7 @@
 </div>
 <div id="dq-dlg" class="hidden">
   <div class="dlg">
-    <h3>☁ Google ドライブの容量</h3>
+    <div class="dq-top"><h3>☁ Google ドライブの容量</h3><button id="dq-x" type="button" title="閉じる" aria-label="閉じる">✕</button></div>
     <div id="dq-body"><p class="note">調べています…</p></div>
     <div class="row"><button id="dq-re" type="button">↻ もう一度調べる</button> <button id="dq-close" class="primary" type="button">閉じる</button></div>
   </div>
@@ -4968,6 +4970,8 @@
   on($('rd-quota'), 'click', dqOpen);
   on($('dq-re'), 'click', dqLoad);
   on($('dq-close'), 'click', function () { $('dq-dlg').className = 'hidden'; });
+  on($('dq-x'), 'click', function () { $('dq-dlg').className = 'hidden'; });
+  on($('dq-dlg'), 'click', function (e) { if (e.target === $('dq-dlg')) $('dq-dlg').className = 'hidden'; });   // 外側（暗いところ）を押しても閉じる
   // 字幕プレイヤー（このアプリの player.html）へ。今の場面から。字幕プレイヤーの「📖 リーダー」で、ここへ戻ってこられる
   on($('rd-ep'), 'click', function () {
     if (!rdCur || !rdCur.d.cues) return;
