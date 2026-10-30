@@ -493,8 +493,9 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     } catch (e) {}
   }
   function relayLink(d) {
-    if (!swOk || !driveKey || !d.lv.drive) return '';
-    return '__drive__?id=' + encodeURIComponent(d.lv.drive) + '&key=' + encodeURIComponent(driveKey) + (d.lv.size ? '&size=' + d.lv.size : '') + '&type=' + encodeURIComponent(d.lv.type || 'video/mp4');
+    if (!swOk || !(driveKey || gasUrl) || !d.lv.drive) return '';
+    // key：ドライブ API、gas：API がだめなとき Apps Script から分割で受け取る（大きいファイルなど）
+    return '__drive__?id=' + encodeURIComponent(d.lv.drive) + (driveKey ? '&key=' + encodeURIComponent(driveKey) : '') + (gasUrl ? '&gas=' + encodeURIComponent(gasUrl) : '') + (d.lv.size ? '&size=' + d.lv.size : '') + '&type=' + encodeURIComponent(d.lv.type || 'video/mp4');
   }
   var v = $('vid'), cur = null, curId = '', blobUrl = '', links = [], linkErr = [], srcMode = '';
   // btns: [[文字, 押したとき, 'sub'(控えめ)]]
