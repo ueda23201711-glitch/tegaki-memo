@@ -263,6 +263,28 @@
   .pop-id { background: #fdf3e2; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; font-size: 14px; }
   .pop-id b { color: #b0600a; }
   .pop-id button { display: block; margin-top: 6px; padding: 5px 10px; font-size: 13px; }
+  /* ドライブの容量 */
+  #dq-dlg { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(20,28,32,.45); z-index: 80; }
+  #dq-dlg .dlg { position: absolute; left: 4%; right: 4%; top: 5%; max-width: 560px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 16px; box-sizing: border-box; max-height: 90%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  #dq-dlg h3 { margin: 0 0 10px; font-size: 17px; }
+  #dq-dlg .row button { margin: 10px 6px 0 0; }
+  .dq-hero { font-size: 15px; color: #52514e; margin: 0 0 8px; }
+  .dq-hero b { font-size: 26px; color: #1f2a30; font-variant-numeric: tabular-nums; }
+  .dq-bar { display: -webkit-box; display: -webkit-flex; display: flex; height: 22px; border-radius: 4px; overflow: hidden; background: #e3e7ea; margin: 4px 0 10px; }
+  .dq-bar i { display: block; height: 100%; min-width: 3px; border-right: 2px solid #fff; box-sizing: border-box; }
+  .dq-bar i:last-child { border-right: 0; }
+  .dq-leg { margin: 0 0 6px; padding: 0; list-style: none; font-size: 14px; }
+  .dq-leg li { display: -webkit-box; display: -webkit-flex; display: flex; -webkit-box-align: center; -webkit-align-items: center; align-items: center; padding: 3px 0; color: #1f2a30; }
+  .dq-leg li s { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 8px; -webkit-box-flex: 0; -webkit-flex: none; flex: none; }
+  .dq-leg li span { -webkit-box-flex: 1; -webkit-flex: 1; flex: 1; }
+  .dq-leg li em { font-style: normal; font-variant-numeric: tabular-nums; color: #52514e; margin-left: 8px; }
+  .dq-warn { background: #fdf1e4; color: #7a3f00; border-radius: 8px; padding: 8px 10px; font-size: 14px; margin: 6px 0; }
+  .dq-sec { font-weight: 700; font-size: 15px; margin: 14px 0 4px; }
+  .dq-f { border-top: 1px solid #e3e7ea; padding: 8px 0; font-size: 14px; }
+  .dq-f .n { font-weight: 600; word-break: break-all; }
+  .dq-f .m { color: #52514e; font-size: 13px; margin-top: 2px; }
+  .dq-f .w { display: block; height: 4px; border-radius: 2px; background: #2a78d6; margin-top: 5px; }
+  .dq-f button { font-size: 13px; padding: 4px 10px; margin-top: 6px; background: #f3dede; color: #8a1f1f; }
   #gas-dlg { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(20,28,32,.45); z-index: 80; }
   #gas-dlg .dlg { position: absolute; left: 4%; right: 4%; top: 6%; max-width: 560px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 16px; box-sizing: border-box; max-height: 88%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   #gas-dlg h3 { margin: 0 0 8px; font-size: 17px; }
@@ -560,7 +582,7 @@
         </div>
       </div>
       <p class="note">保存した単語・熟語は <a href="/kiku-memo/" target="_blank">📚 メモ単語帳</a> で学習できます（iPad 2/3 は <a href="/kiku-memo/ipad.html" target="_blank">こちら</a>）。</p>
-      <h3 id="rd-hist-h" class="rd-h">これまでの英文 <button id="rd-sync" type="button" class="rd-selbtn" title="ほかの端末で追加・変更した英文を読み込む">🔄 最新にする</button> <button id="rd-sel" type="button" class="rd-selbtn">☑ 選んで削除</button></h3>
+      <h3 id="rd-hist-h" class="rd-h">これまでの英文 <button id="rd-sync" type="button" class="rd-selbtn" title="ほかの端末で追加・変更した英文を読み込む">🔄 最新にする</button> <button id="rd-quota" type="button" class="rd-selbtn" title="Google ドライブの使用量と、動画の一覧（消して空ける）">☁ ドライブの容量</button> <button id="rd-sel" type="button" class="rd-selbtn">☑ 選んで削除</button></h3>
       <p class="note" id="rd-sync-msg"></p>
       <div id="rd-selbar" class="hidden"><span id="rd-selcount">0 件を選択</span>
         <button id="rd-selall" type="button">すべて選ぶ</button>
@@ -624,6 +646,13 @@
       <span id="pop-msg" class="note"></span>
     </div>
     <button id="pop-play" class="hidden" type="button">▶ この文から再生</button>
+  </div>
+</div>
+<div id="dq-dlg" class="hidden">
+  <div class="dlg">
+    <h3>☁ Google ドライブの容量</h3>
+    <div id="dq-body"><p class="note">調べています…</p></div>
+    <div class="row"><button id="dq-re" type="button">↻ もう一度調べる</button> <button id="dq-close" class="primary" type="button">閉じる</button></div>
   </div>
 </div>
 <div id="gas-dlg" class="hidden">
@@ -3832,7 +3861,7 @@
     }
     return out;
   }
-  function docTitle(id) { var d = rdDocs[id]; return d ? String(d.title || '').replace(/^(🌐|🎬) /, '').slice(0, 30) : ''; }
+  function docTitle(id) { var d = rdDocs[id]; return d ? String(d.title || '').replace(/^(🌐|🎬|🎞) /, '').slice(0, 30) : ''; }
   // この端末に入っている数（英文 d・声 voice）
   function docLocal(d, voice) {
     var idx = vcIdx(), ch = chunkTexts(docSents(d)), have = 0;
@@ -4852,6 +4881,84 @@
     if (!ytPlayer || !ytReady) return;
     if (ytState() === 1) ytPlayer.pauseVideo(); else ytPlayer.playVideo();
   }
+  /* ---- ☁ ドライブの容量：全体の使用量（帯グラフ）と、共有フォルダのファイル（大きい順。消して空ける） ---- */
+  function dqSize(n) { n = Number(n) || 0; return n >= 1073741824 ? (n / 1073741824).toFixed(n >= 10737418240 ? 1 : 2) + ' GB' : n >= 1048576 ? Math.round(n / 1048576) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+  function dqEsc(t) { return String(t || '').replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function dqDocsOf(fid) { var a = []; for (var k in rdDocs) { var d = rdDocs[k]; if (d && d.lv && d.lv.drive === fid) a.push(k); } return a; }
+  var dqData = null;
+  function dqOpen() { $('dq-dlg').className = ''; dqLoad(); }
+  function dqLoad() {
+    var body = $('dq-body');
+    if (!gasUrl) { body.innerHTML = '<p class="note">容量を調べるには「⚙ 翻訳の設定」（Apps Script）が必要です。</p>'; return; }
+    body.innerHTML = '<p class="note">調べています…（ファイルが多いと少しかかります）</p>';
+    gasCall({ f: 'quota' }, function (r, e) {
+      if (!r || !r.ok || !r.files) {
+        body.innerHTML = '<p class="note">' + (r && r.ok === false && /notshared|act|Unexpected|not found/i.test(String(r.error)) || (r && r.ok && !r.files)
+          ? 'Apps Script が古いコードのままです。「⚙ 翻訳の設定」のコードに貼り替えて、「新バージョン」でデプロイしてください。'
+          : '調べられませんでした（' + dqEsc(String((r && r.error) || e).slice(0, 80)) + '）。') + '</p>';
+        return;
+      }
+      dqData = r; dqRender();
+    });
+  }
+  function dqRender() {
+    var r = dqData, body = $('dq-body'), lim = r.limit || 0, used = r.used || 0, h = '';
+    var app = r.app || 0, trash = r.trash >= 0 ? r.trash : 0, drive = r.drive >= 0 ? r.drive : used;
+    var other = Math.max(0, drive - trash - app), mail = Math.max(0, used - drive);
+    var segs = [['このアプリのファイル（動画など）', app, '#2a78d6'], ['ほかのドライブのファイル', other, '#eb6834'], ['ゴミ箱', trash, '#1baf7a'], ['Gmail・Google フォトなど', mail, '#eda100']];
+    if (lim) h += '<p class="dq-hero">使用中 <b>' + dqSize(used) + '</b> ／ ' + dqSize(lim) + '（残り <b style="font-size:18px">' + dqSize(Math.max(0, lim - used)) + '</b>）</p>';
+    else h += '<p class="dq-hero">使用中 <b>' + dqSize(used) + '</b></p>';
+    var tot = lim || used || 1;
+    h += '<div class="dq-bar" role="img" aria-label="使用量の内訳">';
+    each(segs, function (g) { if (g[1] > 0) h += '<i style="width:' + Math.max(0.6, g[1] * 100 / tot) + '%;background:' + g[2] + '" title="' + g[0] + '：' + dqSize(g[1]) + '"></i>'; });
+    h += '</div><ul class="dq-leg">';
+    each(segs, function (g) { h += '<li><s style="background:' + g[2] + '"></s><span>' + g[0] + '</span><em>' + dqSize(g[1]) + '</em></li>'; });
+    if (lim) h += '<li><s style="background:#e3e7ea"></s><span>空き</span><em>' + dqSize(Math.max(0, lim - used)) + '</em></li>';
+    h += '</ul>';
+    if (lim && lim - used < 2147483648) h += '<div class="dq-warn">⚠ 空きが 2GB を切っています。大きな動画を消して空けてください（いっぱいになると、動画を送れなくなるほか、Gmail も受け取れなくなります）。</div>';
+    if (trash > 0) h += '<p class="note" style="margin:4px 0">ゴミ箱のファイルも容量を使います（30日で自動的に消えます）。</p>';
+    if (r.appTrashN) h += '<div class="dq-warn" style="background:#eef4fb;color:#1f3a5a">ゴミ箱に、このアプリのファイルが ' + r.appTrashN + ' 件（' + dqSize(r.appTrash) + '）あります。 <button id="dq-purge" type="button" style="font-size:13px;padding:4px 10px;margin-top:4px">完全に消して空ける</button></div>';
+    var fs = (r.files || []).slice().sort(function (a, b) { return (b.s || 0) - (a.s || 0); }), big = fs.length ? fs[0].s || 1 : 1;
+    h += '<div class="dq-sec">このアプリのファイル（大きい順・' + fs.length + ' 件）</div>';
+    if (!fs.length) h += '<p class="note">ありません。</p>';
+    each(fs, function (f) {
+      var ids = dqDocsOf(f.id), names = [];
+      each(ids, function (k) { names.push('「' + docTitle(k) + '」'); });
+      var dt = f.t ? new Date(f.t) : null;
+      h += '<div class="dq-f"><div class="n">' + dqEsc(String(f.n || '').replace(/^🎞\s*/, '')) + '</div>'
+        + '<div class="m">' + dqSize(f.s) + (dt ? '・' + (dt.getMonth() + 1) + '/' + dt.getDate() + ' に追加' : '') + '・' + (names.length ? '英文 ' + dqEsc(names.join('、')) + ' の動画' : 'この英文リーダーの英文では使っていません（英文リーダー単体版・ファイル共有のものかもしれません）') + '</div>'
+        + '<i class="w" style="width:' + Math.max(2, Math.round((f.s || 0) * 100 / big)) + '%"></i>'
+        + '<button type="button" data-dqdel="' + dqEsc(f.id) + '">🗑 完全に消す</button></div>';
+    });
+    body.innerHTML = h;
+    each(body.querySelectorAll('[data-dqdel]'), function (b) { on(b, 'click', function () { dqDel(b.getAttribute('data-dqdel'), b); }); });
+    if ($('dq-purge')) on($('dq-purge'), 'click', function () {
+      if (!window.confirm('ゴミ箱に入っている、このアプリのファイル（' + r.appTrashN + ' 件・' + dqSize(r.appTrash) + '）を完全に消しますか？\n（元に戻せません。ほかのゴミ箱のファイルには触れません）')) return;
+      $('dq-purge').disabled = true; $('dq-purge').textContent = '消しています…';
+      gasCall({ f: 'purge' }, function (r2) { if (!r2 || !r2.ok) { alert('消せませんでした。'); } dqLoad(); });
+    });
+  }
+  function dqDel(fid, btn) {
+    var f = null; each(dqData.files || [], function (x) { if (x.id === fid) f = x; });
+    if (!f) return;
+    var ids = dqDocsOf(fid), names = []; each(ids, function (k) { names.push('「' + docTitle(k) + '」'); });
+    var msg = '「' + String(f.n || '').replace(/^🎞\s*/, '') + '」（' + dqSize(f.s) + '）をドライブから完全に消しますか？（元に戻せません）\n\n'
+      + (names.length ? '英文 ' + names.join('、') + ' は残ります。この動画は、取り込んである端末ではそのまま見られますが、ほかの端末ではドライブから見られなくなります。' : 'この英文リーダーの英文では使っていないファイルです。英文リーダー単体版やファイル共有で使っていないか確かめてください。');
+    if (!window.confirm(msg)) return;
+    btn.disabled = true; btn.textContent = '消しています…';
+    gasCall({ f: 'delp', id: fid }, function (r, e) {
+      if (!r || !r.ok) { btn.disabled = false; btn.textContent = '🗑 完全に消す'; alert('消せませんでした（' + String((r && r.error) || e).slice(0, 60) + '）。'); return; }
+      var b = {};
+      each(ids, function (k) { if (rdDocs[k] && rdDocs[k].lv) { delete rdDocs[k].lv.drive; delete rdDocs[k].lv.link; b['reader/' + k + '/lv/drive'] = null; } });
+      if (ids.length) { rdSaveLocal(); if (KEY) api('PATCH', '', b, function () {}); }
+      dqData.files = (dqData.files || []).filter(function (x) { return x.id !== fid; });
+      dqData.app = Math.max(0, (dqData.app || 0) - (f.s || 0)); dqData.used = Math.max(0, (dqData.used || 0) - (f.s || 0)); if (dqData.drive >= 0) dqData.drive = Math.max(0, dqData.drive - (f.s || 0));
+      dqRender();
+    });
+  }
+  on($('rd-quota'), 'click', dqOpen);
+  on($('dq-re'), 'click', dqLoad);
+  on($('dq-close'), 'click', function () { $('dq-dlg').className = 'hidden'; });
   // 字幕プレイヤー（このアプリの player.html）へ。今の場面から。字幕プレイヤーの「📖 リーダー」で、ここへ戻ってこられる
   on($('rd-ep'), 'click', function () {
     if (!rdCur || !rdCur.d.cues) return;
@@ -7156,7 +7263,7 @@
   // 上から順に、見えている最初のものを「戻る」として押す
   var TARGETS = ["#pop-close", "#fl-exit", "#fl-close", "#read-close", "#sel-cancel", "#btn-back", "#btn-rd-back", "#btn-clip-back", "#btn-settings-back", "#fb-path a"];
   // これらが開いている間は何もしない（入力中のダイアログなどを勝手に閉じない）
-  var BLOCK = ["busy", "photo-dlg", "more-dlg", "export-dlg", "color-pop", "text-dlg", "scanner", "move-dlg", "gas-dlg", "pl-ov"];
+  var BLOCK = ["busy", "photo-dlg", "more-dlg", "export-dlg", "color-pop", "text-dlg", "scanner", "move-dlg", "gas-dlg", "dq-dlg", "pl-ov"];
   var CANVAS = "cv-live";          // 手書きの画面：左端から始まった指は線を引かずにスワイプに使う
   var EDGE = 24, MIN_DX = 60;       // 左端からこの幅で触れ始め、右へこれ以上動かしたら戻る
 
