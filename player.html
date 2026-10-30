@@ -641,7 +641,7 @@ var EP_CFG = { key: 'memo_key', gas: 'memo_gas', cache: 'memo_reader', idb: 'mem
       : ec === 4 ? (srcMode === 'drive' ? 'ドライブから動画として受け取れませんでした' : 'この端末が対応していない形式です')
       : ec === 2 ? '読み込みの途中で通信が切れました' : '';
     var webm = /webm/i.test(cur.lv.type || cur.lv.name || '');
-    if (srcMode === 'drive' && !webm && ec !== 3) { msg('ドライブから直接は再生できませんでした。いったんこの端末に取り込むと見られます（' + (cur.lv.size ? '約 ' + Math.max(1, Math.round(cur.lv.size / 1048576)) + 'MB。' : '') + '次からはすぐ再生できます）。', cur.lv.link, [dlBtn(curId)]); return; }
+    if (srcMode === 'drive' && !webm && ec !== 3) { msg('ドライブから直接は再生できませんでした。' + (driveKey ? '' : '一覧の「⚙」でドライブ API のキーを入れると、取り込まずに見られます。') + 'いったんこの端末に取り込んでも見られます（' + (cur.lv.size ? '約 ' + Math.max(1, Math.round(cur.lv.size / 1048576)) + 'MB。' : '') + '次からはすぐ再生できます）。', cur.lv.link, [dlBtn(curId)]); return; }
     msg('この端末ではこの動画を再生できませんでした' + (webm ? '（webm は古い iPhone・iPad では再生できません。mp4 を使ってください）' : why ? '（' + why + '）' : '') + '。', srcMode === 'drive' ? cur.lv.link : '');
   });
   /* ---- YouTube（英文リーダーで読み込んだ YouTube の英文）。YouTube の字幕は使わず、自前で英日を出す ---- */

@@ -4544,7 +4544,9 @@
       }
       var ec = v.error ? v.error.code : 0;
       if (lvMode === 'drive' && !lvOld && d.lv.drive && gasUrl && ec !== 3 && !/webm/i.test(d.lv.type || d.lv.name)) {   // 直接は見られない：取り込みをすすめる
-        lvAsk(d); lvMsg('ドライブから直接は再生できませんでした。「⬇ ドライブから取り込む」で見られます。'); return;
+        lvAsk(d);
+        if (!driveKey) { lvKeyAsk(d); return; }   // APIキーがない：入れれば取り込まずに見られる
+        lvMsg('ドライブから直接は再生できませんでした。「⬇ ドライブから取り込む」で見られます。'); return;
       }
       var why = ec === 3 ? '動画の中身を再生できません（この端末には画質・形式が重すぎる可能性。小さい画質の mp4 なら見られることがあります）'
         : ec === 4 ? (lvMode === 'drive' && /^20[06] video/.test(lvLinkInfo) ? '動画はドライブから届いていますが、この端末ではこの動画の形式・画質を再生できません。古い iPad では 720p 以下（iPad 2 は 540p 程度）の mp4 に変換したものなら見られます'
@@ -4718,6 +4720,20 @@
     $('lv-dl').style.display = d.lv.drive && gasUrl && !lvOld ? '' : 'none';
     $('lv-st').style.display = d.lv.drive && gasUrl ? '' : 'none';
     $('lv-get-m').textContent = d.lv.drive ? '' : 'ドライブにはまだ送られていません（動画を入れた端末で送っている途中か、送れなかったようです）。';
+  }
+  // ドライブ API のキーを入れる（このアプリの合言葉の設定に保存。ほかの端末にも届く）
+  function lvKeyAsk(d) {
+    var m = $('lv-get-m'); m.textContent = 'ドライブから直接は再生できませんでした。このアプリには、まだドライブ API のキーが入っていません（英文リーダー単体版と手書きメモは別々に入れます）。キーを入れると、取り込まずに見られます。 ';
+    var b = document.createElement('button'); b.type = 'button'; b.className = 'primary'; b.textContent = '🔑 APIキーを入れる'; b.style.marginTop = '6px';
+    on(b, 'click', function () {
+      var k = String(window.prompt('Google ドライブ API のキー（AIza… で始まる文字）を貼り付けてください', '') || '').replace(/\s+/g, '');
+      if (!k) return;
+      if (!/^AIza[0-9A-Za-z_\-]{30,}$/.test(k)) { alert('APIキーは「AIza」で始まる文字です。'); return; }
+      driveKey = k; lsSet('memo_dkey', k);
+      if (KEY) api('PATCH', '/settings', { drivekey: k }, function () {});
+      if (rdCur && rdCur.d.lv) { $('lv-get').className = 'hidden'; $('lv-video').style.display = 'block'; lvStream(rdCur.d); }
+    });
+    m.appendChild(b);
   }
   function lvMsg(t) { $('lv-get-m').textContent = t; if ($('lv-get').className === 'hidden') $('rd-status').textContent = t; }
   // 取り込まずに再生しているとき：「この端末に取り込む」ボタン
