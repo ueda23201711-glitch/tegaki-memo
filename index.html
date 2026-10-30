@@ -5044,9 +5044,10 @@
   function rdSeekWhenReady(id, t, play) {
     var tries = 0;
     var go = function () {
-      if (!rdCur || rdCur.id !== id || ++tries > 60) return;
+      if (!rdCur || rdCur.id !== id || ++tries > 200) return;   // 約 60 秒（中継で大きい動画を受け取るときは時間がかかる）
       var lvv = $('lv-video'), ready = ytPlayer && ytReady && (!rdCur.d.lv || (lvv && lvv.readyState >= 1));
-      if (!ready) { setTimeout(go, 300); return; }
+      if (!ready) { if (tries === 10 && rdCur.d.lv) $('rd-status').textContent = '🎞 動画を準備しています（大きい動画は少しかかります）…'; setTimeout(go, 300); return; }
+      if (tries > 10 && /^🎞 動画を準備/.test($('rd-status').textContent)) $('rd-status').textContent = '';
       try { ytPlayer.seekTo(t, true); } catch (e) {}
       if (play) { lvMute = true; lvCapUpdate(); try { ytPlayer.playVideo(); } catch (e) {} $('rd-status').textContent = '🔇 音を消して続きを再生しています。「🔊 音オン」を押すと音が出ます。'; }
     };

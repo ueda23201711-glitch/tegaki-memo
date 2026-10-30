@@ -11,8 +11,10 @@
      「取り込み」と同じ 3MB ずつの分割（f=get&part=k、Base64）で受け取り、必要な範囲だけ切り出して返す。
      受け取った分割はメモリに少しだけ置き、次の分割も先に取りに行く（端末には保存しない）。
    - iPhone では Apps Script への普通の通信（CORS）が通らないことがある（ページは JSONP で取っている）。
-     ここでは JSONP が使えないので、そのときはページに頼んで、取り込みと同じ gasCall で受け取ってもらう。 */
-var VERSION = 'v4';
+     ここでは JSONP が使えないので、そのときはページに頼んで、取り込みと同じ gasCall で受け取ってもらう。
+   - 頼んだページが閉じたり別の画面に移ったりすると、返事は来ない。字幕プレイヤー⇔英文リーダーの行き来で
+     そうなるので、待っている頼みは「頼んだページ」ごとに分け、別のページからの要求は新しく頼み直す。 */
+var VERSION = 'v5';
 var CHUNK = 2 * 1024 * 1024;   // 2MB
 
 self.addEventListener('install', function () { self.skipWaiting(); });
@@ -102,8 +104,13 @@ function askPage(cid, fid, k) {
     if (!c) throw new Error('no page');
     return new Promise(function (ok, ng) {
       var ch = new MessageChannel();
-      var t = setTimeout(function () { ng(new Error('page timeout')); }, 130000);
-      ch.port1.onmessage = function (ev) { clearTimeout(t); ok(ev.data); };
+      var t = setTimeout(function () { fin(new Error('page timeout')); }, 130000);
+      // 頼んだページがなくなった（別の画面に移った）ら、待つのをやめる
+      var w = setInterval(function () {
+        self.clients.get(c.id).then(function (x) { if (!x) fin(new Error('page gone')); }, function () {});
+      }, 2000);
+      var fin = function (err, data) { clearTimeout(t); clearInterval(w); if (err) ng(err); else ok(data); };
+      ch.port1.onmessage = function (ev) { fin(null, ev.data); };
       c.postMessage({ type: 'ep-gas-part', id: fid, part: k }, [ch.port2]);
     });
   });
@@ -112,7 +119,9 @@ function askPage(cid, fid, k) {
 function gasPart(gas, fid, k, cid) {
   var id = fid + '#' + k;
   if (parts[id]) return Promise.resolve(parts[id]);
-  if (flying[id]) return flying[id];
+  // 取りに行っている途中のもの：直接（ページを通さない）か、同じページに頼んだものだけ待つ
+  var fl = flying[id];
+  if (fl && (fl.cid === null || fl.cid === (cid || ''))) return fl.p;
   var url = gas + (gas.indexOf('?') >= 0 ? '&' : '?') + 'f=get&id=' + encodeURIComponent(fid) + '&part=' + k;
   var direct = function () {
     if (gasDirectBad) return Promise.reject(new Error('direct off'));
@@ -134,13 +143,15 @@ function gasPart(gas, fid, k, cid) {
       throw err;
     });
   };
-  flying[id] = tryOnce(0).then(function (b) {
-    delete flying[id];
+  var me = { cid: gasDirectBad ? (cid || '') : null };
+  me.p = tryOnce(0).then(function (b) {
+    if (flying[id] === me) delete flying[id];
     parts[id] = b; order.push(id);
     while (order.length > KEEP) delete parts[order.shift()];
     return b;
-  }, function (err) { delete flying[id]; throw err; });
-  return flying[id];
+  }, function (err) { if (flying[id] === me) delete flying[id]; throw err; });
+  flying[id] = me;
+  return me.p;
 }
 
 function fromGas(gas, fid, start, end, total, type, ev) {
