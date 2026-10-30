@@ -3252,6 +3252,12 @@
   var gasUrl = lsGet('memo_gas') || '';
   var driveKey = lsGet('memo_dkey') || '';   // Google ドライブ API のキー（字幕プレイヤーの ⚙ で設定。memos/合言葉/settings/drivekey）。あればドライブの動画を取り込まずに再生できる
   function lvApiLink(fid) { return driveKey && fid ? 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(fid) + '?alt=media&key=' + encodeURIComponent(driveKey) : ''; }
+  // ドライブ動画の中継（sw.js が取り込んだ drive-sw.js）。iPhone でも取り込まずに見られる。大きい動画は Apps Script から分割で受け取る
+  function lvRelayLink(d) {
+    try { if (lvOld || !navigator.serviceWorker || !navigator.serviceWorker.controller) return ''; } catch (e) { return ''; }
+    if (!d.lv.drive || !(driveKey || gasUrl)) return '';
+    return '__drive__?id=' + encodeURIComponent(d.lv.drive) + (driveKey ? '&key=' + encodeURIComponent(driveKey) : '') + (gasUrl ? '&gas=' + encodeURIComponent(gasUrl) : '') + (d.lv.size ? '&size=' + d.lv.size : '') + '&type=' + encodeURIComponent(d.lv.type || 'video/mp4');
+  }
   var rdRate = Number(lsGet('memo_rd_rate') || 0.9);
   var rdShowTr = lsGet('memo_rd_tr') !== '0';
   var dict = {};                    // 頭文字 -> {単語: 意味}
@@ -4536,6 +4542,7 @@
       var d = rdCur.d, id = rdCur.id;
       $('lv-sub').className = 'hidden';
       if (lvMode === 'drive') lvLinkErr.push(v.error ? v.error.code : 0);
+      if (lvMode === 'drive' && lvApiOnly && gasUrl && lvLinks.length) { d.lv.link = lvLinks[0]; v.src = lvLinks.shift(); try { v.load(); } catch (er) {} return; }   // 中継がだめ：ドライブ API を直接
       if (lvMode === 'drive' && lvApiOnly && gasUrl) { lvApiOnly = false; lvStream(d, true); return; }   // API だけではだめ：共有の設定をして、ほかのリンクも試す
       if (lvMode === 'drive' && lvLinks.length) { d.lv.link = lvLinks[0]; v.src = lvLinks.shift(); try { v.load(); } catch (er) {} return; }   // 別の形のリンクで試す
       if (lvMode === 'drive' && !lvOld && (lvHave[id] || lvMem[id])) {   // 端末の動画に戻す
@@ -4681,7 +4688,7 @@
       else lvGet(id, function (blob) {
         if (!rdCur || rdCur.id !== id) return;
         if (blob) { lvUrl = URL.createObjectURL(blob); $('lv-video').src = lvUrl; ytRate(); lvHave[id] = 1; lvSrc('📱 この端末に保存してある動画を再生しています'); return; }
-        if (d.lv.drive && driveKey) { lvStream(d); return; }   // ドライブ API で、取り込まずに再生
+        if (d.lv.drive && (driveKey || lvRelayLink(d))) { lvStream(d); return; }   // ドライブ API／中継で、取り込まずに再生
         lvAsk(d);
       });
     }
@@ -4694,6 +4701,14 @@
     var id = rdCur.id;
     var apiLink = lvApiLink(d.lv.drive);
     lvApiOnly = false;
+    // 中継が使えれば、いちばん先にそれで再生（だめならドライブ API → Apps Script のリンクの順に試す）
+    var rl = viaGas ? '' : lvRelayLink(d);
+    if (rl) {
+      lvApiOnly = !!gasUrl;
+      lvLinks = apiLink ? [apiLink] : []; lvLinkInfo = ''; lvLinkErr = []; d.lv.link = apiLink || '';
+      $('lv-sub').className = 'hidden'; $('lv-get').className = 'hidden'; $('lv-video').style.display = 'block';
+      $('lv-video').src = rl; lvSrc('☁ ドライブから直接再生しています（大きい動画は始まるまで少しかかります）'); return;
+    }
     // キーがあれば、まず Apps Script を通さずにドライブ API で再生（Apps Script が止まっていても見られる）
     if (d.lv.drive && apiLink && (!viaGas || !gasUrl)) {
       lvApiOnly = !!gasUrl;
@@ -7307,6 +7322,12 @@
   // オフラインでも開けるように（新しい端末のみ。iOS 9 には Service Worker が無いので何もしない）
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
     navigator.serviceWorker.register('sw.js').catch(function () {});
+    // 中継（drive-sw.js）からの頼み：Apps Script の分割を、取り込みと同じ gasCall（だめなら JSONP）で受け取って渡す
+    navigator.serviceWorker.addEventListener('message', function (ev) {
+      var q = ev.data, port = ev.ports && ev.ports[0];
+      if (!q || q.type !== 'ep-gas-part' || !port) return;
+      gasCall({ f: 'get', id: q.id, part: String(q.part) }, function (r, e) { port.postMessage(r || { ok: false, error: String(e || 'gas') }); });
+    });
   }
 
   // テスト用
