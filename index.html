@@ -584,7 +584,7 @@
         </div>
       </div>
       <p class="note">保存した単語・熟語は <a href="/kiku-memo/" target="_blank">📚 メモ単語帳</a> で学習できます（iPad 2/3 は <a href="/kiku-memo/ipad.html" target="_blank">こちら</a>）。</p>
-      <h3 id="rd-hist-h" class="rd-h">これまでの英文 <button id="rd-sync" type="button" class="rd-selbtn" title="ほかの端末で追加・変更した英文を読み込む">🔄 最新にする</button> <button id="rd-quota" type="button" class="rd-selbtn" title="Google ドライブの使用量と、動画の一覧（消して空ける）">☁ ドライブの容量</button> <button id="rd-sel" type="button" class="rd-selbtn">☑ 選んで削除</button></h3>
+      <h3 id="rd-hist-h" class="rd-h">これまでの英文 <button id="rd-sync" type="button" class="rd-selbtn" title="ほかの端末で追加・変更した英文を読み込む">🔄 最新にする</button> <button id="rd-quota" type="button" class="rd-selbtn" title="Google ドライブの使用量と、動画の一覧（消して空ける）">☁ ドライブの容量</button> <button id="rd-sort" type="button" class="rd-selbtn" title="よく見る・読む英文を上に（もう一度押すと、追加した順に戻る）">⭐ よく見る順</button> <button id="rd-sel" type="button" class="rd-selbtn">☑ 選んで削除</button></h3>
       <p class="note" id="rd-sync-msg"></p>
       <div id="rd-selbar" class="hidden"><span id="rd-selcount">0 件を選択</span>
         <button id="rd-selall" type="button">すべて選ぶ</button>
@@ -5027,6 +5027,7 @@
     });
   }
   on($('rd-quota'), 'click', dqOpen);
+  on($('rd-sort'), 'click', function () { if (lsGet(SORT_KEY) === 'pop') lsDel(SORT_KEY); else lsSet(SORT_KEY, 'pop'); renderRdHistory(); });
   on($('dq-re'), 'click', dqLoad);
   on($('dq-close'), 'click', function () { $('dq-dlg').className = 'hidden'; });
   on($('dq-x'), 'click', function () { $('dq-dlg').className = 'hidden'; });
@@ -5407,7 +5408,12 @@
     var lite = {}; for (var k in rdDocs) { var d = rdDocs[k]; if (d && d.book) { var c = {}; for (var f in d) if (f !== 'tr') c[f] = d[f]; lite[k] = c; } else lite[k] = d; }
     lsSet('memo_reader', JSON.stringify(lite));
   }
-  function rdIds() { var a = []; for (var k in rdDocs) if (rdDocs[k] && rdDocs[k].text) a.push(k); a.sort(function (x, y) { return (rdDocs[y].at || 0) - (rdDocs[x].at || 0); }); return a; }
+  function rdIds() { var a = []; for (var k in rdDocs) if (rdDocs[k] && rdDocs[k].text) a.push(k); a.sort(function (x, y) { return ((rdDocs[y].at || 0) - (rdDocs[x].at || 0)) || (x < y ? 1 : x > y ? -1 : 0); }); return a; }
+  // 通し番号（追加した順に 1, 2, 3…。字幕プレイヤーでも同じ番号）と、よく見る順（この端末で一覧から開いた回数。字幕プレイヤーと共通）
+  var USE_KEY = 'memo_reader_use', SORT_KEY = 'memo_reader_sort';
+  function useMap() { var m = null; try { m = JSON.parse(lsGet(USE_KEY) || 'null'); } catch (e) {} return m && typeof m === 'object' ? m : {}; }
+  function useBump(id) { var m = useMap(), u = m[id] || [0, 0]; m[id] = [u[0] + 1, now()]; lsSet(USE_KEY, JSON.stringify(m)); }
+  function rdSerials() { var a = rdIds(), m = {}; for (var i = 0; i < a.length; i++) m[a[i]] = a.length - i; return m; }
   // 選んで削除：rdSel = {id: 1}（選んでいないときは null）
   var rdSel = null;
   function delDocs(ids) {
@@ -5871,6 +5877,9 @@
     cvLoad(); if (lvCanPlay && !lvOld) lvScan();
     var box = $('rd-hist'); box.innerHTML = '';
     var ids = rdIds();
+    var sn = rdSerials(), pop = lsGet(SORT_KEY) === 'pop', um = useMap();
+    if (pop) ids.sort(function (x, y) { var a = um[x] || [0, 0], b = um[y] || [0, 0]; return (b[0] - a[0]) || (b[1] - a[1]) || ((rdDocs[y].at || 0) - (rdDocs[x].at || 0)); });
+    $('rd-sort').textContent = pop ? '🕒 追加した順に戻す' : '⭐ よく見る順';
     $('rd-hist-h').style.display = ids.length ? '' : 'none';
     if (rdSel && !ids.length) rdSel = null;
     $('rd-selbar').className = rdSel ? '' : 'hidden';
@@ -5894,8 +5903,8 @@
       if (id.indexOf('B:') === 0) { box.appendChild(bookRow(id.slice(2))); return; }
       var d = rdDocs[id];
       var row = document.createElement('div'); row.className = 'rd-hrow' + (d.book ? ' rd-ch' : '');
-      var b = document.createElement('b'); b.textContent = d.book ? '第' + d.ch + '章　' + (d.chTitle || '') : (d.title || d.text.slice(0, 50));
-      var sp = document.createElement('span'); sp.textContent = (d.book ? '' : fmtClipTime(d.at)) + (typeof d.bm === 'number' && d.bmP !== undefined ? '　🔖 ' + d.bmP + '%' : '');
+      var b = document.createElement('b'); b.textContent = (sn[id] ? sn[id] + '. ' : '') + (d.book ? '第' + d.ch + '章　' + (d.chTitle || '') : (d.title || d.text.slice(0, 50)));
+      var sp = document.createElement('span'); sp.textContent = (d.book ? '' : fmtClipTime(d.at)) + (typeof d.bm === 'number' && d.bmP !== undefined ? '　🔖 ' + d.bmP + '%' : '') + (pop && um[id] ? '　👁 ' + um[id][0] + '回' : '');
       var del = document.createElement('button'); del.type = 'button'; del.textContent = '削除'; del.className = 'danger';
       on(del, 'click', function (e) {
         e.stopPropagation();
@@ -5916,7 +5925,7 @@
         return;
       }
       row.appendChild(del); row.appendChild(ren); row.appendChild(b); row.appendChild(sp); row.appendChild(bd);
-      on(row, 'click', function () { openRdDoc(id); });
+      on(row, 'click', function () { useBump(id); openRdDoc(id); });
       box.appendChild(row);
     });    mkBanner();
   }

@@ -41,6 +41,7 @@
   .wrap { max-width:760px; margin:0 auto; padding:12px 12px 40px; }
   .note { color:var(--sub); font-size:14px; line-height:1.6; }
   #hmsg { margin:6px 2px 10px; }
+  #sortbar { margin:0 2px 10px; text-align:right; }
   .item { display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:14px; margin-bottom:10px; border-radius:14px; background:var(--panel); border:1px solid var(--line); }
   .item:active { background:#1b252c; }
   .item .ic { flex:none; width:44px; height:44px; border-radius:11px; background:#0e3446; display:flex; align-items:center; justify-content:center; font-size:20px; }
@@ -144,6 +145,7 @@
       <p class="note">再生中の操作：画面をタップでボタンの表示／非表示。左右のはしをダブルタップで前の文・次の文、まん中をダブルタップで再生／一時停止。キーボードでは スペース＝再生／一時停止、←→＝前の文・次の文、↑↓＝字幕の大きさ、R＝この文をくり返す。</p>
     </div>
     <p id="hmsg" class="note"></p>
+    <div id="sortbar" class="hidden"><button id="b-sort" class="hbtn" type="button" title="よく見る動画を上に（もう一度押すと、追加した順に戻る）">⭐ よく見る順</button></div>
     <div id="list"></div>
   </div>
 </div>
@@ -307,8 +309,17 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
 
   /* ===================== 一覧 ===================== */
   var docs = {};   // id → 英文リーダーのデータ（動画つきのものだけ）
+  // 通し番号：英文リーダーの全部の英文を、追加した順に 1, 2, 3…（英文リーダーの一覧と同じ番号）
+  var serial = {};
+  // よく見る順：この端末で一覧から開いた回数（英文リーダーと共通の記録）
+  var USE_KEY = C.cache + '_use', SORT_KEY = C.cache + '_sort';
+  function useMap() { var m = null; try { m = JSON.parse(lsGet(USE_KEY) || 'null'); } catch (e) {} return m && typeof m === 'object' ? m : {}; }
+  function useBump(id) { var m = useMap(), u = m[id] || [0, 0]; m[id] = [u[0] + 1, now()]; lsSet(USE_KEY, JSON.stringify(m)); }
   function takeDocs(all) {
-    var out = {};
+    var out = {}, a = [];
+    for (var k in all) if (all[k] && all[k].text) a.push(k);
+    a.sort(function (x, y) { return ((all[x].at || 0) - (all[y].at || 0)) || (x < y ? -1 : x > y ? 1 : 0); });
+    serial = {}; for (var i = 0; i < a.length; i++) serial[a[i]] = i + 1;
     for (var id in all) { var d = all[id]; if (d && (d.lv || (d.yt && !OLD)) && d.cues && d.cues.length) out[id] = d; }
     return out;
   }
@@ -329,11 +340,21 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     api('/settings/gas', function (err, u) { if (!err && typeof u === 'string' && u) { gasUrl = u; lsSet(C.gas, u); } });
     api('/settings/drivekey', function (err, u) { if (!err && typeof u === 'string') { driveKey = u; lsSet(C.dkey, u); } keyLoaded = true; var w = keyWait; keyWait = []; each(w, function (f) { f(); }); });
   }
-  function ids() { var a = []; for (var k in docs) a.push(k); a.sort(function (x, y) { return (docs[y].at || 0) - (docs[x].at || 0); }); return a; }
+  function ids() {
+    var a = []; for (var k in docs) a.push(k);
+    var um = lsGet(SORT_KEY) === 'pop' ? useMap() : null;
+    a.sort(function (x, y) {
+      if (um) { var p = um[x] || [0, 0], q = um[y] || [0, 0], c = (q[0] - p[0]) || (q[1] - p[1]); if (c) return c; }
+      return ((docs[y].at || 0) - (docs[x].at || 0)) || (x < y ? 1 : x > y ? -1 : 0);
+    });
+    return a;
+  }
+  function sortLabel() { $('b-sort').textContent = lsGet(SORT_KEY) === 'pop' ? '🕒 追加した順に戻す' : '⭐ よく見る順'; }
   function render() {
     idbKeys(function (h) {
       have = h;
-      var box = $('list'), list = ids(); box.innerHTML = '';
+      var box = $('list'), list = ids(), pop = lsGet(SORT_KEY) === 'pop', um = useMap(); box.innerHTML = '';
+      sortLabel(); $('sortbar').className = list.length > 1 ? '' : 'hidden';
       if (!list.length) {
         $('hmsg').textContent = $('hmsg').textContent || '動画つきの英文がまだありません。英文リーダーで YouTube のアドレスを入れるか、「🎞 手元の動画と字幕で読む」で動画と字幕（.srt）を入れてください。';
         return;
@@ -341,21 +362,23 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
       each(list, function (id) {
         var d = docs[id], b = el('button', 'item'); b.type = 'button';
         var ic = el('div', 'ic', d.yt ? '📺' : '🎬'), tx = el('div', 'tx'), go = el('div', 'go', '▶');
-        tx.appendChild(el('div', 't', cleanTitle(d.title)));
+        tx.appendChild(el('div', 't', (serial[id] ? serial[id] + '. ' : '') + cleanTitle(d.title)));
         var s = [], last = d.cues[d.cues.length - 1][0];
         s.push(d.yt ? '▶ YouTube' : have[id] ? '📱 この端末' : d.lv.drive ? '☁ ドライブ' : '⚠ 動画なし');
         s.push(d.tr && d.tr.length ? '英＋日' : '英語のみ');
         s.push('約 ' + fmt(last + 3));
         var p = Number(lsGet('ep_at_' + id) || 0); if (p > 5) s.push('続き ' + fmt(p));
         if (!d.yt && srcUrl(d)) s.push('🔗 ' + hostOf(srcUrl(d)));
+        if (pop && um[id]) s.push('👁 ' + um[id][0] + '回');
         tx.appendChild(el('div', 's', s.join('・')));
         b.appendChild(ic); b.appendChild(tx); b.appendChild(go);
-        on(b, 'click', function () { openDoc(id); });
+        on(b, 'click', function () { useBump(id); openDoc(id); });
         box.appendChild(b);
       });
     });
   }
   on($('b-re'), 'click', loadList);
+  on($('b-sort'), 'click', function () { lsSet(SORT_KEY, lsGet(SORT_KEY) === 'pop' ? '' : 'pop'); render(); });
   on($('b-set'), 'click', function () { var s = $('sets'); s.className = s.className.indexOf('hidden') >= 0 ? 'card' : 'card hidden'; $('key-show').textContent = KEY ? KEY.slice(0, 4) + '-••••-…-' + KEY.slice(-4) : '（なし）'; $('dk-in').value = driveKey; $('dk-msg').textContent = ''; });
   on($('dk-go'), 'click', function () {
     var k = String($('dk-in').value || '').replace(/\s+/g, '');
