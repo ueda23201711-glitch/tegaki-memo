@@ -4869,7 +4869,7 @@
     var hide = ['rd-flowbtn', 'rd-cont', 'rd-voice', 'rd-make'];
     each(hide, function (id) { var e = $(id); if (e) e.style.display = v ? 'none' : ''; });
     $('yt-loop').className = v ? '' : 'hidden';
-    $('rd-ep').className = v && !lvOld ? '' : 'hidden';
+    $('rd-ep').className = v && (!lvOld || (rdCur && rdCur.d && rdCur.d.lv)) ? '' : 'hidden';   // 古い iPad：手元の動画（ドライブから再生）のときだけ
     var hp = $('rd-hint-p');
     if (!hp.getAttribute('data-n')) hp.setAttribute('data-n', hp.innerHTML);
     hp.innerHTML = v ? 'セリフの ▶ でその場面から再生。単語をタップすると動画が止まって意味が出ます（<span class="idm-sample">下線</span>は熟語）。「🔂 1文くり返し」で今のセリフをくり返します。' : hp.getAttribute('data-n');

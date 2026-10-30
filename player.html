@@ -26,6 +26,12 @@
   body { overscroll-behavior:none; }
   button { font:inherit; color:inherit; border:0; background:none; cursor:pointer; -webkit-appearance:none; touch-action:manipulation; }
   .hidden { display:none !important; }
+  /* 古い iPad（iOS 9）：flex の gap が効かないので、余白で並べる */
+  .old .ut > *, .old .hbar > * { margin-right:6px; }
+  .old .um > * { margin:0 13px; }
+  .old .btns .ib { margin:0 4px 6px; }
+  .old .item .ic { margin-right:12px; }
+  .old .seekrow > * { margin-right:8px; }
 
   /* ---- 一覧 ---- */
   #home { min-height:100%; padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
@@ -74,28 +80,28 @@
   #cap.over .en, #cap.over .ja { display:inline; padding:.06em .3em; background:rgba(0,0,0,.72); -webkit-box-decoration-break:clone; box-decoration-break:clone; border-radius:.2em; text-shadow:0 1px 2px #000; }
   #cap.over .br { display:block; height:.3em; }
   #cap.sep .en, #cap.sep .ja { text-shadow:none; }
-  #msg { white-space:pre-line; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:min(86%,520px); text-align:center; font-size:15px; line-height:1.6; color:#dfe7eb; background:rgba(20,28,33,.92); border-radius:14px; padding:16px; z-index:3; }
+  #msg { white-space:pre-line; position:absolute; left:50%; top:50%; -webkit-transform:translate(-50%,-50%); transform:translate(-50%,-50%); width:86%; max-width:520px; text-align:center; font-size:15px; line-height:1.6; color:#dfe7eb; background:rgba(20,28,33,.92); border-radius:14px; padding:16px; z-index:3; }
   #msg a { color:var(--acc); }
   #msg button { display:inline-block; margin:12px 6px 0; padding:10px 16px; border-radius:10px; background:var(--acc); color:#04161e; font-weight:700; font-size:15px; }
   #msg button.sub { background:#2a363e; color:#fff; }
-  #toast { position:absolute; left:50%; transform:translateX(-50%); top:calc(env(safe-area-inset-top) + 64px); background:rgba(20,28,33,.92); color:#fff; border-radius:20px; padding:8px 14px; font-size:14px; z-index:4; white-space:nowrap; pointer-events:none; opacity:0; transition:opacity .25s; }
+  #toast { position:absolute; left:50%; -webkit-transform:translateX(-50%); transform:translateX(-50%); top:64px; top:calc(env(safe-area-inset-top) + 64px); background:rgba(20,28,33,.92); color:#fff; border-radius:20px; padding:8px 14px; font-size:14px; z-index:4; white-space:nowrap; pointer-events:none; opacity:0; transition:opacity .25s; }
   #toast.on { opacity:1; }
-  #b-unmute { position:absolute; left:50%; transform:translateX(-50%); top:calc(env(safe-area-inset-top) + 64px); z-index:5; padding:12px 18px; border-radius:24px; background:var(--acc); color:#04161e; font-weight:700; font-size:15px; white-space:nowrap; box-shadow:0 4px 16px rgba(0,0,0,.5); }
+  #b-unmute { position:absolute; left:50%; -webkit-transform:translateX(-50%); transform:translateX(-50%); top:64px; top:calc(env(safe-area-inset-top) + 64px); z-index:5; padding:12px 18px; border-radius:24px; background:var(--acc); color:#04161e; font-weight:700; font-size:15px; white-space:nowrap; box-shadow:0 4px 16px rgba(0,0,0,.5); }
 
   #ui { position:absolute; left:0; top:0; right:0; bottom:0; z-index:2; opacity:1; transition:opacity .25s; }
   #ui.off { opacity:0; pointer-events:none; }
   #ui .shade-t { position:absolute; left:0; right:0; top:0; height:110px; background:linear-gradient(rgba(0,0,0,.7),rgba(0,0,0,0)); pointer-events:none; }
   #ui .shade-b { position:absolute; left:0; right:0; bottom:0; height:150px; background:linear-gradient(rgba(0,0,0,0),rgba(0,0,0,.75)); pointer-events:none; }
-  .ut { position:absolute; left:0; right:0; top:0; display:flex; align-items:center; gap:6px; padding:calc(env(safe-area-inset-top) + 6px) calc(env(safe-area-inset-right) + 8px) 6px calc(env(safe-area-inset-left) + 8px); }
+  .ut { position:absolute; left:0; right:0; top:0; display:flex; align-items:center; gap:6px; padding:6px 8px; padding:calc(env(safe-area-inset-top) + 6px) calc(env(safe-area-inset-right) + 8px) 6px calc(env(safe-area-inset-left) + 8px); }
   .ut #ttl { flex:1; min-width:0; font-size:15px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-shadow:0 1px 3px #000; }
   .ib { min-width:44px; height:44px; padding:0 10px; border-radius:22px; background:rgba(30,40,46,.72); font-size:16px; display:inline-flex; align-items:center; justify-content:center; white-space:nowrap; }
   #b-rd { font-size:14px; }
   a.ib { color:inherit; text-decoration:none; font-size:14px; }
   .ib.on { background:var(--acc); color:#04161e; font-weight:700; }
-  .um { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); display:flex; align-items:center; gap:26px; }
+  .um { position:absolute; left:50%; top:50%; -webkit-transform:translate(-50%,-50%); transform:translate(-50%,-50%); display:flex; align-items:center; gap:26px; }
   .um .ib { width:58px; height:58px; border-radius:29px; font-size:22px; padding:0; }
   .um #pp { width:76px; height:76px; border-radius:38px; font-size:30px; background:rgba(255,255,255,.9); color:#000; }
-  .ub { position:absolute; left:0; right:0; bottom:0; padding:0 calc(env(safe-area-inset-right) + 10px) calc(env(safe-area-inset-bottom) + 8px) calc(env(safe-area-inset-left) + 10px); }
+  .ub { position:absolute; left:0; right:0; bottom:0; padding:0 10px 8px; padding:0 calc(env(safe-area-inset-right) + 10px) calc(env(safe-area-inset-bottom) + 8px) calc(env(safe-area-inset-left) + 10px); }
   .seekrow { display:flex; align-items:center; gap:10px; font-size:13px; font-variant-numeric:tabular-nums; text-shadow:0 1px 2px #000; }
   #seek { flex:1; height:30px; margin:0; accent-color:var(--acc); }
   .btns { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:4px; }
@@ -184,6 +190,9 @@ var EP_CFG = { key: 'memo_key', gas: 'memo_gas', cache: 'memo_reader', idb: 'mem
 (function () {
   'use strict';
   var C = window.EP_CFG;
+  // 古い iPad（iOS 9 まで）：この端末には動画を保存できない（ドライブから再生だけ）。YouTube もホーム画面アプリの中では再生できない
+  var OLD = /OS [5-9]_\d.* like Mac OS X/.test(navigator.userAgent);
+  if (OLD) document.documentElement.className += ' old';
   var DB_URL = 'https://kiku990-a838d-default-rtdb.asia-southeast1.firebasedatabase.app';
   var READER_URL = C.reader;
   // 英文リーダーの中（/eibun-reader/player.html）で開いているとき：リーダーと同じアプリの中で行き来する（取り込んだ動画・合言葉も共通）
@@ -300,7 +309,7 @@ var EP_CFG = { key: 'memo_key', gas: 'memo_gas', cache: 'memo_reader', idb: 'mem
   var docs = {};   // id → 英文リーダーのデータ（動画つきのものだけ）
   function takeDocs(all) {
     var out = {};
-    for (var id in all) { var d = all[id]; if (d && (d.lv || d.yt) && d.cues && d.cues.length) out[id] = d; }
+    for (var id in all) { var d = all[id]; if (d && (d.lv || (d.yt && !OLD)) && d.cues && d.cues.length) out[id] = d; }
     return out;
   }
   function showSetup(on) { $('setup').className = on ? 'card' : 'card hidden'; if (on) { $('list').innerHTML = ''; $('hmsg').textContent = ''; } }
@@ -477,10 +486,10 @@ var EP_CFG = { key: 'memo_key', gas: 'memo_gas', cache: 'memo_reader', idb: 'mem
     var m = $('msg');
     if (!t) { m.className = 'hidden'; m.innerHTML = ''; return; }
     m.className = ''; m.innerHTML = ''; m.appendChild(document.createTextNode(t));
-    if (btns && btns.length) { m.appendChild(el('br')); each(btns, function (b) { var x = el('button', b[2] || '', b[0]); x.type = 'button'; on(x, 'click', function (e) { e.stopPropagation(); b[1](); }); m.appendChild(x); }); }
+    if (btns && btns.length) { m.appendChild(el('br')); each(btns, function (b) { if (!b) return; var x = el('button', b[2] || '', b[0]); x.type = 'button'; on(x, 'click', function (e) { e.stopPropagation(); b[1](); }); m.appendChild(x); }); }
     if (link) { m.appendChild(el('br')); m.appendChild(el('br')); var a = el('a', '', '🔗 Safari で動画だけ開く'); a.href = link; a.target = '_blank'; a.rel = 'noopener'; m.appendChild(a); }
   }
-  function dlBtn(id) { return ['⬇ この端末に取り込んで再生', function () { importDrive(id); }]; }
+  function dlBtn(id) { return OLD ? null : ['⬇ この端末に取り込んで再生', function () { importDrive(id); }]; }
 
   /* ---- ドライブからこの端末に取り込む（英文リーダーの「⬇ この端末に取り込む」と同じ方法・同じ保存場所）
      Apps Script から 3MB ずつ受け取る。途中で止まっても、次は続きから ---- */
@@ -877,7 +886,7 @@ var EP_CFG = { key: 'memo_key', gas: 'memo_gas', cache: 'memo_reader', idb: 'mem
     $('b-mode').textContent = MODE_T[pref.mode];
     $('b-spd').textContent = (P.rate() || pref.rate).toFixed(2).replace(/0$/, '') + '×';
     $('b-pos').textContent = pref.pos === 'over' ? '⇕ 重ねる' : '⇕ 自動';
-    var sw = $('b-sw'), canSw = cur && cur.lv && P.kind === 'v' && srcMode && (srcMode === 'drive' || (cur.lv.drive && (driveKey || gasUrl)));
+    var sw = $('b-sw'), canSw = !OLD && cur && cur.lv && P.kind === 'v' && srcMode && (srcMode === 'drive' || (cur.lv.drive && (driveKey || gasUrl)));
     sw.className = canSw ? 'ib' : 'ib hidden';
     if (canSw) sw.textContent = srcMode === 'local' ? '📱 端末' : '☁ ドライブ';
     var fsOk = fsEl() && !fsActive() && !isStandalone();
