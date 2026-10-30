@@ -489,6 +489,12 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     try {
       navigator.serviceWorker.register(EP_CFG.sw || 'drive-sw.js', { updateViaCache: 'none' }).then(function (reg) { try { reg.update(); } catch (e) {} return navigator.serviceWorker.ready; }).then(function () { swOk = !!navigator.serviceWorker.controller; }, function () {});
       navigator.serviceWorker.addEventListener('controllerchange', function () { swOk = true; });
+      // 中継（drive-sw.js）からの頼み：Apps Script の分割を、取り込みと同じ gasCall（だめなら JSONP）で受け取って渡す
+      navigator.serviceWorker.addEventListener('message', function (ev) {
+        var q = ev.data, port = ev.ports && ev.ports[0];
+        if (!q || q.type !== 'ep-gas-part' || !port) return;
+        gasCall({ f: 'get', id: q.id, part: String(q.part) }, function (r, e) { port.postMessage(r || { ok: false, error: String(e || 'gas') }); });
+      });
       swOk = !!navigator.serviceWorker.controller;
     } catch (e) {}
   }

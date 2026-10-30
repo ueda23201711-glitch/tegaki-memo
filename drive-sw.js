@@ -9,8 +9,10 @@
    - Content-Range / Content-Length は、受け取った実際のバイト数から作る（推測しない）。
    - 大きいファイルなどでドライブ API がつながらない（Load failed）ときは、Apps Script（gas=）から
      「取り込み」と同じ 3MB ずつの分割（f=get&part=k、Base64）で受け取り、必要な範囲だけ切り出して返す。
-     受け取った分割はメモリに少しだけ置き、次の分割も先に取りに行く（端末には保存しない）。 */
-var VERSION = 'v3';
+     受け取った分割はメモリに少しだけ置き、次の分割も先に取りに行く（端末には保存しない）。
+   - iPhone では Apps Script への普通の通信（CORS）が通らないことがある（ページは JSONP で取っている）。
+     ここでは JSONP が使えないので、そのときはページに頼んで、取り込みと同じ gasCall で受け取ってもらう。 */
+var VERSION = 'v4';
 var CHUNK = 2 * 1024 * 1024;   // 2MB
 
 self.addEventListener('install', function () { self.skipWaiting(); });
@@ -47,7 +49,9 @@ function relay(req, u, e) {
   var gas = u.searchParams.get('gas') || '';
   var viaGas = function (why) {
     if (!gas) return Promise.reject(new Error(why || 'no api'));
-    return fromGas(gas, fid, start, end, total, type, e);
+    return fromGas(gas, fid, start, end, total, type, e).catch(function (err) {
+      throw new Error((why ? why + ' / ' : '') + 'gas ' + (err && err.message || err));
+    });
   };
   if (!key || apiBad[fid]) return viaGas();
   return fetch(api, { headers: { Range: 'bytes=' + start + '-' + end }, cache: 'no-store' }).then(function (res) {
@@ -86,14 +90,40 @@ var meta = {};              // fid → { n: 分割数, ps: 1 分割の大きさ 
 var parts = {}, order = [];  // 'fid#k' → Uint8Array（最近の数個だけ）
 var flying = {};            // 'fid#k' → Promise
 var KEEP = 6;               // メモリに置く分割の数（約 18MB）
+var gasDirectBad = false;   // ここから Apps Script へ直接つながらない（CORS）
 
-function gasPart(gas, fid, k) {
+// ページ（player.html）に、取り込みと同じ gasCall で分割を受け取ってもらう
+function askPage(cid, fid, k) {
+  var pick = cid ? self.clients.get(cid) : Promise.resolve(null);
+  return pick.then(function (c) {
+    if (c) return c;
+    return self.clients.matchAll({ type: 'window' }).then(function (all) { return all[0]; });
+  }).then(function (c) {
+    if (!c) throw new Error('no page');
+    return new Promise(function (ok, ng) {
+      var ch = new MessageChannel();
+      var t = setTimeout(function () { ng(new Error('page timeout')); }, 130000);
+      ch.port1.onmessage = function (ev) { clearTimeout(t); ok(ev.data); };
+      c.postMessage({ type: 'ep-gas-part', id: fid, part: k }, [ch.port2]);
+    });
+  });
+}
+
+function gasPart(gas, fid, k, cid) {
   var id = fid + '#' + k;
   if (parts[id]) return Promise.resolve(parts[id]);
   if (flying[id]) return flying[id];
   var url = gas + (gas.indexOf('?') >= 0 ? '&' : '?') + 'f=get&id=' + encodeURIComponent(fid) + '&part=' + k;
+  var direct = function () {
+    if (gasDirectBad) return Promise.reject(new Error('direct off'));
+    return fetch(url, { cache: 'no-store', redirect: 'follow' }).then(function (r) { return r.json(); }).catch(function (err) {
+      gasDirectBad = true;   // 以後はページに頼む
+      throw err;
+    });
+  };
+  var get = function () { return direct().catch(function () { return askPage(cid, fid, k); }); };
   var tryOnce = function (n) {
-    return fetch(url, { cache: 'no-store', redirect: 'follow' }).then(function (r) { return r.json(); }).then(function (d) {
+    return get().then(function (d) {
       if (!d || !d.ok || typeof d.a !== 'string') throw new Error((d && d.error) || 'gas');
       var bin = atob(d.a), b = new Uint8Array(bin.length);
       for (var i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
@@ -114,15 +144,16 @@ function gasPart(gas, fid, k) {
 }
 
 function fromGas(gas, fid, start, end, total, type, ev) {
+  var cid = ev && (ev.clientId || ev.resultingClientId) || '';
   // 1 分割の大きさは、0 番を受け取ると分かる（最初の 1 回だけ）
-  var ready = meta[fid] && meta[fid].ps ? Promise.resolve() : gasPart(gas, fid, 0);
+  var ready = meta[fid] && meta[fid].ps ? Promise.resolve() : gasPart(gas, fid, 0, cid);
   return ready.then(function () {
     var ps = meta[fid].ps, n = meta[fid].n, k = Math.floor(start / ps);
     if (k >= n) return text(416, '', { 'Content-Range': 'bytes */' + (total || '*') });
     // start〜end を、必要なら分割をまたいでつなげる（end は CHUNK 以内に切ってある）
     var out = [], got = 0, want = end - start + 1, kk = k;
     var step = function () {
-      return gasPart(gas, fid, kk).then(function (b) {
+      return gasPart(gas, fid, kk, cid).then(function (b) {
         var off = Math.max(0, start + got - kk * ps);
         var piece = b.subarray(off, Math.min(b.length, off + (want - got)));
         out.push(piece); got += piece.length;
@@ -134,7 +165,7 @@ function fromGas(gas, fid, start, end, total, type, ev) {
       out.forEach(function (x) { body.set(x, at); at += x.length; });
       k = kk;
       if (k + 1 < n) {   // 次の分割を先に取りに行く
-        var pre = gasPart(gas, fid, k + 1).catch(function () {});
+        var pre = gasPart(gas, fid, k + 1, cid).catch(function () {});
         try { if (ev && ev.waitUntil) ev.waitUntil(pre); } catch (x) {}
       }
       var whole = total || (got < want ? start + got : 0);
