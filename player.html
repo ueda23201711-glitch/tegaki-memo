@@ -184,7 +184,7 @@
 
 <script>
 /* どのアプリの英文を見るか（英文リーダー／手書きメモの英文リーダー）。build-reader-copy.sh がアプリごとに書き換える */
-var EP_CFG = { key: 'memo_key', gas: 'memo_gas', cache: 'memo_reader', idb: 'memo-video', jump: 'memo_jump', reader: 'https://ueda23201711-glitch.github.io/tegaki-memo/', inApp: /\/tegaki-memo\//, name: '手書きメモ' };
+var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo_reader', idb: 'memo-video', jump: 'memo_jump', reader: 'https://ueda23201711-glitch.github.io/tegaki-memo/', inApp: /\/tegaki-memo\//, name: '手書きメモ' };
 </script>
 <script>
 (function () {
@@ -226,7 +226,7 @@ var EP_CFG = { key: 'memo_key', gas: 'memo_gas', cache: 'memo_reader', idb: 'mem
   var KEY = lsGet(C.key) || '';
   var hk = /[#&]d=/.test(location.hash) ? null : normKey(location.hash); if (hk) { KEY = hk; lsSet(C.key, hk); try { history.replaceState(null, '', location.pathname); } catch (e) {} }
   var gasUrl = lsGet(C.gas) || '';
-  var driveKey = lsGet('ep_dkey') || '';   // Google ドライブ API のキー（memos/合言葉/settings/drivekey にも保存）
+  var driveKey = lsGet(C.dkey) || '', keyLoaded = false, keyWait = [];   // アプリ（英文リーダー・手書きメモ）が保存したキーをそのまま使う   // Google ドライブ API のキー（memos/合言葉/settings/drivekey にも保存）
   var pref = { mode: lsGet('ep_mode') || 'both', size: Number(lsGet('ep_size') || 1), pos: lsGet('ep_pos') || 'auto', rate: Number(lsGet('ep_rate') || 1) };
   function savePref() { lsSet('ep_mode', pref.mode); lsSet('ep_size', String(pref.size)); lsSet('ep_pos', pref.pos); lsSet('ep_rate', String(pref.rate)); }
 
@@ -327,7 +327,7 @@ var EP_CFG = { key: 'memo_key', gas: 'memo_gas', cache: 'memo_reader', idb: 'mem
       render();
     });
     api('/settings/gas', function (err, u) { if (!err && typeof u === 'string' && u) { gasUrl = u; lsSet(C.gas, u); } });
-    api('/settings/drivekey', function (err, u) { if (!err && typeof u === 'string') { driveKey = u; lsSet('ep_dkey', u); } });
+    api('/settings/drivekey', function (err, u) { if (!err && typeof u === 'string') { driveKey = u; lsSet(C.dkey, u); } keyLoaded = true; var w = keyWait; keyWait = []; each(w, function (f) { f(); }); });
   }
   function ids() { var a = []; for (var k in docs) a.push(k); a.sort(function (x, y) { return (docs[y].at || 0) - (docs[x].at || 0); }); return a; }
   function render() {
@@ -360,7 +360,7 @@ var EP_CFG = { key: 'memo_key', gas: 'memo_gas', cache: 'memo_reader', idb: 'mem
   on($('dk-go'), 'click', function () {
     var k = String($('dk-in').value || '').replace(/\s+/g, '');
     if (k && !/^AIza[0-9A-Za-z_\-]{30,}$/.test(k)) { $('dk-msg').textContent = 'APIキーは「AIza」で始まる文字です。'; return; }
-    driveKey = k; lsSet('ep_dkey', k); $('dk-msg').textContent = '保存しています…';
+    driveKey = k; lsSet(C.dkey, k); $('dk-msg').textContent = '保存しています…';
     var x = new XMLHttpRequest();
     try {
       x.open('PATCH', DB_URL + '/memos/' + KEY + '/settings.json', true); x.setRequestHeader('Content-Type', 'application/json');
@@ -480,6 +480,7 @@ var EP_CFG = { key: 'memo_key', gas: 'memo_gas', cache: 'memo_reader', idb: 'mem
     ar: function () { if (P.kind === 'yt') return 16 / 9; return v.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : 16 / 9; },
     has: function () { return P.kind === 'yt' ? !!(yt && ytReady) : !!v.getAttribute('src'); }
   };
+  var apiTried = false;
   var v = $('vid'), cur = null, curId = '', blobUrl = '', links = [], linkErr = [], srcMode = '';
   // btns: [[文字, 押したとき, 'sub'(控えめ)]]
   function msg(t, link, btns) {
@@ -624,7 +625,14 @@ var EP_CFG = { key: 'memo_key', gas: 'memo_gas', cache: 'memo_reader', idb: 'mem
   on($('b-sw'), 'click', function (e) { e.stopPropagation(); switchSrc(); hideSoon(); });
   function fromDrive(id) {
     var d = docs[id];
+    // キーをまだ読み込んでいない（開いた直後に英文リーダーから来たときなど）：読み込んでから（最大 5 秒）
+    if (!driveKey && !keyLoaded && KEY && d.lv.drive) {
+      var go = false, run = function () { if (go) return; go = true; if (curId === id) fromDrive(id); };
+      keyWait.push(run); setTimeout(function () { keyLoaded = true; run(); }, 5000);
+      msg('☁ ドライブの動画を読み込んでいます…'); return;
+    }
     if (!d.lv.drive) { msg('この動画は、まだドライブに送られていません。英文リーダーで動画を入れた端末から送り終えると、ここで見られます。'); return; }
+    apiTried = !!driveKey;
     var apiLink = driveKey ? 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(d.lv.drive) + '?alt=media&key=' + encodeURIComponent(driveKey) : '';
     if (!gasUrl) {
       if (apiLink) { links = []; linkErr = []; srcMode = 'drive'; d.lv.link = apiLink; v.src = apiLink; msg(''); updBtns(); return; }
@@ -664,6 +672,7 @@ var EP_CFG = { key: 'memo_key', gas: 'memo_gas', cache: 'memo_reader', idb: 'mem
   on(v, 'error', function () {
     if (!cur || !v.getAttribute('src')) return;
     var ec = v.error ? v.error.code : 0;
+    if (srcMode === 'drive' && driveKey && !apiTried && cur.lv.drive) { apiTried = true; links = []; var al = 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(cur.lv.drive) + '?alt=media&key=' + encodeURIComponent(driveKey); cur.lv.link = al; v.src = al; try { v.load(); } catch (e) {} return; }
     if (srcMode === 'drive') { linkErr.push(ec); if (links.length) { cur.lv.link = links[0]; v.src = links.shift(); try { v.load(); } catch (e) {} return; } }
     var why = ec === 3 ? '動画の中身を再生できません。この端末には画質・形式が重すぎる可能性があります'
       : ec === 4 ? (srcMode === 'drive' ? 'ドライブから動画として受け取れませんでした' : 'この端末が対応していない形式です')
