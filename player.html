@@ -173,6 +173,7 @@
       <div class="btns">
         <button id="b-mode" class="ib" type="button" title="字幕">英＋日</button>
         <button id="b-rep" class="ib" type="button" title="この文をくり返す">🔁</button>
+        <button id="b-hard" class="ib" type="button" title="わからなかった文の印（今のセリフ）。英文リーダーで ❓ の文だけを見直せる">❓</button>
         <button id="b-bm" class="ib" type="button" title="しおり（押すと今の場面に挟む。しおりの場面でもう一度押すと外す）。次に一覧から開くと、しおりの場面から始まる">🔖</button>
         <button id="b-spd" class="ib" type="button" title="速さ">1.0×</button>
         <button id="b-sm" class="ib" type="button" title="字幕を小さく">A−</button>
@@ -354,6 +355,22 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     } catch (e) {}
   }
   // 動画のしおり（秒）：英文のデータ（reader/ID/vbm）に保存。英文リーダー・ほかの端末でも同じ
+  // 「わからなかった文」の印：英文のデータ reader/ID/hard/s番号（英文リーダーと共通）
+  function hardOf(k) { return !!(cur && cur.hard && cur.hard['s' + k]); }
+  function hardBtn() { var b = $('b-hard'); if (!b || !cur) return; var k = idxAt(P.t()); b.className = 'ib' + (k >= 0 && hardOf(k) ? ' on' : ''); }
+  function toggleHard() {
+    if (!cur) return;
+    var k = idxAt(P.t()); if (k < 0) { toast('セリフのところで押してください'); return; }
+    var id = curId, d = cur, onn = !hardOf(k);
+    d.hard = d.hard || {}; if (onn) d.hard['s' + k] = 1; else delete d.hard['s' + k];
+    try { var all = JSON.parse(lsGet(C.cache) || 'null'); if (all && all[id]) { all[id].hard = d.hard; lsSet(C.cache, JSON.stringify(all)); } } catch (e) {}
+    if (KEY) {
+      try { var x = new XMLHttpRequest(); var o = {}; o['s' + k] = onn ? 1 : null;
+        x.open('PATCH', DB_URL + '/memos/' + KEY + '/reader/' + id + '/hard.json', true); x.setRequestHeader('Content-Type', 'application/json'); x.send(JSON.stringify(o)); } catch (e) {}
+    }
+    hardBtn();
+    toast(onn ? '❓ 印を付けました（' + (k + 1) + ' 文目）。英文リーダーの「❓ 印の文だけ」で見直せます' : '❓ 印を外しました');
+  }
   function setVbm(id, t) {
     var d = docs[id]; if (!d) return;
     if (t > 0) { d.vbm = t; d.vbmAt = now(); } else { delete d.vbm; delete d.vbmAt; }
@@ -424,6 +441,7 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
         var p = Number(lsGet('ep_at_' + id) || 0); if (d.vbm > 0) s.push('🔖 ' + fmt(d.vbm)); else if (p > 5) s.push('続き ' + fmt(p));
         if (!d.yt && srcUrl(d)) s.push('🔗 ' + hostOf(srcUrl(d)));
         if (pop && um[id]) s.push('👁 ' + um[id][0] + '回');
+        var hn = 0; if (d.hard) for (var hk in d.hard) if (d.hard[hk]) hn++; if (hn) s.push('❓' + hn);
         tx.appendChild(el('div', 's', s.join('・')));
         var fv = el('span', 'fav' + (d.fav ? ' on' : ''), favStr(d.fav)); fv.title = '好み（押すたびに ★1→★2→★3→なし）';
         on(fv, 'click', function (e) { e.stopPropagation(); if (e.preventDefault) e.preventDefault(); var n = ((d.fav || 0) + 1) % 4; setFav(id, n); fv.textContent = favStr(n); fv.className = 'fav' + (n ? ' on' : ''); if (lsGet(SORT_KEY) === 'fav') render(); });
@@ -743,6 +761,7 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     });
   }
   on($('b-sw'), 'click', function (e) { e.stopPropagation(); switchSrc(); hideSoon(); });
+  on($('b-hard'), 'click', function (e) { e.stopPropagation(); hideSoon(); toggleHard(); });
   on($('b-bm'), 'click', function (e) {
     e.stopPropagation(); hideSoon();
     if (!cur || !P.has()) return;
@@ -967,6 +986,7 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     if (k >= 0 && k === c.length - 1 && t - c[k][0] > 10) k = -1;
     $('sn').textContent = idxAt(t) >= 0 ? (idxAt(t) + 1) + '/' + c.length : '';
     var key = pref.mode + ':' + k; if (key === capKey) return; capKey = key;
+    hardBtn();
     var box = $('capin'); box.innerHTML = '';
     if (k < 0) return;
     var en = c[k][1], ja = cur.tr && cur.tr[k];
