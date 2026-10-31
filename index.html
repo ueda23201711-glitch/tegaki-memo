@@ -325,7 +325,7 @@
     background: #f1f4f6; border-radius: 9px; padding: 12px; word-break: break-all; margin-bottom: 10px;
     -webkit-user-select: text; user-select: text;
   }
-  .panel input[type=text] {
+  .panel input[type=text], .panel input[type=url] {
     width: 100%; box-sizing: border-box; padding: 11px; border: 1px solid #c9d2d8; border-radius: 9px;
     font-family: Menlo, "Courier New", monospace; font-size: 16px; margin-bottom: 10px; background: #fff;
   }
@@ -438,12 +438,16 @@
   <div class="body">
     <div class="panel">
       <h2>はじめに</h2>
-      <p>同じ「合言葉」を入れた端末どうしで、メモが共有されます。</p>
+      <p>同じ「合言葉」を入れた端末どうしで、メモが共有されます。メモは、あなた自身の Firebase（Google の無料のデータベース）に保存します。</p>
+      <p class="note">初めて使うときは、渡された手順書で Firebase を作り、その URL を下に入れてください。</p>
+      <input type="url" id="inp-db" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://〜-default-rtdb.〜.firebasedatabase.app">
+      <div class="msg" id="db-msg"></div>
       <button class="primary" id="btn-new-key" type="button">この端末で新しく始める</button>
     </div>
     <div class="panel">
       <h2>ほかの端末ですでに使っている場合</h2>
       <p>使っている端末で「設定」→「ほかの端末を追加」を開いてください。</p>
+      <p class="note">QR コードを読み取れば、Firebase の URL も自動で設定されます。ペアリングコードや合言葉で設定するときは、上の欄に Firebase の URL も入れてください。</p>
       <div class="scan-only hidden">
         <button class="primary" data-scan="setup" type="button">QRコードを読み取る</button>
         <div class="or">または、表示されたペアリングコード（8文字）を入力：</div>
@@ -760,6 +764,7 @@
       <h2>この端末の合言葉</h2>
       <p>ほかの端末でこの合言葉を入力すると、同じメモが見られます。</p>
       <div class="key" id="key-show"></div>
+      <p class="note" id="db-show"></p>
       <div class="row">
         <button id="btn-copy-key" type="button">コピー</button>
         <span class="note" id="copy-msg"></span>
@@ -962,7 +967,13 @@
   'use strict';
 
   /* ===================== 設定 ===================== */
-  var DB_URL = 'https://kiku990-a838d-default-rtdb.asia-southeast1.firebasedatabase.app';
+  /* Firebase の接続先：この端末で「自分の Firebase」を設定していればそれ（localStorage の fb_db・同じサイトのアプリで共通）、なければ既定 */
+  var DEF_DB = 'https://kiku990-a838d-default-rtdb.asia-southeast1.firebasedatabase.app';
+  function normDb(u) { var m = String(u || '').replace(/^\s+|\s+$/g, '').match(/^(https:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:firebasedatabase\.app|firebaseio\.com))(?:\/.*)?$/i); return m ? m[1].toLowerCase() : ''; }
+  function dbFromText(t) { var m = String(t || '').match(/[#&?]db=([^&#]+)/); if (!m) return ''; try { return normDb(decodeURIComponent(m[1])); } catch (e) { return ''; } }
+  function savedDb() { try { return normDb(localStorage.getItem('fb_db')); } catch (e) { return ''; } }
+  function saveDb(u) { try { if (u && u !== DEF_DB) localStorage.setItem('fb_db', u); else localStorage.removeItem('fb_db'); } catch (e) {} }
+  var DB_URL = savedDb() || DEF_DB;
   var PAGE_W = 1000, PAGE_H = 1414;          // 用紙（A判の縦横比）。座標はこの単位で保存
   var SIZES = { pen: [3, 6, 11], hl: [22, 34, 48], eraser: [18, 36, 70] };
   var POLL_MS = 10000;                        // 開いているメモの更新確認の間隔
@@ -7275,6 +7286,7 @@
   });
   on($('btn-refresh'), 'click', function () { refreshIndex(); });
   on($('btn-settings'), 'click', function () {
+    $('db-show').textContent = 'メモの保存先（Firebase）：' + DB_URL.replace(/^https:\/\//, '') + (DB_URL === DEF_DB ? '（作者用）' : '');
     $('key-show').textContent = KEY; $('copy-msg').textContent = ''; $('settings-msg').textContent = ''; $('pair-msg').textContent = '';
     renderQr();
     show('scr-settings');
@@ -7304,12 +7316,13 @@
   // QR の中身や URL から合言葉を取り出す
   function keyFromText(t) {
     t = String(t || '');
+    var hdb = dbFromText(t); if (hdb) { saveDb(hdb); DB_URL = hdb; }   // QR に入っている Firebase の接続先
     var m = t.match(/[#&?]k=([A-Za-z0-9-]+)/);
     return normKey(m ? m[1] : t);
   }
 
   /* ---- QR 表示 ---- */
-  function pairUrl() { return location.href.split('#')[0].split('?')[0] + '#k=' + KEY; }
+  function pairUrl() { return location.href.split('#')[0].split('?')[0] + '#k=' + KEY + (DB_URL !== DEF_DB ? '&db=' + encodeURIComponent(DB_URL) : ''); }
   function renderQr() {
     try {
       var q = qrcode(0, 'M'); q.addData(pairUrl()); q.make();
@@ -7369,6 +7382,7 @@
     var msg = $(where + '-msg'), code = normCode($('inp-code-' + where).value);
     msg.className = 'msg';
     if (!code) { msg.textContent = 'ペアリングコードは8文字です。もう一度確認してください。'; return; }
+    if (where === 'setup' && !useDbInput(msg)) return;   // 最初の画面：上の欄の Firebase の URL を使う（空なら今の接続先）
     msg.textContent = '確認中…';
     rawApi('GET', '/pair/' + code, undefined, function (err, data) {
       var k = data && data.k ? normKey(data.k) : null;
@@ -7492,8 +7506,40 @@
     if (!k) { $('settings-msg').textContent = '合言葉は英数字32文字です。もう一度確認してください。'; return; }
     applyKey(k);
   });
-  on($('btn-new-key'), 'click', function () { useKey(makeKey()); });
+  // 上の欄の Firebase の URL（空なら null、正しくなければ false）
+  function dbInput() { var v = $('inp-db') ? $('inp-db').value : ''; if (!/\S/.test(v)) return null; return normDb(v) || false; }
+  function useDbInput(msg) {
+    var u = dbInput();
+    if (u === false) { msg.className = 'msg'; msg.textContent = 'Firebase の URL が正しくありません。「https://」で始まり「firebasedatabase.app」で終わる URL を入れてください。'; return false; }
+    if (u) { saveDb(u); DB_URL = u; }
+    return true;
+  }
+  // 新しく始める：自分の Firebase の URL が必須。つながるか・書き込めるかを確かめてから
+  on($('btn-new-key'), 'click', function () {
+    var msg = $('db-msg'), u = dbInput(), k = makeKey();
+    msg.className = 'msg';
+    if (!u) { msg.textContent = u === false ? 'Firebase の URL が正しくありません。「https://」で始まり「firebasedatabase.app」で終わる URL を入れてください。' : 'あなたの Firebase の URL を入れてください（手順書の「1. Firebase を作る」で作ります）。'; return; }
+    if (u === DEF_DB) { msg.textContent = 'この URL は作者専用です。ご自分の Firebase の URL を入れてください。'; return; }
+    msg.textContent = 'Firebase につないでいます…';
+    var x = new XMLHttpRequest();
+    try {
+      x.open('PUT', u + '/memos/' + k + '/created.json', true);
+      x.setRequestHeader('Content-Type', 'application/json');
+      x.timeout = 20000;
+      x.onreadystatechange = function () {
+        if (x.readyState !== 4) return;
+        if (x.status >= 200 && x.status < 300) { saveDb(u); DB_URL = u; msg.className = 'msg ok'; msg.textContent = ''; useKey(k); return; }
+        msg.textContent = x.status === 401 || x.status === 403
+          ? 'Firebase には届きましたが、書き込めませんでした。手順書の「2. ルールを設定する」をもう一度確かめてください（すでにほかの合言葉で使い始めている場合は、その端末から「ほかの端末を追加」で追加してください）。'
+          : x.status === 404 ? 'その URL の Firebase が見つかりません。URL を確かめてください。'
+          : 'Firebase につながりませんでした（' + (x.status || '通信エラー') + '）。URL と電波を確かめてください。';
+      };
+      x.ontimeout = function () { msg.textContent = 'Firebase につながりませんでした（時間切れ）。URL と電波を確かめてください。'; };
+      x.send(JSON.stringify(now()));
+    } catch (e) { msg.textContent = 'Firebase につながりませんでした。URL を確かめてください。'; }
+  });
   on($('btn-use-key'), 'click', function () {
+    if (!useDbInput($('setup-msg'))) return;
     var k = normKey($('inp-key').value);
     if (!k) { $('setup-msg').textContent = '合言葉は英数字32文字です。もう一度確認してください。'; return; }
     useKey(k);
