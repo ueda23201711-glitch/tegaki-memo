@@ -147,7 +147,8 @@
   .rd-h { font-size: 14px; color: #3b4a52; margin: 16px 0 8px; }
   /* ボタン類をたたむ（▶ 再生・たたむボタン・お知らせだけ残す。小さい iPhone で英文が見えるように） */
   #rd-ctrl.folded > button, #rd-ctrl.folded > select, #rd-ctrl.folded #lv-src { display: none !important; }
-  #rd-ctrl.folded > #rd-play, #rd-ctrl.folded > #rd-fold { display: inline-block !important; }
+  #rd-ctrl.folded > #rd-play, #rd-ctrl.folded > #rd-fold, #rd-ctrl.folded > #rd-bmclr { display: inline-block !important; }
+  #rd-ctrl.folded > #rd-bmclr.hidden { display: none !important; }
   .rd-hrow { background: #fff; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(31,42,48,.1); cursor: pointer; overflow: hidden; }
   .rd-hrow b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .rd-hrow span { font-size: 12px; color: #6b7a83; }
@@ -622,6 +623,7 @@
             <button id="yt-safari-btn" class="primary" type="button" style="margin-top:8px">▶ YouTube で最初から見る</button></div></div>
         <button id="rd-play" class="primary" type="button">▶ 再生</button>
         <button id="rd-fold" type="button" title="ボタン類をたたんで、英文を広く見る（もう一度押すと出す）">▴ たたむ</button>
+        <button id="rd-bmclr" class="hidden" type="button" title="この英文のしおり（文と動画の場面）を消す">🔖✕ しおり消</button>
         <button id="yt-loop" class="hidden" type="button" title="今のセリフをくり返し再生">🔂 1文くり返し：オフ</button>
         <button id="rd-ep" class="hidden" type="button" title="字幕プレイヤーで、画面いっぱいに大きな英日字幕で見る（今の場面から）">🎬 字幕プレイヤーで見る</button>
         <button id="rd-ab" type="button" title="1回目に押した文（A）から2回目に押した文（B）までをくり返す">🅰🅱 A-B リピート</button>
@@ -5268,6 +5270,7 @@
     } else { $('pg-prev').className = 'hidden'; $('pg-next').className = 'hidden'; $('pg-auto').className = 'hidden'; }
     $('pg-text').textContent = '📍 ' + t;
     var bm = d.bm;
+    $('rd-bmclr').className = typeof bm === 'number' || d.vbm > 0 ? '' : 'hidden';
     if (typeof bm === 'number' && bm < n) {
       $('pg-mark').style.display = 'block'; $('pg-mark').style.left = pctOf(bm, n) + '%';
       $('pg-go').className = bm === i ? 'hidden' : ''; $('pg-go').textContent = '↩ しおりへ ' + pctOf(bm, n) + '%';
@@ -5284,7 +5287,15 @@
     var d = rdCur.d, i = curPos();
     d.bm = i; d.bmAt = now(); d.bmP = pctOf(i, rdSents.length);
     // 動画つきで動画を開いているときは、動画の場面（秒）もしおりにする（字幕プレイヤーと共通）
-    var vt = 0; try { if (d.lv && ytPlayer && ytReady && ytPlayer === lvA) vt = Math.floor((ytPlayer.getCurrentTime() || 0) * 10) / 10; } catch (e) {}
+    // 動画の場面は、いつもしおりの文に合わせる（動画を止めて別の文に挟むと、古い場面が残って英文とずれていた）
+    //   その文の場面を再生中ならその時刻、そうでなければその文の字幕の始まり
+    var vt = 0;
+    if ((d.lv || d.yt) && d.cues && d.cues[i]) {
+      var c0 = d.cues[i][0], c1 = d.cues[i + 1] ? d.cues[i + 1][0] : 1e9, ct = -1;
+      try { if (ytPlayer && ytReady) ct = ytPlayer.getCurrentTime() || 0; } catch (e) {}
+      vt = Math.floor((ct >= c0 - 0.5 && ct < c1 ? ct : c0) * 10) / 10;
+      if (vt <= 0) vt = 0.1;
+    }
     if (vt > 0) { d.vbm = vt; d.vbmAt = d.bmAt; }
     rdSaveLocal();
     if (vt > 0 && KEY) { var bv = {}; bv['reader/' + rdCur.id + '/vbm'] = vt; bv['reader/' + rdCur.id + '/vbmAt'] = d.vbmAt; api('PATCH', '', bv, function () {}); }
@@ -5325,6 +5336,21 @@
   }
   on($('pg-bm'), 'click', setBookmark);
   on($('pg-auto'), 'click', function () { autoNext = !autoNext; lsSet('memo_autonext', autoNext ? '1' : '0'); progUpdate(); });
+  // しおりを消す（文のしおりと動画の場面の両方）
+  on($('rd-bmclr'), 'click', function () {
+    if (!rdCur) return;
+    if (!window.confirm('この英文のしおり（文と動画の場面）を消しますか？')) return;
+    var d = rdCur.d, id = rdCur.id;
+    delete d.bm; delete d.bmP; delete d.bmAt; delete d.vbm; delete d.vbmAt;
+    rdSaveLocal();
+    if (KEY) {
+      var b = {}; each(['bm', 'bmP', 'bmAt', 'vbm', 'vbmAt'], function (f) { b['reader/' + id + '/' + f] = null; });
+      if (!d.book) b['readerbm/' + id] = null;
+      api('PATCH', '', b, function () {});
+    }
+    progUpdate();
+    $('rd-status').textContent = '🔖 しおりを消しました。';
+  });
   // ボタン類をたたむ／出す（この端末で覚える）
   function rdFoldSet(on) { $('rd-ctrl').className = on ? 'folded' : ''; $('rd-fold').textContent = on ? '▾ ボタンを出す' : '▴ たたむ'; }
   rdFoldSet(lsGet('memo_rdfold') === '1');
@@ -5338,6 +5364,18 @@
       if (d.vbm > 0) { for (var k = 0; k < d.cues.length && d.cues[k][0] <= d.vbm + 0.05; k++) si = k; }   // 動画の場面のしおりに合う文
       gotoSent(si); markSentence(si);
       if (t >= 0) { if (ytLoop) ytLoopIdx = si; try { ytPlayer.seekTo(t, true); ytPlayer.playVideo(); } catch (e) {} }
+      return;
+    }
+    // 動画つきなのに、動画がまだ用意できていない（開いた直後など）：動画を始めて、用意できたらしおりの場面から再生
+    if (ytOn()) {
+      var t2 = d.vbm > 0 ? d.vbm : (d.cues[si] ? d.cues[si][0] : -1);
+      if (d.vbm > 0) { for (var k2 = 0; k2 < d.cues.length && d.cues[k2][0] <= d.vbm + 0.05; k2++) si = k2; }
+      gotoSent(si); markSentence(si);
+      if (t2 < 0) return;
+      if (ytLoop) ytLoopIdx = si;
+      if (d.lv && $('lv-get').className !== 'hidden' && $('lv-st').style.display !== 'none') $('lv-st').click();
+      $('rd-status').textContent = '🎞 動画を用意して、しおりの場面から再生します…';
+      rdSeekWhenReady(rdCur.id, t2, true);
       return;
     }
     gotoSent(si);
