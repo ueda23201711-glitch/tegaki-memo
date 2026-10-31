@@ -5350,6 +5350,26 @@
   /* ---- 翻訳（Google Apps Script・JSONP） ---- */
   var jsonpN = 0, gasXhrOk = lsGet('memo_gas_xhr') !== '0';
   // まずは普通の通信（ログイン情報を送らないので、Google に複数ログインしていても動く）。だめなら JSONP
+  // Apps Script の動画の分割を、裏方（gas-worker.js）で受け取る。JSONP の読み込みと Base64 の変換をページの外でするので、
+  // 受け取っている間もタッチが効く。裏方が使えないとき・だめだったときは、今までの gasCall
+  var gws = null, gwi = 0, gwFail = 0;
+  function gasPartGet(fid, k, cb) {
+    var fallback = function () { gasCall({ f: 'get', id: fid, part: String(k) }, cb); };
+    if (gws === false || !window.Worker || !window.MessageChannel || !gasUrl) { fallback(); return; }
+    try { if (!gws) gws = [new Worker('gas-worker.js'), new Worker('gas-worker.js')]; } catch (e) { gws = false; fallback(); return; }
+    var url = gasUrl + (gasUrl.indexOf('?') >= 0 ? '&' : '?') + 'f=get&id=' + encodeURIComponent(fid) + '&part=' + k;
+    var w = gws[gwi++ % gws.length], ch = new MessageChannel(), done = false;
+    var t = setTimeout(function () { if (done) return; done = true; fallback(); }, 90000);
+    ch.port1.onmessage = function (ev) {
+      if (done) return; done = true; clearTimeout(t);
+      var d = ev.data;
+      if (d && d.ok && d.buf) { gwFail = 0; cb(d, null); return; }
+      if (d && d.ok === false && !/^worker/.test(String(d.error || ''))) { cb(d, null); return; }   // Apps Script が返した失敗は、そのまま
+      if (++gwFail >= 3) gws = false;   // 裏方が続けてだめ：この画面では、もう使わない
+      fallback();
+    };
+    try { w.postMessage({ url: url }, [ch.port2]); } catch (e) { done = true; clearTimeout(t); gws = false; fallback(); }
+  }
   function gasCall(params, cb) {
     if (!gasUrl) { cb(null, 'nourl'); return; }
     // JSONP の方式になっている端末でも、失敗したら普通の通信をもう一度試す（うまくいけば戻す）
@@ -7370,7 +7390,7 @@
     navigator.serviceWorker.addEventListener('message', function (ev) {
       var q = ev.data, port = ev.ports && ev.ports[0];
       if (!q || q.type !== 'ep-gas-part' || !port) return;
-      gasCall({ f: 'get', id: q.id, part: String(q.part) }, function (r, e) { port.postMessage(r || { ok: false, error: String(e || 'gas') }); });
+      gasPartGet(q.id, q.part, function (r, e) { var d = r || { ok: false, error: String(e || 'gas') }; try { if (d.buf) port.postMessage(d, [d.buf]); else port.postMessage(d); } catch (x) { port.postMessage(d); } });
     });
   }
 

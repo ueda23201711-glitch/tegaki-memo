@@ -19,8 +19,10 @@
        2 回目からは、先頭や続きの場面を Apps Script に取りに行かずにすぐ返せる。
      ・大きい動画（BIG 以上）はドライブ API がつながらないので、最初から Apps Script にする（毎回の失敗待ちをなくす）。
      ・分割の大きさは Apps Script と同じ 3MB と決めておき、0 番を待たずに必要な分割を取りに行く。
-     ・先読みは 2 つ先まで。 */
-var VERSION = 'v6';
+     ・先読みは 2 つ先まで。
+   - ページに頼むときは、ページの裏方（gas-worker.js）が JSONP の読み込みと変換をして ArrayBuffer で渡す（v7）。
+     ページで 4MB の JSONP を読み込むと、その間タッチが効かなくなるため。 */
+var VERSION = 'v7';
 var CHUNK = 2 * 1024 * 1024;   // 2MB
 
 self.addEventListener('install', function () { self.skipWaiting(); });
@@ -168,9 +170,10 @@ function gasPart(gas, fid, k, cid) {
   var get = function () { return direct().catch(function () { return askPage(cid, fid, k); }); };
   var tryOnce = function (n) {
     return get().then(function (d) {
-      if (!d || !d.ok || typeof d.a !== 'string') throw new Error((d && d.error) || 'gas');
-      var bin = atob(d.a), b = new Uint8Array(bin.length);
-      for (var i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
+      if (!d || !d.ok || (!d.buf && typeof d.a !== 'string')) throw new Error((d && d.error) || 'gas');
+      var b;
+      if (d.buf) b = new Uint8Array(d.buf);   // ページの裏方（gas-worker.js）が変換済み
+      else { var bin = atob(d.a); b = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i); }
       if (!meta[fid] || !meta[fid].n || k === 0) meta[fid] = { n: d.n || 1, ps: k === 0 && (d.n || 1) > 1 ? b.length : ((meta[fid] && meta[fid].ps) || PS) };
       return b;
     }).catch(function (err) {
