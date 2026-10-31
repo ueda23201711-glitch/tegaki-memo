@@ -3621,7 +3621,15 @@
     for (k = 0; k < n; k++) if (isHard(k)) return k;
     return -1;
   }
-  var hardOnly = false;
+  var hardOnly = false, hardCur = -1;
+  // 印の文 i へ移って再生（どの印かを下に出す）
+  function hardGo(i) {
+    if (!rdCur || i < 0 || !rdCur.d.cues || !rdCur.d.cues[i]) return;
+    hardCur = i;
+    try { ytPlayer.seekTo(rdCur.d.cues[i][0], true); if (ytState() !== 1) ytPlayer.playVideo(); } catch (e) {}
+    var n = 0, at = 0; for (var k = 0; k < rdSents.length; k++) if (isHard(k)) { n++; if (k === i) at = n; }
+    $('rd-status').textContent = '❓ 印の文だけ：' + at + ' / ' + n + '（' + (i + 1) + ' 文目）を再生しています';
+  }
   function hardLabel() {
     var b = $('rd-hardonly'); if (!b) return;
     var n = rdCur ? hardCount(rdCur.d) : 0;
@@ -5166,6 +5174,7 @@
     if (!ytOn()) return;
     if (ytNeedSafari() && !rdCur.d.lv) { markSentence(si); ytOpenOut(rdCur.d.cues[si][0]); return; }
     if (ytLoop) ytLoopIdx = si;
+    if (hardOnly) hardCur = isHard(si) ? si : -1;
     markSentence(si);
     if (!ytPlayer || !ytReady) return;
     ytPlayer.seekTo(rdCur.d.cues[si][0], true); ytPlayer.playVideo();
@@ -5181,6 +5190,7 @@
     if (!ytOn() || !ytPlayer || !ytReady) return;
     if (!rdCur.d.lv) lvCapDraw();
     var st = ytState();
+    if (st === 0 && hardOnly && abB < 0) { hardGo(nextHard(0)); return; }
     if (st === 0 && abB >= 0) { try { ytPlayer.seekTo(rdCur.d.cues[abA][0], true); ytPlayer.playVideo(); } catch (e) {} return; }   // 最後まで来た：A へ
     if (st !== 1) return;
     var t = 0; try { t = ytPlayer.getCurrentTime(); } catch (e) { return; }
@@ -5190,9 +5200,17 @@
       if ((ab1 !== null && t >= ab1 - 0.05) || t < ab0 - 1) { ytPlayer.seekTo(ab0, true); t = ab0; }
     }
     for (var i = 0; i < cues.length; i++) { if (cues[i][0] <= t + 0.15) k = i; else break; }
-    if (hardOnly && !(ytLoop && ytLoopIdx >= 0) && abB < 0 && !isHard(k)) {   // 印の文だけ：印のない文は飛ばす（最後まで行ったら最初の印へ）
-      var hj = nextHard(k);
-      if (hj >= 0 && cues[hj]) { ytPlayer.seekTo(cues[hj][0], true); t = cues[hj][0]; k = hj; }
+    // 印の文だけ：「1文くり返し」と同じく、再生中の印の文（hardCur）を決めておき、その文の終わりで次の印の文へ（最後なら最初の印へ）
+    if (hardOnly && !(ytLoop && ytLoopIdx >= 0) && abB < 0) {
+      if (hardCur < 0 || !isHard(hardCur) || !cues[hardCur]) hardCur = nextHard(k);
+      if (hardCur >= 0) {
+        var hs = cues[hardCur][0], he = hardCur + 1 < cues.length ? cues[hardCur + 1][0] : null;
+        if ((he !== null && t >= he - 0.05) || t < hs - 1) {
+          var nx = (he !== null && t >= he - 0.05) ? nextHard(hardCur + 1) : hardCur;
+          hardGo(nx); t = cues[nx][0];
+        }
+        k = hardCur;
+      }
     }
     if (ytLoop && ytLoopIdx >= 0) {
       var end = ytLoopIdx + 1 < cues.length ? cues[ytLoopIdx + 1][0] : null;
@@ -6723,10 +6741,10 @@
   on($('fl-exit'), 'click', function () { setFlOnly(false); });
   on($('rd-ab'), 'click', abPress);
   on($('rd-hardonly'), 'click', function () {
-    hardOnly = !hardOnly; hardLabel();
+    hardOnly = !hardOnly; hardCur = -1; hardLabel();
     if (!hardOnly || !rdCur) return;
     var k = nextHard(rdIdx > 0 ? rdIdx : 0); if (k < 0) return;
-    if (ytOn()) { ytSeek(k); return; }   // 動画：その印の文から再生（印のない文は飛ばす）
+    if (ytOn()) { markSentence(k); gotoSent(k); if (ytPlayer && ytReady) hardGo(k); else ytSeek(k); return; }   // 動画：その印の文から再生（印のない文は飛ばす）
     markSentence(k); gotoSent(k);
     $('rd-status').textContent = '❓ 印の文だけにしました。🔊 や「▶ 再生」で、印の文だけを続けて読みます。';
   });
