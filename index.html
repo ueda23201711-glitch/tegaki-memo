@@ -4258,7 +4258,8 @@
   }
   /* ---- 🎞 手元の動画と字幕 ---- */
   var lvA = null, ytYT = null, ytYTReady = false, lvCur = '', lvUrl = '', lvMem = {};   // lvMem[id] = 取り込んだ動画（この画面を開いている間）
-  var lvOld = /OS [5-9]_\d.* like Mac OS X/.test(navigator.userAgent);   // iOS 9 まで：端末に動画を保存できない
+  var lvOld = /OS [5-9]_\d.* like Mac OS X/.test(navigator.userAgent);
+  var LV_OLD_MAX = 150 * 1024 * 1024;   // 古い iPad で「全部読み込んでから再生」できる大きさ（メモリが少ないため）   // iOS 9 まで：端末に動画を保存できない
   var lvCanPlay = (function () { try { var v = document.createElement('video'); return !!(v.canPlayType && (v.canPlayType('video/webm') || v.canPlayType('video/mp4'))) && !!window.indexedDB && !!window.Blob; } catch (e) { return false; } })();
   if (lvCanPlay && !lvOld && $('lv-in')) $('lv-in').className = '';
   // この端末の動画（IndexedDB。300MB でも入る）
@@ -4272,8 +4273,8 @@
       rq.onerror = function () { cb(null); };
     } catch (e) { cb(null); }
   }
-  function lvPut(id, blob, cb) { lvIdb(function (db) { if (!db) { cb(false); return; } try { var tx = db.transaction('v', 'readwrite'); tx.objectStore('v').put(blob, id); tx.oncomplete = function () { if (String(id).indexOf('#') < 0) lvHave[id] = 1; cb(true); }; tx.onerror = tx.onabort = function () { cb(false); }; } catch (e) { cb(false); } }); }
-  function lvGet(id, cb) { lvIdb(function (db) { if (!db) { cb(null); return; } try { var rq = db.transaction('v', 'readonly').objectStore('v').get(id); rq.onsuccess = function () { cb(rq.result || null); }; rq.onerror = function () { cb(null); }; } catch (e) { cb(null); } }); }
+  function lvPut(id, blob, cb) { if (lvOld) { cb(false); return; } lvIdb(function (db) { if (!db) { cb(false); return; } try { var tx = db.transaction('v', 'readwrite'); tx.objectStore('v').put(blob, id); tx.oncomplete = function () { if (String(id).indexOf('#') < 0) lvHave[id] = 1; cb(true); }; tx.onerror = tx.onabort = function () { cb(false); }; } catch (e) { cb(false); } }); }
+  function lvGet(id, cb) { if (lvOld) { cb(null); return; } lvIdb(function (db) { if (!db) { cb(null); return; } try { var rq = db.transaction('v', 'readonly').objectStore('v').get(id); rq.onsuccess = function () { cb(rq.result || null); }; rq.onerror = function () { cb(null); }; } catch (e) { cb(null); } }); }
   function lvDelLocal(id) { delete lvHave[id]; lvIdb(function (db) { if (!db) return; try { db.transaction('v', 'readwrite').objectStore('v')['delete'](id); } catch (e) {} }); }
   // この端末に保存してある動画（一覧の表示用）
   var lvHave = {};
@@ -4594,7 +4595,7 @@
         return;
       }
       var ec = v.error ? v.error.code : 0;
-      if (lvMode === 'drive' && !lvOld && d.lv.drive && gasUrl && ec !== 3 && !/webm/i.test(d.lv.type || d.lv.name)) {   // 直接は見られない：取り込みをすすめる
+      if (lvMode === 'drive' && (!lvOld || (d.lv.size > 0 && d.lv.size <= LV_OLD_MAX)) && d.lv.drive && gasUrl && ec !== 3 && !/webm/i.test(d.lv.type || d.lv.name)) {   // 直接は見られない：取り込みをすすめる
         lvAsk(d);
         if (!driveKey) { lvKeyAsk(d); return; }   // APIキーがない：入れれば取り込まずに見られる
         var dm = 'ドライブから直接は再生できませんでした（コード ' + ec + (lvLinkErr.length > 1 ? '・' + lvLinkErr.join('→') : '') + '）。「⬇ ドライブから取り込む」で見られます。', did = id;
@@ -4792,7 +4793,11 @@
     // 通し番号と長さも出す（写真から選ぶとき、サムネイルの再生時間と見比べられるように）
     var sn0 = rdSerials()[rdCur ? rdCur.id : ''], lenT = lvLenText(d);
     $('lv-get-t').textContent = 'この端末には、まだこの動画（' + (sn0 ? sn0 + '番・' : '') + d.lv.name + '・約 ' + Math.round((d.lv.size || 0) / 1048576) + 'MB' + (lenT ? '・長さ ' + lenT : '') + '）がありません。';
-    $('lv-dl').style.display = d.lv.drive && gasUrl && !lvOld ? '' : 'none';
+    // 古い iPad：保存はできないが、小さめの動画なら全部読み込んでから再生できる（この画面を開いている間だけ）。
+    //   ドライブから少しずつ再生すると、大きい動画は途中で止まることがあるため
+    var oldOk = lvOld && (d.lv.size || 0) > 0 && d.lv.size <= LV_OLD_MAX;
+    $('lv-dl').style.display = d.lv.drive && gasUrl && (!lvOld || oldOk) ? '' : 'none';
+    $('lv-dl').textContent = lvOld ? '⬇ 全部読み込んでから再生（この画面を開いている間だけ）' : '⬇ ドライブから取り込む（次からすぐ見られる）';
     $('lv-st').style.display = d.lv.drive && gasUrl ? '' : 'none';
     $('lv-get-m').textContent = d.lv.drive ? '' : 'ドライブにはまだ送られていません（動画を入れた端末で送っている途中か、送れなかったようです）。';
   }
@@ -4831,7 +4836,12 @@
   }
   function lvMsg(t) { $('lv-get-m').textContent = t; if ($('lv-get').className === 'hidden') $('rd-status').textContent = t; }
   // 取り込まずに再生しているとき：「この端末に取り込む」ボタン
-  function lvSaveBtn(on) { var b = $('lv-save'); if (b) b.className = on && !lvOld && rdCur && rdCur.d.lv && rdCur.d.lv.drive ? '' : 'hidden'; }
+  function lvSaveBtn(on) {
+    var b = $('lv-save'); if (!b) return;
+    var d = rdCur && rdCur.d, oldOk = lvOld && d && d.lv && d.lv.size > 0 && d.lv.size <= LV_OLD_MAX && gasUrl;
+    b.className = on && (!lvOld || oldOk) && d && d.lv && d.lv.drive ? '' : 'hidden';
+    b.textContent = lvOld ? '⬇ 全部読み込んで再生' : '⬇ この端末に取り込む';
+  }
   on($('lv-save'), 'click', function () { $('lv-save').disabled = true; $('lv-dl').click(); });
   on($('lv-sw'), 'click', lvSwitch);
   on($('lv-mute'), 'click', function () { lvMute = !lvMute; lvCapUpdate(); if (!lvMute && /^🔇/.test($('rd-status').textContent)) $('rd-status').textContent = ''; });
@@ -4870,13 +4880,14 @@
     var finish = function () {
       if (fail) return; fail = true;   // 二度目を防ぐ
       var blob = new Blob(parts, { type: d.lv.type || 'video/webm' });
+      if (lvOld) parts.length = 0;   // 古い iPad はメモリが少ない：分割はもう要らない
       try { lvMem[id] = URL.createObjectURL(blob); } catch (e) {}
       lvMsg('取り込みました。この端末に保存しています…');
       lvPut(id, blob, function (okp) {
         for (var k = 0; k < n; k++) lvDelLocal(id + '#' + k);   // 途中の分は消す
         $('lv-dl').disabled = false; $('lv-save').disabled = false; lvCur = '';
         var v0 = $('lv-video'), at = v0 && v0.getAttribute('src') ? v0.currentTime : 0, was = v0 && !v0.paused;
-        if (rdCur && rdCur.id === id) { lvOpen(rdCur.d); lvSaveBtn(false); $('rd-status').textContent = '🎞 この端末に取り込みました。次からすぐ見られます。'; lvSrc('📱 この端末に保存してある動画を再生しています'); if (at) setTimeout(function () { try { v0.currentTime = at; if (was) lvA.playVideo(); } catch (e) {} }, 300); if (!okp) $('rd-status').textContent = 'この端末に動画を保存できませんでした（空き容量が足りないなど）。この画面を開いている間は見られます。'; }
+        if (rdCur && rdCur.id === id) { lvOpen(rdCur.d); lvSaveBtn(false); $('rd-status').textContent = '🎞 この端末に取り込みました。次からすぐ見られます。'; lvSrc('📱 この端末に保存してある動画を再生しています'); if (at) setTimeout(function () { try { v0.currentTime = at; if (was) lvA.playVideo(); } catch (e) {} }, 300); if (!okp) $('rd-status').textContent = lvOld ? '🎞 読み込みました。この画面を開いている間は見られます（古い iPad は保存できないので、開き直したらもう一度読み込みます）。' : 'この端末に動画を保存できませんでした（空き容量が足りないなど）。この画面を開いている間は見られます。'; }
       });
     };
     var take = function (k, a64) {
