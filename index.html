@@ -4835,7 +4835,19 @@
   on($('lv-save'), 'click', function () { $('lv-save').disabled = true; $('lv-dl').click(); });
   on($('lv-sw'), 'click', lvSwitch);
   on($('lv-mute'), 'click', function () { lvMute = !lvMute; lvCapUpdate(); if (!lvMute && /^🔇/.test($('rd-status').textContent)) $('rd-status').textContent = ''; });
-  on($('lv-hide'), 'click', function () { lvHide = !lvHide; lsSet('memo_lvhide', lvHide ? '1' : '0'); lvCapUpdate(); });
+  // 映像を出したとき：古い iPad（iOS の Safari）は、黒い板を外しても動画の表示を描き直さないことがある。
+  //   動画の層を作り直させ、一時停止中は同じ位置へ小さくシークして、今の場面を描かせる
+  function lvRepaint() {
+    var v = $('lv-video'); if (!v || !v.getAttribute('src')) return;
+    v.style.webkitTransform = 'translateZ(0)'; v.style.transform = 'translateZ(0)';
+    var h = v.offsetHeight;
+    setTimeout(function () {
+      v.style.webkitTransform = ''; v.style.transform = '';
+      if (v.paused && v.readyState >= 1) { try { v.currentTime = v.currentTime + 0.001; } catch (e) {} }
+    }, 60);
+    return h;
+  }
+  on($('lv-hide'), 'click', function () { lvHide = !lvHide; lsSet('memo_lvhide', lvHide ? '1' : '0'); lvCapUpdate(); if (!lvHide) lvRepaint(); });
   on($('lv-cap'), 'change', function () { lvCapMode = $('lv-cap').value; lsSet('memo_lvcap', lvCapMode); lvCapDraw(); lvSubList(); });
   on($('lv-st'), 'click', function () { if (rdCur && rdCur.d.lv) { $('lv-get').className = 'hidden'; $('lv-video').style.display = 'block'; lvStream(rdCur.d); } });
   on($('lv-pick'), 'change', function () {
