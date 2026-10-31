@@ -13,8 +13,14 @@
    - iPhone では Apps Script への普通の通信（CORS）が通らないことがある（ページは JSONP で取っている）。
      ここでは JSONP が使えないので、そのときはページに頼んで、取り込みと同じ gasCall で受け取ってもらう。
    - 頼んだページが閉じたり別の画面に移ったりすると、返事は来ない。字幕プレイヤー⇔英文リーダーの行き来で
-     そうなるので、待っている頼みは「頼んだページ」ごとに分け、別のページからの要求は新しく頼み直す。 */
-var VERSION = 'v5';
+     そうなるので、待っている頼みは「頼んだページ」ごとに分け、別のページからの要求は新しく頼み直す。
+   - 再生が始まるまでを短く（v6）：
+     ・各動画の先頭の分割（動画の作りの情報＝moov が入っている）と、最近見た分割をいくつか、端末（Cache Storage）に置く。
+       2 回目からは、先頭や続きの場面を Apps Script に取りに行かずにすぐ返せる。
+     ・大きい動画（BIG 以上）はドライブ API がつながらないので、最初から Apps Script にする（毎回の失敗待ちをなくす）。
+     ・分割の大きさは Apps Script と同じ 3MB と決めておき、0 番を待たずに必要な分割を取りに行く。
+     ・先読みは 2 つ先まで。 */
+var VERSION = 'v6';
 var CHUNK = 2 * 1024 * 1024;   // 2MB
 
 self.addEventListener('install', function () { self.skipWaiting(); });
@@ -55,7 +61,7 @@ function relay(req, u, e) {
       throw new Error((why ? why + ' / ' : '') + 'gas ' + (err && err.message || err));
     });
   };
-  if (!key || apiBad[fid]) return viaGas();
+  if (!key || apiBad[fid] || (gas && total > BIG)) return viaGas();
   return fetch(api, { headers: { Range: 'bytes=' + start + '-' + end }, cache: 'no-store' }).then(function (res) {
     if (res.status >= 400 && gas) { apiBad[fid] = 1; return viaGas('api ' + res.status); }
     if (res.status >= 400) return res.text().then(function (t) { return text(res.status, t); });
@@ -93,6 +99,35 @@ var parts = {}, order = [];  // 'fid#k' → Uint8Array（最近の数個だけ�
 var flying = {};            // 'fid#k' → Promise
 var KEEP = 6;               // メモリに置く分割の数（約 18MB）
 var gasDirectBad = false;   // ここから Apps Script へ直接つながらない（CORS）
+var PS = 3 * 1024 * 1024;     // Apps Script の f=get の分割の大きさ（Apps Script 側の CH と同じ）
+var BIG = 95 * 1024 * 1024;   // これより大きい動画は、ドライブ API を試さない
+/* 分割を端末に置く（Cache Storage）。先頭は動画ごとに HEADS 個まで、それ以外は最近の RECENT 個まで */
+var STORE = 'drive-relay-v1', HEADS = 15, RECENT = 8;
+function storeKey(fid, k) { return new Request(self.registration.scope + '__part__/' + encodeURIComponent(fid) + '/' + k); }
+function storeGet(fid, k) {
+  try {
+    return caches.open(STORE).then(function (c) { return c.match(storeKey(fid, k)); })
+      .then(function (r) { return r ? r.arrayBuffer().then(function (b) { return new Uint8Array(b); }) : null; })
+      .catch(function () { return null; });
+  } catch (e) { return Promise.resolve(null); }
+}
+var storeQ = Promise.resolve();
+function storePut(fid, k, b) {
+  storeQ = storeQ.then(function () {
+    return caches.open(STORE).then(function (c) {
+      return c.put(storeKey(fid, k), new Response(b, { headers: { 'Content-Type': 'application/octet-stream' } })).then(function () {
+        // 古いものを消す（先頭とそれ以外を別々に数える。keys() は入れた順）
+        return c.keys().then(function (ks) {
+          var heads = [], rest = [];
+          ks.forEach(function (q) { (/\/0$/.test(q.url) ? heads : rest).push(q); });
+          var del = heads.slice(0, Math.max(0, heads.length - HEADS)).concat(rest.slice(0, Math.max(0, rest.length - RECENT)));
+          return Promise.all(del.map(function (q) { return c['delete'](q); }));
+        });
+      });
+    }).catch(function () {});
+  });
+  return storeQ;
+}
 
 // ページ（player.html）に、取り込みと同じ gasCall で分割を受け取ってもらう
 function askPage(cid, fid, k) {
@@ -136,7 +171,7 @@ function gasPart(gas, fid, k, cid) {
       if (!d || !d.ok || typeof d.a !== 'string') throw new Error((d && d.error) || 'gas');
       var bin = atob(d.a), b = new Uint8Array(bin.length);
       for (var i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
-      if (!meta[fid] || k === 0) meta[fid] = { n: d.n || 1, ps: k === 0 ? b.length : (meta[fid] && meta[fid].ps) };
+      if (!meta[fid] || !meta[fid].n || k === 0) meta[fid] = { n: d.n || 1, ps: k === 0 && (d.n || 1) > 1 ? b.length : ((meta[fid] && meta[fid].ps) || PS) };
       return b;
     }).catch(function (err) {
       if (n < 3) return new Promise(function (ok) { setTimeout(ok, 1500 * (n + 1)); }).then(function () { return tryOnce(n + 1); });
@@ -144,8 +179,14 @@ function gasPart(gas, fid, k, cid) {
     });
   };
   var me = { cid: gasDirectBad ? (cid || '') : null };
-  me.p = tryOnce(0).then(function (b) {
+  var fromStore = false;
+  me.p = storeGet(fid, k).then(function (b) {
+    if (b && b.length) { fromStore = true; return b; }
+    return tryOnce(0);
+  }).then(function (b) {
     if (flying[id] === me) delete flying[id];
+    if (!meta[fid] && k === 0) meta[fid] = { n: 0, ps: b.length };
+    if (!fromStore) storePut(fid, k, b);
     parts[id] = b; order.push(id);
     while (order.length > KEEP) delete parts[order.shift()];
     return b;
@@ -156,10 +197,10 @@ function gasPart(gas, fid, k, cid) {
 
 function fromGas(gas, fid, start, end, total, type, ev) {
   var cid = ev && (ev.clientId || ev.resultingClientId) || '';
-  // 1 分割の大きさは、0 番を受け取ると分かる（最初の 1 回だけ）
-  var ready = meta[fid] && meta[fid].ps ? Promise.resolve() : gasPart(gas, fid, 0, cid);
+  // 分割の大きさは 3MB（Apps Script と同じ）。全体の大きさが分かっていれば、0 番を待たずに必要な分割へ
+  var ready = (meta[fid] && meta[fid].ps && meta[fid].n) || total ? Promise.resolve() : gasPart(gas, fid, 0, cid);
   return ready.then(function () {
-    var ps = meta[fid].ps, n = meta[fid].n, k = Math.floor(start / ps);
+    var ps = (meta[fid] && meta[fid].ps) || PS, n = (meta[fid] && meta[fid].n) || Math.max(1, Math.ceil(total / ps)), k = Math.floor(start / ps);
     if (k >= n) return text(416, '', { 'Content-Range': 'bytes */' + (total || '*') });
     // start〜end を、必要なら分割をまたいでつなげる（end は CHUNK 以内に切ってある）
     var out = [], got = 0, want = end - start + 1, kk = k;
@@ -175,8 +216,9 @@ function fromGas(gas, fid, start, end, total, type, ev) {
       var body = new Uint8Array(got), at = 0;
       out.forEach(function (x) { body.set(x, at); at += x.length; });
       k = kk;
-      if (k + 1 < n) {   // 次の分割を先に取りに行く
-        var pre = gasPart(gas, fid, k + 1, cid).catch(function () {});
+      // 先読み：2 つ先まで（同時に頼みすぎないよう、1 つずつ順に）
+      if (k + 1 < n) {
+        var pre = gasPart(gas, fid, k + 1, cid).then(function () { if (k + 2 < n) return gasPart(gas, fid, k + 2, cid); }).catch(function () {});
         try { if (ev && ev.waitUntil) ev.waitUntil(pre); } catch (x) {}
       }
       var whole = total || (got < want ? start + got : 0);
