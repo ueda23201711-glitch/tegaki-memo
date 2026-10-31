@@ -2136,6 +2136,44 @@
       return Math.ceil(m + sz * 0.4);
     } catch (e) { return 0; }
   }
+  // 新しい文字を、ほかの文字・画像・手書きと重ならない空いた場所に置く（今見えている範囲を優先。左上から順に探す）
+  function placeInFreeSpace(it) {
+    var lines = String(it.tx || '').split('\n').length, sz = Number(it.s || 40);
+    var w = it.w, h = Math.ceil(lines * sz * 1.35 + 12), pad = 12;
+    // ふさがっている四角形（文字・画像と、手書きの線。消しゴムの線は数えない）
+    var occ = [];
+    each(pg.items || [], function (o) { if (o !== it) occ.push([o.x, o.y, o.x + o.w, o.y + (o.h || 60)]); });
+    each(visible(pg.strokes), function (st) {
+      if (st.t === 'eraser' || !st.p || !st.p.length) return;
+      var p = st.p, r = (st.w || 4) / 2, b = [1e9, 1e9, -1e9, -1e9];
+      for (var j = 0; j + 1 < p.length; j += 2) { b[0] = Math.min(b[0], p[j] - r); b[1] = Math.min(b[1], p[j + 1] - r); b[2] = Math.max(b[2], p[j] + r); b[3] = Math.max(b[3], p[j + 1] + r); }
+      occ.push(b);
+    });
+    var free = function (x, y) {
+      for (var i = 0; i < occ.length; i++) { var o = occ[i]; if (x < o[2] + pad && x + w > o[0] - pad && y < o[3] + pad && y + h > o[1] - pad) return false; }
+      return true;
+    };
+    var search = function (x0, y0, x1, y1) {
+      x0 = Math.max(8, Math.round(x0)); y0 = Math.max(8, Math.round(y0));
+      x1 = Math.min(PAGE_W - 8, x1); y1 = Math.min(PAGE_H - 8, y1);
+      for (var y = y0; y + h <= y1; y += 16) for (var x = x0; x + w <= x1; x += 24) if (free(x, y)) return [x, y];
+      return null;
+    };
+    // 今見えている範囲（ページの座標）
+    var vis = null;
+    try {
+      var r = cv.getBoundingClientRect(), vw = window.innerWidth || document.documentElement.clientWidth, vh = window.innerHeight || document.documentElement.clientHeight;
+      var a = toPage(Math.max(r.left, 0), Math.max(r.top, 60)), z = toPage(Math.min(r.right, vw), Math.min(r.bottom, vh - 60));
+      if (z[0] - a[0] > w && z[1] - a[1] > h) vis = [a[0], a[1], z[0], z[1]];
+    } catch (e) {}
+    var at = (vis && search(vis[0], vis[1], vis[2], vis[3])) || search(0, 0, PAGE_W, PAGE_H);
+    if (!at) {   // 空きがない：いちばん下の続き（入らなければ今までどおり）
+      var bottom = 0; each(occ, function (o) { bottom = Math.max(bottom, o[3]); });
+      at = bottom + pad + h <= PAGE_H ? [8, bottom + pad] : [Math.round(PAGE_W * 0.1), Math.round(PAGE_H * 0.3)];
+    }
+    it.x = at[0]; it.y = at[1];
+    if (it.x + it.w > PAGE_W - 8) it.x = Math.max(0, PAGE_W - 8 - it.w);
+  }
   function fitTextW(it) {
     var w = textNaturalW(it); if (!w) return;
     if (it.x + w > PAGE_W - 8) it.x = Math.max(0, PAGE_W - 8 - w);
@@ -2281,8 +2319,9 @@
       if (style.s !== dlgSizeInit) it.s = Number(style.s);
       it.tx = text; it.c = style.c; it.f = style.f;
     } else {
-      it = { id: newId(), k: 'txt', tx: text, c: style.c, f: style.f, s: Number(style.s), x: Math.round(PAGE_W * 0.1), y: Math.round(PAGE_H * 0.3), w: Math.round(PAGE_W * 0.8), z: topZ() + 1 };
+      it = { id: newId(), k: 'txt', tx: text, c: style.c, f: style.f, s: Number(style.s), x: 0, y: Math.round(PAGE_H * 0.3), w: Math.round(PAGE_W * 0.8), z: topZ() + 1 };
       fitTextW(it);
+      placeInFreeSpace(it);
       pg.items.push(it);
       setTool('select');
     }
