@@ -5628,6 +5628,14 @@
     if (KEY) { var b = {}; b['reader/' + id + '/fav'] = n || null; api('PATCH', '', b, function () {}); }
   }
   function vbmFmt(t) { t = Math.floor(t || 0); var h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), x = t % 60; return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (x < 10 ? '0' : '') + x; }
+  // 本の好み：本のすべての章に bfav として保存（本の行の ★。並べ替えでは本全体の★として使う）
+  function bookFav(bk) { var n = 0; each(bookChapters(bk), function (c) { var x = rdDocs[c] && rdDocs[c].bfav || 0; if (x > n) n = x; }); return n; }
+  function setBookFav(bk, n) {
+    var up = {};
+    each(bookChapters(bk), function (c) { var x = rdDocs[c]; if (!x) return; if (n) x.bfav = n; else delete x.bfav; up['reader/' + c + '/bfav'] = n || null; });
+    rdSaveLocal(); if (KEY) api('PATCH', '', up, function () {});
+  }
+  function favOf(id) { var d = rdDocs[id]; return d ? (d.book ? bookFav(d.book) : (d.fav || 0)) : 0; }
   function rdSerials() { var a = rdIds(), m = {}; for (var i = 0; i < a.length; i++) m[a[i]] = a.length - i; return m; }
   // 選んで削除：rdSel = {id: 1}（選んでいないときは null）
   var rdSel = null;
@@ -6078,13 +6086,20 @@
       each(chs, function (c) { var x = rdDocs[c]; x.bookTitle = t; x.title = '📚 ' + t + ' — ' + (x.chTitle || ''); up['reader/' + c + '/bookTitle'] = t; up['reader/' + c + '/title'] = x.title; });
       rdSaveLocal(); if (KEY) api('PATCH', '', up, function () {}); renderRdHistory();
     });
-    row.appendChild(del); row.appendChild(ren);
+    var bf = bookFav(bk), fv = document.createElement('button'); fv.type = 'button'; fv.className = 'rd-fav' + (bf ? ' on' : ''); fv.textContent = favStr(bf); fv.title = '本の好み（押すたびに ★1→★2→★3→なし）';
+    on(fv, 'click', function (e) { e.stopPropagation(); var n = (bookFav(bk) + 1) % 4; setBookFav(bk, n); fv.textContent = favStr(n); fv.className = 'rd-fav' + (n ? ' on' : ''); if (lsGet(SORT_KEY) === 'fav') renderRdHistory(); });
+    // 1 行目は題名だけ、2 行目の左に日付・しおり、右に ★・続きから・✎・削除（英文の行と同じ並び）
+    var line = document.createElement('div'); line.className = 'rd-line';
+    var info = document.createElement('div'); info.className = 'rd-info'; info.appendChild(sp);
+    var acts = document.createElement('div'); acts.className = 'rd-acts'; acts.appendChild(fv);
     if (bmAt >= 0) {
-      var go = document.createElement('button'); go.type = 'button'; go.textContent = '↩ 続きから'; go.className = 'rd-ren';
+      var go = document.createElement('button'); go.type = 'button'; go.textContent = '↩ 続き'; go.className = 'rd-ren'; go.title = 'しおりの章の続きから';
       on(go, 'click', function (e) { e.stopPropagation(); openChapter(chs[bmAt], rdDocs[chs[bmAt]].bm); });
-      row.appendChild(go);
+      acts.appendChild(go);
     }
-    row.appendChild(b); row.appendChild(sp);
+    acts.appendChild(ren); acts.appendChild(del);
+    line.appendChild(info); line.appendChild(acts);
+    b.className = 'rd-t2'; row.appendChild(b); row.appendChild(line);
     on(row, 'click', function () { if (rdOpenBook[bk]) delete rdOpenBook[bk]; else rdOpenBook[bk] = 1; renderRdHistory(); });
     return row;
   }
@@ -6096,7 +6111,7 @@
     var useCmp = function (x, y) { var a = um[x] || [0, 0], b = um[y] || [0, 0]; return (b[0] - a[0]) || (b[1] - a[1]); };
     var atCmp = function (x, y) { return (rdDocs[y].at || 0) - (rdDocs[x].at || 0); };
     if (pop) ids.sort(function (x, y) { return useCmp(x, y) || atCmp(x, y); });
-    if (mode === 'fav') ids.sort(function (x, y) { return ((rdDocs[y].fav || 0) - (rdDocs[x].fav || 0)) || useCmp(x, y) || atCmp(x, y); });
+    if (mode === 'fav') ids.sort(function (x, y) { return (favOf(y) - favOf(x)) || useCmp(x, y) || atCmp(x, y); });
     $('rd-sort').textContent = pop ? '🕒 追加した順に戻す' : '👁 よく見る順';
     $('rd-fsort').textContent = mode === 'fav' ? '🕒 追加した順に戻す' : '⭐ 好み順';
     $('rd-hist-h').style.display = ids.length ? '' : 'none';
