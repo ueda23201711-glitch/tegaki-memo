@@ -4554,6 +4554,28 @@
     var capPos = function () { cb.className = v.paused || v.ended ? 'paused' : ''; };
     v.addEventListener('play', capPos); v.addEventListener('pause', capPos); v.addEventListener('ended', capPos); capPos();
     v.addEventListener('loadedmetadata', function () { setTimeout(lvSubList, 300); });
+    v.addEventListener('loadedmetadata', function () {
+      if (!rdCur || !rdCur.d.lv || !isFinite(v.duration) || v.duration <= 0) return;
+      var d = rdCur.d, id = rdCur.id, dur = Math.round(v.duration);
+      // 選んだ動画の長さが、この英文の動画と合わない：違う動画かもしれない
+      if (lvPickCheck === id) {
+        lvPickCheck = '';
+        var want = d.lv.dur > 0 ? d.lv.dur : 0, last = d.cues && d.cues.length ? d.cues[d.cues.length - 1][0] : 0;
+        if ((want && Math.abs(dur - want) > 5) || (!want && last && dur < last - 2)) {
+          try { v.pause(); } catch (e) {}
+          lvDelLocal(id); delete lvMem[id]; delete lvHave[id]; lvCur = '';
+          lvAsk(d);
+          $('lv-get-m').textContent = '⚠ 選んだ動画の長さ（' + vbmFmt(dur) + '）が、この英文の動画（' + (want ? vbmFmt(want) : lvLenText(d)) + '）と合いません。違う動画かもしれません。もう一度選んでください。';
+          return;
+        }
+        return;
+      }
+      // ドライブから再生できたとき：正しい長さを記録（写真から選ぶ端末で見比べられるように）
+      if (lvMode === 'drive' && (!d.lv.dur || Math.abs(d.lv.dur - dur) > 2)) {
+        d.lv.dur = dur; rdSaveLocal();
+        if (KEY) { var b = {}; b['reader/' + id + '/lv/dur'] = dur; api('PATCH', '', b, function () {}); }
+      }
+    });
     if (v.textTracks && v.textTracks.addEventListener) { v.textTracks.addEventListener('addtrack', function () { setTimeout(lvSubList, 100); }); v.textTracks.addEventListener('change', function () { setTimeout(lvSubList, 50); }); }
     var lab = function () { if (ytPlayer === lvA) $('rd-play').textContent = !v.paused && !v.ended ? '⏸ 一時停止' : '▶ 再生'; };
     v.addEventListener('play', lab); v.addEventListener('pause', lab); v.addEventListener('ended', lab);
@@ -4755,12 +4777,21 @@
       lvSaveBtn(true);
     });
   }
+  // 動画の長さ：ドライブから再生したときに記録した lv.dur（秒）。なければ字幕の最後の時刻から「○分以上」
+  function lvLenText(d) {
+    if (d.lv && d.lv.dur > 0) return vbmFmt(d.lv.dur);
+    var c = d.cues && d.cues.length ? d.cues[d.cues.length - 1][0] : 0;
+    return c > 60 ? Math.floor(c / 60) + '分以上' : '';
+  }
   // この端末にまだない：ドライブから取り込む／同じファイルを選ぶ
   var lvLinks = [], lvLinkInfo = '', lvLinkErr = [];
+  var lvPickCheck = '';   // 「この端末の動画ファイルを選ぶ」で選んだ英文（長さを確かめる）
   function lvAsk(d) {
     lvSrc('');
     $('lv-video').style.display = 'none'; $('lv-get').className = '';
-    $('lv-get-t').textContent = 'この端末には、まだこの動画（' + d.lv.name + '・約 ' + Math.round((d.lv.size || 0) / 1048576) + 'MB）がありません。';
+    // 通し番号と長さも出す（写真から選ぶとき、サムネイルの再生時間と見比べられるように）
+    var sn0 = rdSerials()[rdCur ? rdCur.id : ''], lenT = lvLenText(d);
+    $('lv-get-t').textContent = 'この端末には、まだこの動画（' + (sn0 ? sn0 + '番・' : '') + d.lv.name + '・約 ' + Math.round((d.lv.size || 0) / 1048576) + 'MB' + (lenT ? '・長さ ' + lenT : '') + '）がありません。';
     $('lv-dl').style.display = d.lv.drive && gasUrl && !lvOld ? '' : 'none';
     $('lv-st').style.display = d.lv.drive && gasUrl ? '' : 'none';
     $('lv-get-m').textContent = d.lv.drive ? '' : 'ドライブにはまだ送られていません（動画を入れた端末で送っている途中か、送れなかったようです）。';
@@ -4811,6 +4842,7 @@
     var f = $('lv-pick').files[0]; $('lv-pick').value = '';
     if (!f || !rdCur || !rdCur.d.lv) return;
     var id = rdCur.id;
+    lvPickCheck = id;   // 読み込めたら、長さが合っているか確かめる（違う動画を選んでいないか）
     $('lv-get-m').textContent = 'この端末に保存しています…';
     try { lvMem[id] = URL.createObjectURL(f); } catch (e) {}
     lvPut(id, f, function () { lvCur = ''; if (rdCur && rdCur.id === id) lvOpen(rdCur.d); });
