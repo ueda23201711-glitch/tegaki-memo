@@ -173,6 +173,7 @@
       <div class="btns">
         <button id="b-mode" class="ib" type="button" title="字幕">英＋日</button>
         <button id="b-rep" class="ib" type="button" title="この文をくり返す">🔁</button>
+        <button id="b-bm" class="ib" type="button" title="しおり（押すと今の場面に挟む。しおりの場面でもう一度押すと外す）。次に一覧から開くと、しおりの場面から始まる">🔖</button>
         <button id="b-spd" class="ib" type="button" title="速さ">1.0×</button>
         <button id="b-sm" class="ib" type="button" title="字幕を小さく">A−</button>
         <button id="b-bg" class="ib" type="button" title="字幕を大きく">A＋</button>
@@ -352,6 +353,18 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
       x.send(JSON.stringify({ fav: n || null }));
     } catch (e) {}
   }
+  // 動画のしおり（秒）：英文のデータ（reader/ID/vbm）に保存。英文リーダー・ほかの端末でも同じ
+  function setVbm(id, t) {
+    var d = docs[id]; if (!d) return;
+    if (t > 0) { d.vbm = t; d.vbmAt = now(); } else { delete d.vbm; delete d.vbmAt; }
+    try { var all = JSON.parse(lsGet(C.cache) || 'null'); if (all && all[id]) { if (t > 0) { all[id].vbm = d.vbm; all[id].vbmAt = d.vbmAt; } else { delete all[id].vbm; delete all[id].vbmAt; } lsSet(C.cache, JSON.stringify(all)); } } catch (e) {}
+    if (!KEY) return;
+    try {
+      var x = new XMLHttpRequest();
+      x.open('PATCH', DB_URL + '/memos/' + KEY + '/reader/' + id + '.json', true); x.setRequestHeader('Content-Type', 'application/json');
+      x.send(JSON.stringify(t > 0 ? { vbm: d.vbm, vbmAt: d.vbmAt } : { vbm: null, vbmAt: null }));
+    } catch (e) {}
+  }
   function takeDocs(all) {
     var out = {}, a = [];
     for (var k in all) if (all[k] && all[k].text) a.push(k);
@@ -405,7 +418,7 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
         s.push(d.yt ? '▶ YouTube' : have[id] ? '📱 この端末' : d.lv.drive ? '☁ ドライブ' : '⚠ 動画なし');
         s.push(d.tr && d.tr.length ? '英＋日' : '英語のみ');
         s.push('約 ' + fmt(last + 3));
-        var p = Number(lsGet('ep_at_' + id) || 0); if (p > 5) s.push('続き ' + fmt(p));
+        var p = Number(lsGet('ep_at_' + id) || 0); if (d.vbm > 0) s.push('🔖 ' + fmt(d.vbm)); else if (p > 5) s.push('続き ' + fmt(p));
         if (!d.yt && srcUrl(d)) s.push('🔗 ' + hostOf(srcUrl(d)));
         if (pop && um[id]) s.push('👁 ' + um[id][0] + '回');
         tx.appendChild(el('div', 's', s.join('・')));
@@ -688,6 +701,8 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     var resumeAt = Number(lsGet('ep_at_' + id) || 0);
     pendingSeek = resumeAt > 5 && resumeAt < (d.cues[d.cues.length - 1][0] + 30) ? resumeAt - 2 : 0;
     seekQuiet = false; resumePlay = false;
+    // しおりがあれば、しおりの場面から（英文リーダーから場面つきで来たときは、そちらを優先）
+    if (d.vbm > 0 && !(typeof startAt === 'number' && startAt >= 0)) { pendingSeek = d.vbm; seekQuiet = true; toast('🔖 しおり（' + fmt(d.vbm) + '）から'); }
     if (typeof startAt === 'number' && startAt >= 0) { pendingSeek = startAt; seekQuiet = true; if (startAt > 1) toast('英文リーダーの場面（' + fmt(startAt) + '）から'); }
     if (d.yt) { ytOpen(d.yt); return; }
     srcMode = '';
@@ -725,6 +740,14 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     });
   }
   on($('b-sw'), 'click', function (e) { e.stopPropagation(); switchSrc(); hideSoon(); });
+  on($('b-bm'), 'click', function (e) {
+    e.stopPropagation(); hideSoon();
+    if (!cur || !P.has()) return;
+    var t = Math.floor(P.t() * 10) / 10;
+    if (cur.vbm > 0 && Math.abs(t - cur.vbm) < 3) { setVbm(curId, 0); toast('🔖 しおりを外しました'); }
+    else if (t > 0) { setVbm(curId, t); toast('🔖 しおりを挟みました（' + fmt(t) + '）。次に開くとここから'); }
+    updBtns();
+  });
   on($('b-dl'), 'click', function (e) {
     e.stopPropagation(); hideSoon();
     if (!cur || !cur.lv || !cur.lv.drive) return;
@@ -1031,6 +1054,9 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     var sw = $('b-sw'), canSw = !OLD && cur && cur.lv && P.kind === 'v' && srcMode && (srcMode === 'drive' || (cur.lv.drive && (driveKey || gasUrl)));
     sw.className = canSw ? 'ib' : 'ib hidden';
     if (canSw) sw.textContent = srcMode === 'local' ? '📱 端末' : '☁ ドライブ';
+    var bm = $('b-bm');
+    bm.textContent = cur && cur.vbm > 0 ? '🔖 ' + fmt(cur.vbm) : '🔖';
+    bm.className = cur ? 'ib' + (cur.vbm > 0 ? ' on' : '') : 'ib hidden';
     var dl = $('b-dl'), canDl = !OLD && cur && cur.lv && cur.lv.drive && gasUrl && P.kind === 'v' && srcMode === 'drive' && !have[curId];
     dl.className = canDl ? 'ib' : 'ib hidden';
     if (canDl) dl.textContent = imp && imp.id === curId && !imp.fail ? '⬇ ' + (imp.pct || 0) + '%' : '⬇ 取り込む';

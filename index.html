@@ -5278,10 +5278,14 @@
     if (!rdCur) return;
     var d = rdCur.d, i = curPos();
     d.bm = i; d.bmAt = now(); d.bmP = pctOf(i, rdSents.length);
+    // 動画つきで動画を開いているときは、動画の場面（秒）もしおりにする（字幕プレイヤーと共通）
+    var vt = 0; try { if (d.lv && ytPlayer && ytReady && ytPlayer === lvA) vt = Math.floor((ytPlayer.getCurrentTime() || 0) * 10) / 10; } catch (e) {}
+    if (vt > 0) { d.vbm = vt; d.vbmAt = d.bmAt; }
     rdSaveLocal();
+    if (vt > 0 && KEY) { var bv = {}; bv['reader/' + rdCur.id + '/vbm'] = vt; bv['reader/' + rdCur.id + '/vbmAt'] = d.vbmAt; api('PATCH', '', bv, function () {}); }
     if (KEY) { var b = {}; b['reader/' + rdCur.id + '/bm'] = i; b['reader/' + rdCur.id + '/bmAt'] = d.bmAt; b['reader/' + rdCur.id + '/bmP'] = d.bmP; api('PATCH', '', b, function () {}); var b2 = {}; b2['readerbm/' + (d.book || rdCur.id)] = { id: rdCur.id, i: i, p: d.bmP, at: d.bmAt }; api('PATCH', '', b2, function () {}); }   // しおりの小さなデータは別に送る（届かなくても本体は保存される）
     if (d.book) markBookBm(rdCur.id);
-    $('rd-status').textContent = '🔖 しおりを挟みました（' + d.bmP + '%・' + (i + 1) + ' 文目）。次に開いたときに「↩ しおりへ」で戻れます。';
+    $('rd-status').textContent = '🔖 しおりを挟みました（' + d.bmP + '%・' + (i + 1) + ' 文目' + (vt > 0 ? '・動画 ' + vbmFmt(vt) : '') + '）。次に開いたときに「↩ しおりへ」で戻れます。';
     progUpdate();
   }
   // 本：しおりは本ごとに1つ（ほかの章のしおりは外す）
@@ -5456,6 +5460,7 @@
     rdSaveLocal();
     if (KEY) { var b = {}; b['reader/' + id + '/fav'] = n || null; api('PATCH', '', b, function () {}); }
   }
+  function vbmFmt(t) { t = Math.floor(t || 0); var h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), x = t % 60; return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (x < 10 ? '0' : '') + x; }
   function rdSerials() { var a = rdIds(), m = {}; for (var i = 0; i < a.length; i++) m[a[i]] = a.length - i; return m; }
   // 選んで削除：rdSel = {id: 1}（選んでいないときは null）
   var rdSel = null;
@@ -5951,7 +5956,7 @@
       var d = rdDocs[id];
       var row = document.createElement('div'); row.className = 'rd-hrow' + (d.book ? ' rd-ch' : '');
       var b = document.createElement('b'); b.textContent = (sn[id] ? sn[id] + '. ' : '') + (d.book ? '第' + d.ch + '章　' + (d.chTitle || '') : (d.title || d.text.slice(0, 50)));
-      var sp = document.createElement('span'); sp.textContent = (d.book ? '' : fmtClipTime(d.at)) + (typeof d.bm === 'number' && d.bmP !== undefined ? '　🔖 ' + d.bmP + '%' : '') + (pop && um[id] ? '　👁 ' + um[id][0] + '回' : '');
+      var sp = document.createElement('span'); sp.textContent = (d.book ? '' : fmtClipTime(d.at)) + (typeof d.bm === 'number' && d.bmP !== undefined ? '　🔖 ' + d.bmP + '%' : '') + (d.vbm > 0 ? '　🔖 ' + vbmFmt(d.vbm) : '') + (pop && um[id] ? '　👁 ' + um[id][0] + '回' : '');
       var del = document.createElement('button'); del.type = 'button'; del.textContent = '削除'; del.className = 'danger';
       on(del, 'click', function (e) {
         e.stopPropagation();
@@ -5979,7 +5984,7 @@
       var acts = document.createElement('div'); acts.className = 'rd-acts'; acts.appendChild(fv); acts.appendChild(ren); acts.appendChild(del);
       line.appendChild(info); line.appendChild(acts);
       b.className = 'rd-t2'; row.appendChild(b); row.appendChild(line);
-      on(row, 'click', function () { useBump(id); openRdDoc(id); });
+      on(row, 'click', function () { useBump(id); openRdDoc(id); if (rdDocs[id] && rdDocs[id].vbm > 0 && rdDocs[id].lv) { $('rd-status').textContent = '🔖 動画のしおり（' + vbmFmt(rdDocs[id].vbm) + '）に合わせています…'; rdSeekWhenReady(id, rdDocs[id].vbm, false); } });
       box.appendChild(row);
     });    mkBanner();
   }
