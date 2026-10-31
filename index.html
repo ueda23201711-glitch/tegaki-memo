@@ -5320,7 +5320,19 @@
   }
   on($('pg-bm'), 'click', setBookmark);
   on($('pg-auto'), 'click', function () { autoNext = !autoNext; lsSet('memo_autonext', autoNext ? '1' : '0'); progUpdate(); });
-  on($('pg-go'), 'click', function () { if (rdCur && typeof rdCur.d.bm === 'number') gotoSent(rdCur.d.bm); });
+  on($('pg-go'), 'click', function () {
+    if (!rdCur || typeof rdCur.d.bm !== 'number') return;
+    var d = rdCur.d, si = d.bm;
+    // 動画つき：動画もしおりの場面へ移して、そこから再生（英文だけ動かすと、再生中の場面に引き戻されるため）
+    if (ytOn() && ytPlayer && ytReady) {
+      var t = d.vbm > 0 ? d.vbm : (d.cues[si] ? d.cues[si][0] : -1);
+      if (d.vbm > 0) { for (var k = 0; k < d.cues.length && d.cues[k][0] <= d.vbm + 0.05; k++) si = k; }   // 動画の場面のしおりに合う文
+      gotoSent(si); markSentence(si);
+      if (t >= 0) { if (ytLoop) ytLoopIdx = si; try { ytPlayer.seekTo(t, true); ytPlayer.playVideo(); } catch (e) {} }
+      return;
+    }
+    gotoSent(si);
+  });
   on($('pg-next'), 'click', function () { if (!rdCur || !rdCur.d.book) return; var c = bookChapters(rdCur.d.book), k = c.indexOf(rdCur.id); if (k >= 0 && k < c.length - 1) openChapter(c[k + 1], -1); });
   on($('pg-prev'), 'click', function () { if (!rdCur || !rdCur.d.book) return; var c = bookChapters(rdCur.d.book), k = c.indexOf(rdCur.id); if (k > 0) openChapter(c[k - 1], -1); });
   // バーを押すと、その位置へ
