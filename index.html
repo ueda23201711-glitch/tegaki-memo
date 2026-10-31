@@ -249,6 +249,7 @@
   #rd-prog { position: fixed; left: 0; right: 0; bottom: 0; z-index: 65; background: rgba(36,54,63,.94); color: #fff; padding: 0 10px 6px; padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px)); font-size: 13px; }
   #rd-prog button { padding: 4px 10px; font-size: 13px; margin: 6px 6px 0 0; background: #e6eef2; color: #1f2a30; }
   #rd-prog #pg-go { background: #f4c46a; }
+  @media (max-width: 400px) { #rd-prog button { padding: 4px 6px; margin-right: 3px; font-size: 12px; } #pg-text { margin-right: 4px; font-size: 12px; letter-spacing: -.2px; } }
   #pg-bar { position: relative; height: 5px; margin: 0 -10px 2px; background: rgba(255,255,255,.2); cursor: pointer; }
   #pg-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #7cc4e4; }
   #pg-mark { position: absolute; top: -3px; width: 3px; height: 11px; background: #f4c46a; display: none; }
@@ -5254,7 +5255,7 @@
     var vis = rdCur && rdSents.length > 1 && (flOpen || $('rd-view').offsetWidth > 0);
     if (!vis) { if (box.className !== 'hidden') box.className = 'hidden'; return; }
     box.className = '';
-    var d = rdCur.d, n = rdSents.length, i = Math.max(0, Math.min(n - 1, curPos())), p = pctOf(i, n), t = p + '%（' + (i + 1) + ' / ' + n + ' 文）';
+    var d = rdCur.d, n = rdSents.length, i = Math.max(0, Math.min(n - 1, curPos())), p = pctOf(i, n), t = p + '%（' + (i + 1) + '/' + n + '）';
     $('pg-fill').style.width = p + '%';
     if (d.book) {
       var chs = bookChapters(d.book), at = chs.indexOf(rdCur.id), before = 0, all = 0;
@@ -5269,8 +5270,8 @@
     var bm = d.bm;
     if (typeof bm === 'number' && bm < n) {
       $('pg-mark').style.display = 'block'; $('pg-mark').style.left = pctOf(bm, n) + '%';
-      $('pg-go').className = bm === i ? 'hidden' : ''; $('pg-go').textContent = '↩ しおりへ（' + pctOf(bm, n) + '%）';
-      $('pg-bm').textContent = bm === i ? '🔖 ここにしおり' : '🔖 しおりをここに';
+      $('pg-go').className = bm === i ? 'hidden' : ''; $('pg-go').textContent = '↩ しおりへ ' + pctOf(bm, n) + '%';
+      $('pg-bm').textContent = bm === i ? '🔖 ここに有' : '🔖 しおり入';   // 小さい iPhone でも 1 行に収まるよう短く
     } else { $('pg-mark').style.display = 'none'; $('pg-go').className = 'hidden'; $('pg-bm').textContent = '🔖 しおり'; }
   }
   var progTimer = null;
