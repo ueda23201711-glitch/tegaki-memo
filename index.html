@@ -574,11 +574,12 @@
         <div class="row"><button id="yt-go" class="primary" type="button">動画といっしょに読み込む</button></div>
         <p class="note" id="yt-msg"></p>
         <div id="lv-in" class="hidden">
-          <h3 class="rd-h">🎞 手元の動画と字幕で読む（.webm / .mp4 ＋ .srt）</h3>
-          <p class="note">ダウンロードした動画と、英語の字幕（.srt）を選んでください。日本語の字幕（.srt）も選ぶと、それを訳として使います（翻訳の回数を使いません）。動画はこの端末に保存し、Google ドライブにも送るので、ほかの端末でも見られます。</p>
+          <h3 class="rd-h">🎞 手元の動画と字幕で読む（.webm / .mp4 ＋ .srt・文字起こし）</h3>
+          <p class="note">ダウンロードした動画と、英語の字幕（.srt / .vtt）を選んでください。字幕ファイルの代わりに、YouTube の「文字起こし」を時刻つきでコピーして、下の欄に貼り付けても読み込めます。日本語の字幕（.srt）も選ぶと、それを訳として使います（翻訳の回数を使いません）。動画はこの端末に保存し、Google ドライブにも送るので、ほかの端末でも見られます。</p>
           <div class="row"><label class="bk-file">🎞 動画<input id="lv-file" type="file" accept="video/*,.webm,.mp4,.mkv,.mov"></label> <span class="note" id="lv-file-n"></span></div>
-          <div class="row"><label class="bk-file">🇺🇸 英語の字幕<input id="lv-en" type="file" accept=".srt,.vtt,text/plain"></label> <span class="note" id="lv-en-n"></span></div>
-          <div class="row"><label class="bk-file">🇯🇵 日本語の字幕（なくても可）<input id="lv-ja" type="file" accept=".srt,.vtt,text/plain"></label> <span class="note" id="lv-ja-n"></span></div>
+          <div class="row"><label class="bk-file">🇺🇸 英語の字幕<input id="lv-en" type="file" accept=".srt,.vtt,.txt,text/plain"></label> <span class="note" id="lv-en-n"></span></div>
+          <textarea id="lv-en-txt" placeholder="（字幕ファイルがないとき）英語の文字起こしを時刻つきで貼り付け：0:07 ↵ thank you it's like…" style="width:100%; box-sizing:border-box; min-height:90px; font-size:15px; padding:8px 10px; border:1px solid #c9d2d8; border-radius:8px; margin:0 0 8px;"></textarea>
+          <div class="row"><label class="bk-file">🇯🇵 日本語の字幕（なくても可）<input id="lv-ja" type="file" accept=".srt,.vtt,.txt,text/plain"></label> <span class="note" id="lv-ja-n"></span></div>
           <input id="lv-title" type="text" placeholder="題名（空なら動画のファイル名）" style="width:100%; box-sizing:border-box; font-size:16px; padding:9px 10px; border:1px solid #c9d2d8; border-radius:8px; margin:4px 0 8px;">
           <input id="lv-srcurl" type="url" placeholder="元の動画のページの URL（なくても可・あとからでも入れられます）" style="width:100%; box-sizing:border-box; font-size:16px; padding:9px 10px; border:1px solid #c9d2d8; border-radius:8px; margin:0 0 8px;">
           <div class="row"><button id="lv-go" class="primary" type="button">動画と字幕で読み込む</button></div>
@@ -4490,10 +4491,27 @@
     });
     return out;
   }
-  // 英語の字幕を文にまとめる（YouTube と同じ）
+  // 英語の字幕を文にまとめる（YouTube と同じ）。SRT / VTT のほか、YouTube の文字起こし（0:07 ↵ 文）も
   function lvEnCues(raw) {
+    if (String(raw || '').indexOf('-->') < 0) return parseCues(raw);
     var lines = []; each(parseSrt(raw), function (c) { lines.push(fmtSec(c.a) + '.' + Math.round((c.a % 1) * 10) + '\n' + c.t); });
     return parseCues(lines.join('\n'));
+  }
+  // 日本語：SRT / VTT か、時刻つきの文字起こし（0:07 ↵ 文）→ [{a, b, t}]
+  function lvJaList(raw) {
+    raw = String(raw || '');
+    if (raw.indexOf('-->') >= 0) return parseSrt(raw);
+    var dur = function (x) { return String(x || '').replace(/^\s*(\d+\s*(時間|分|秒)\s*)+/, '').replace(/^\s*(\d+\s*(hours?|minutes?|seconds?)\s*,?\s*)+$/i, '').replace(/^\s+/, ''); };
+    var TS = /^\s*(?:(\d{1,2}):)?(\d{1,2}):(\d{2})(?:[.,](\d{1,3}))?/, out = [], cur = null;
+    each(raw.replace(/\r/g, '').split('\n'), function (l) {
+      l = l.replace(/^\s+|\s+$/g, ''); if (!l) return;
+      var m = TS.exec(l);
+      if (m) { cur = { a: (m[1] ? Number(m[1]) * 3600 : 0) + Number(m[2]) * 60 + Number(m[3]), t: dur(l.slice(m[0].length)).replace(/^\s+|\s+$/g, '') }; out.push(cur); return; }
+      l = dur(l); if (cur && l) cur.t += (cur.t ? ' ' : '') + l;
+    });
+    out = out.filter(function (c) { return c.t; });
+    each(out, function (c, i) { c.b = i + 1 < out.length ? out[i + 1].a : c.a + 4; });
+    return out;
   }
   // 日本語の字幕を、英語の文の時間に合わせて並べる
   function lvAlignJa(cues, ja) {
@@ -4511,24 +4529,25 @@
     on($(p[0]), 'change', function () { var f = $(p[0]).files[0]; $(p[1]).textContent = f ? f.name + (f.size > 1048576 ? '（' + Math.round(f.size / 1048576) + 'MB）' : '') : ''; });
   });
   if ($('lv-go')) on($('lv-go'), 'click', function () {
-    var vf = $('lv-file').files[0], ef = $('lv-en').files[0], jf = $('lv-ja').files[0];
-    if (!vf || !ef) { $('lv-msg').textContent = '動画と英語の字幕を選んでください。'; return; }
+    var vf = $('lv-file').files[0], ef = $('lv-en').files[0], jf = $('lv-ja').files[0], et = String($('lv-en-txt').value || '');
+    if (!vf || (!ef && !/\S/.test(et))) { $('lv-msg').textContent = '動画と、英語の字幕（ファイルか、貼り付けた文字起こし）を選んでください。'; return; }
     $('lv-msg').textContent = '字幕を読んでいます…';
     readText(ef, function (en) {
+      if (!ef) en = et;
       readText(jf, function (ja) {
         var cues = lvEnCues(en);
-        if (!cues.length) { $('lv-msg').textContent = '英語の字幕を読めませんでした（.srt か .vtt を選んでください）。'; return; }
+        if (!cues.length) { $('lv-msg').textContent = '英語の字幕を読めませんでした（.srt / .vtt か、時刻つきの文字起こしを入れてください）。'; return; }
         if (cues.length > 3000) cues = cues.slice(0, 3000);
         var title = $('lv-title').value.replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '') || vf.name.replace(/\.[A-Za-z0-9]+$/, '').replace(/[_.]+/g, ' ');
         var id = newId(), d = { title: '🎞 ' + title.slice(0, 80), text: cueTexts(cues).join('\n'), at: now(), cues: cues, named: 1,
           lv: { name: vf.name.slice(0, 200), size: vf.size, type: vf.type || (/\.webm$/i.test(vf.name) ? 'video/webm' : 'video/mp4') } };
-        if (ja) { var jl = parseSrt(ja); if (jl.length) { d.tr = lvAlignJa(cues, jl); var miss = 0; each(d.tr, function (t) { if (!t) miss++; }); if (miss) d.trPart = 1; } }
+        if (ja) { var jl = lvJaList(ja); if (jl.length) { d.tr = lvAlignJa(cues, jl); var miss = 0; each(d.tr, function (t) { if (!t) miss++; }); if (miss) d.trPart = 1; } }
         var su = String($('lv-srcurl').value || '').replace(/^\s+|\s+$/g, ''); if (/^https?:\/\/\S+$/.test(su)) d.src = su.slice(0, 500);
         rdDocs[id] = d; rdSaveLocal();
         $('lv-msg').textContent = '動画をこの端末に保存しています…';
         lvPut(id, vf, function (okp) {
           $('lv-msg').textContent = okp ? '' : 'この端末に動画を保存できませんでした（空き容量を確かめてください）。ドライブには送ります。';
-          each(['lv-file', 'lv-en', 'lv-ja'], function (x) { $(x).value = ''; }); each(['lv-file-n', 'lv-en-n', 'lv-ja-n'], function (x) { $(x).textContent = ''; }); $('lv-title').value = ''; $('lv-srcurl').value = '';
+          each(['lv-file', 'lv-en', 'lv-ja'], function (x) { $(x).value = ''; }); each(['lv-file-n', 'lv-en-n', 'lv-ja-n'], function (x) { $(x).textContent = ''; }); $('lv-title').value = ''; $('lv-srcurl').value = ''; $('lv-en-txt').value = '';
           openRdDoc(id, true);
           lvUpload(id, vf);
         });
