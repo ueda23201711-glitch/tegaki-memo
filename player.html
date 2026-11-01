@@ -174,6 +174,7 @@
         <button id="b-mode" class="ib" type="button" title="字幕">英＋日</button>
         <button id="b-rep" class="ib" type="button" title="この文をくり返す">🔁</button>
         <button id="b-hard" class="ib" type="button" title="わからなかった文の印（今のセリフ）。英文リーダーで ❓ の文だけを見直せる">❓</button>
+        <button id="b-honly" class="ib" type="button" title="❓ の印を付けた文だけを、続けて再生する（もう一度押すとやめる）">❓だけ</button>
         <button id="b-bm" class="ib" type="button" title="しおり（押すと今の場面に挟む。しおりの場面でもう一度押すと外す）。次に一覧から開くと、しおりの場面から始まる">🔖</button>
         <button id="b-spd" class="ib" type="button" title="速さ">1.0×</button>
         <button id="b-sm" class="ib" type="button" title="字幕を小さく">A−</button>
@@ -410,7 +411,7 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
       try { var x = new XMLHttpRequest(); var o = {}; o['s' + k] = onn ? 1 : null;
         x.open('PATCH', DB_URL + '/memos/' + KEY + '/reader/' + id + '/hard.json', true); x.setRequestHeader('Content-Type', 'application/json'); x.send(JSON.stringify(o)); } catch (e) {}
     }
-    hardBtn();
+    hardBtn(); hOnlyBtn();
     toast(onn ? '❓ 印を付けました（' + (k + 1) + ' 文目）。英文リーダーの「❓ 印の文だけ」で見直せます' : '❓ 印を外しました');
   }
   function setVbm(id, t) {
@@ -749,7 +750,7 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
   function openDoc(id, startAt, auto) {
     autoStart = !!auto; muteOff();
     var d = docs[id]; if (!d) return;
-    cur = d; curId = id; capKey = ''; rep = -1; $('b-rep').className = 'ib';
+    cur = d; curId = id; capKey = ''; rep = -1; $('b-rep').className = 'ib'; hOnly = false; hCur = -1; setTimeout(hOnlyBtn, 0);
     $('home').className = 'hidden'; $('stage').className = '';
     $('ttl').textContent = cleanTitle(d.title);
     $('capin').innerHTML = '';
@@ -804,6 +805,19 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
   }
   on($('b-sw'), 'click', function (e) { e.stopPropagation(); switchSrc(); hideSoon(); });
   on($('b-hard'), 'click', function (e) { e.stopPropagation(); hideSoon(); toggleHard(); });
+  on($('b-honly'), 'click', function (e) {
+    e.stopPropagation(); hideSoon();
+    if (!cur) return;
+    hOnly = !hOnly; hCur = -1;
+    if (hOnly) {
+      if (rep >= 0) { rep = -1; $('b-rep').className = 'ib'; }
+      var k = nextHardP(Math.max(0, idxAt(P.t())));
+      if (k < 0) { hOnly = false; toast('❓ の印を付けた文がありません'); hOnlyBtn(); return; }
+      hCur = k; seekTo(cur.cues[k][0]); if (P.paused()) toggle();
+      toast('❓ の印の文だけを続けて再生します（' + hardCountP() + ' 文）');
+    } else toast('❓ の印の文だけ：やめました');
+    hOnlyBtn();
+  });
   on($('b-bm'), 'click', function (e) {
     e.stopPropagation(); hideSoon();
     if (!cur || !P.has()) return;
@@ -1021,10 +1035,32 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
   }
   function endOf(k) { var c = cur.cues; return k + 1 < c.length ? c[k + 1][0] : Math.max(c[k][0] + 6, P.dur()); }
   var capKey = '', rep = -1;
+  // ❓ の印の文だけ再生：i から先の印の文（なければ最初の印の文。印がなければ -1）
+  var hOnly = false, hCur = -1;
+  function nextHardP(i) {
+    var n = cur.cues.length, k;
+    for (k = Math.max(0, i); k < n; k++) if (hardOf(k)) return k;
+    for (k = 0; k < n; k++) if (hardOf(k)) return k;
+    return -1;
+  }
+  function hardCountP() { var n = 0; if (cur && cur.hard) for (var x in cur.hard) if (cur.hard[x]) n++; return n; }
+  function hOnlyBtn() { var b = $('b-honly'); if (!b) return; var n = cur ? hardCountP() : 0; if (!n && hOnly) hOnly = false; b.className = 'ib' + (hOnly ? ' on' : '') + (n ? '' : ' hidden'); }
+  function hOnlyStep(t) {
+    var c = cur.cues;
+    if (hCur < 0 || !hardOf(hCur) || !c[hCur]) { hCur = nextHardP(Math.max(0, idxAt(t))); if (hCur < 0) { hOnly = false; hOnlyBtn(); return t; } }
+    var hs = c[hCur][0], he = endOf(hCur);
+    if (t >= he - 0.08 || t < hs - 1) {
+      var nx = t >= he - 0.08 ? nextHardP(hCur + 1) : hCur;
+      if (nx === hCur + 1 && t < he + 1.5) { hCur = nx; return t; }   // 続けて印を付けた文は、飛ばずにそのまま流す
+      hCur = nx; P.seek(c[nx][0]); return c[nx][0];
+    }
+    return t;
+  }
   function draw() {
     if (!cur) return;
     var t = P.t(), c = cur.cues;
     if (rep >= 0 && !P.paused() && t >= endOf(rep) - 0.08) { P.seek(c[rep][0]); t = c[rep][0]; }
+    else if (hOnly && rep < 0 && !P.paused()) t = hOnlyStep(t);
     var k = pref.mode === 'none' ? -1 : idxAt(t);
     if (k >= 0 && k < c.length - 1 && c[k + 1][0] - c[k][0] > 12 && t - c[k][0] > 8) k = -1;   // 長い間セリフがないところは消す
     if (k >= 0 && k === c.length - 1 && t - c[k][0] > 10) k = -1;

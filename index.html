@@ -3704,6 +3704,9 @@
     if (!rdCur || i < 0 || !rdCur.d.cues || !rdCur.d.cues[i]) return;
     hardCur = i;
     try { ytPlayer.seekTo(rdCur.d.cues[i][0], true); if (ytState() !== 1) ytPlayer.playVideo(); } catch (e) {}
+    hardShow(i);
+  }
+  function hardShow(i) {
     var n = 0, at = 0; for (var k = 0; k < rdSents.length; k++) if (isHard(k)) { n++; if (k === i) at = n; }
     $('rd-status').textContent = '❓ 印の文だけ：' + at + ' / ' + n + '（' + (i + 1) + ' 文目）を再生しています';
   }
@@ -5446,7 +5449,9 @@
         var hs = cues[hardCur][0], he = hardCur + 1 < cues.length ? cues[hardCur + 1][0] : null;
         if ((he !== null && t >= he - 0.05) || t < hs - 1) {
           var nx = (he !== null && t >= he - 0.05) ? nextHard(hardCur + 1) : hardCur;
-          hardGo(nx); t = cues[nx][0];
+          // 次の印の文がすぐ後ろ（続けて印を付けた文）なら、飛ばずにそのまま流す（かくつかない）
+          if (nx === hardCur + 1 && t < he + 1.5) { hardCur = nx; hardShow(nx); }
+          else { hardGo(nx); t = cues[nx][0]; }
         }
         k = hardCur;
       }
