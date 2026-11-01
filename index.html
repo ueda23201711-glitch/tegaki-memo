@@ -7843,7 +7843,7 @@
       stopScan();
       msg.textContent = (e && e.name === 'NotAllowedError')
         ? 'カメラの使用が許可されていません。ペアリングコードを使ってください。'
-        : 'カメラを起動できませんでした。ペアリングコードを使ってください。';
+        : 'カメラを起動できませんでした（' + String((e && (e.name || e.message)) || e).slice(0, 40) + '）。ペアリングコードを使ってください。';
     });
   }
   each(document.querySelectorAll('[data-scan]'), function (b) {
