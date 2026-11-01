@@ -5620,7 +5620,7 @@
   // Apps Script の URL に確認用の文字列（tk）を付ける。URL だけ漏れても、Apps Script はこれがないと動かない
   var gasTkC = { k: null, t: '' };
   function gasTk() { if (!KEY) return ''; if (gasTkC.k !== KEY) gasTkC = { k: KEY, t: sha256hex('tegaki-gas|' + KEY).slice(0, 32) }; return gasTkC.t; }
-  function gasB() { if (!gasUrl) return ''; var t = gasTk(); return t ? gasB() + (gasB().indexOf('?') >= 0 ? '&' : '?') + 'tk=' + t : gasUrl; }
+  function gasB() { if (!gasUrl) return ''; var t = gasTk(); return t ? gasUrl + (gasUrl.indexOf('?') >= 0 ? '&' : '?') + 'tk=' + t : gasUrl; }
   // Apps Script が確認用の文字列を受け付けなかったとき（1 回だけ案内）
   var gasTkWarned = false;
   function gasTkCheck(d) {
