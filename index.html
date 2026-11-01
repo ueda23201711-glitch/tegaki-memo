@@ -742,6 +742,11 @@
     価格レベルが Free F0 なら、上限を超えても請求はされず、その月はそこで止まるだけです。</p>
     <div class="row"><button id="az-test" type="button">Azure の声をテスト（Ava）</button></div>
     <p id="az-msg" class="note"></p>
+    <h3 style="margin-top:18px">iPhone の声（ショートカットで作る・回数の制限なし）</h3>
+    <p class="note">iPhone の「ショートカット」で、iPhone の英語の声（Ava（プレミアム）など）の音声を作り、ドライブに保存します。作るのは iPhone だけですが、保存した声はどの端末でも聞けます。キーやカードの登録はいりません。「声」で「📱 iPhone の声」を選び、「🎙 iPhoneの声を作って保存」を押します。<br>
+    ショートカットの作り方は、手順書の「iPhone の声」を見てください。下には、作ったショートカットの名前を入れます。</p>
+    <div class="row"><input type="text" id="ios-sc" placeholder="読み上げ音声" style="max-width:220px"> <button id="ios-sc-save" type="button">名前を保存</button></div>
+    <p id="ios-msg" class="note"></p>
   </div>
 </div>
 
@@ -3717,8 +3722,11 @@
     ['Charon', '男性・落ち着き'], ['Puck', '男性・明るい'], ['Orus', '男性・しっかり'], ['Fenrir', '男性・元気'],
     // Microsoft Azure の声（Edge の「Online (Natural)」と同じ）
     ['Ava', '女性・自然・米', 'az'], ['Andrew', '男性・自然・米', 'az'], ['Emma', '女性・明るい・米', 'az'], ['Brian', '男性・明るい・米', 'az'],
-    ['Jenny', '女性・米', 'az'], ['Guy', '男性・米', 'az'], ['Sonia', '女性・英国', 'az'], ['Ryan', '男性・英国', 'az']];
-  function isAz(v) { for (var i = 0; i < GM_VOICES.length; i++) if (GM_VOICES[i][0] === v) return !!GM_VOICES[i][2]; return false; }
+    ['Jenny', '女性・米', 'az'], ['Guy', '男性・米', 'az'], ['Sonia', '女性・英国', 'az'], ['Ryan', '男性・英国', 'az'],
+    // iPhone の声（ショートカットの「テキストから音声を作成」で作って、ドライブに保存したもの）
+    ['Ios', 'iPhone の声', 'ios']];
+  function isAz(v) { for (var i = 0; i < GM_VOICES.length; i++) if (GM_VOICES[i][0] === v) return GM_VOICES[i][2] === 'az'; return false; }
+  function isIos(v) { return v === 'Ios'; }
   var gmCache = {}, gmWait = {}, gmAudio = null, gmOff = false;
   var SILENT = 'data:audio/wav;base64,UklGRuwAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YcgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
   function useGemini() { return /^gm:/.test(rdVoiceName) && !!gasUrl && !gmOff; }
@@ -3726,7 +3734,7 @@
   function gmNote(t) { $('fl-note').textContent = t || '単語をタップすると止まって意味が出ます（単語帳にも保存できます）。続きは「▶ 続きから」。'; $('rd-status').textContent = t || ''; }
   // 音声の中身から種類を判断（Gemini は WAV、Azure は MP3）
   function audMime(b64) {
-    try { var h = atob(String(b64).slice(0, 8)); if (h.slice(0, 3) === 'ID3' || (h.charCodeAt(0) === 255 && (h.charCodeAt(1) & 224) === 224)) return 'audio/mpeg'; } catch (e) {}
+    try { var h = atob(String(b64).slice(0, 12)); if (h.slice(0, 3) === 'ID3' || (h.charCodeAt(0) === 255 && (h.charCodeAt(1) & 224) === 224)) return 'audio/mpeg'; if (h.slice(4, 8) === 'ftyp') return 'audio/mp4'; } catch (e) {}
     return 'audio/wav';
   }
   function gmSrc(b64) {
@@ -3848,7 +3856,7 @@
   function gmSend(text, voice, tries, cb, quick) {
     var t = now();
     while (gmTimes.length && gmTimes[0] < t - 61000) gmTimes.shift();
-    var az = isAz(voice), wait = !az && !quick && gmTimes.length >= 3 ? gmTimes[gmTimes.length - 3] + 61000 - t : 0;
+    var az = isAz(voice) || isIos(voice), wait = !az && !quick && gmTimes.length >= 3 ? gmTimes[gmTimes.length - 3] + 61000 - t : 0;
     if (tries) wait = Math.max(wait, az ? 5000 : 20000);
     if (!az) gmTimes.push(t + wait);
     setTimeout(function () {
@@ -3893,6 +3901,7 @@
     e = String(e || '');
     if (/^nomodel/.test(e)) return 'AIの声のモデルが Google 側で使えなくなっているようです（回数切れではありません）。' + e.replace(/^nomodel\s*/, '');
     if (e === 'oldscript') return 'Apps Script がまだ古いコードのままです。新しいコードを貼って保存し、「デプロイを管理」で「新バージョン」にしてください';
+    if (e === 'iosnot') return 'この部分の iPhone の声はまだ作っていません（「🎙 iPhoneの声を作って保存」を押すと、ショートカットで作ります）';
     if (e === 'noazkey') return 'Apps Script に AZURE_KEY が設定されていません（⚙ の「AIの声（Microsoft Azure）」の手順を見てください）';
     if (e === 'azquota') return 'Azure の今月の無料分（50万文字）を使い切ったようです。来月になると戻ります。それまでは Gemini の声か端末の声を使ってください';
     if (/^azkey/.test(e)) return 'Azure のキー（AZURE_KEY）か場所（AZURE_REGION）がまちがっているようです';
@@ -3997,7 +4006,7 @@
     else if (mkJob || waiting) { b.textContent = waiting ? '🎙 順番待ち → こちらを先に' : '🎙 こちらを優先して作る'; b.title = '「' + (mkJob ? docTitle(mkJob.id) : '') + '」の声づくりを一時停止して、この英文を先に作ります（終わったら元の作業を再開）'; }
     else {
       var c = vcCount();
-      b.textContent = '🎙 AIの声を作って保存' + (c.n ? '（📱 ' + c.have + ' / ' + c.n + '）' : '');
+      b.textContent = (isIos(gmVoice()) ? '🎙 iPhoneの声を作って保存' : '🎙 AIの声を作って保存') + (c.n ? '（📱 ' + c.have + ' / ' + c.n + '）' : '');
       b.title = c.n ? 'この英文の声（' + gmVoice() + '）のうち、この端末に入っているのは ' + c.have + ' / ' + c.n + ' まとまり' : '';
     }
     mkBanner();
@@ -4037,9 +4046,68 @@
     var id = rdCur.id;
     if (mkJob && mkJob.id === id) { stopJob('作るのを止めました。もう一度押すと続きから作ります。'); return; }
     for (var q = 0; q < mkQueue.length; q++) if (mkQueue[q].id === id) { mkQueue.splice(q, 1); break; }
+    if (isIos(gmVoice())) { iosMake(id); return; }
     if (mkJob) { mkJob.run = 0; mkQueue.unshift(mkJob); }   // 今の作業は一時停止して、あとで再開
     startJob(id, gmVoice());
   }
+  /* ---- iPhone の声：iPhone のショートカットに作ってもらい、Apps Script でドライブに保存する
+     1) まだない まとまり を Apps Script に預ける（act:sjob）→ 預けた番号つきのアドレスをショートカットに渡す
+     2) ショートカット：アドレス&op=list で文の一覧を受け取り、1 行ずつ「テキストから音声を作成」→ Base64 →
+        アドレス&op=put&i=番号 に送る（英文そのものはショートカットに渡さない。コピーも使わない）
+     3) このアプリに戻ったら、ドライブの一覧を読み直して、できた声をこの端末に入れる ---- */
+  var IOS_SC_KEY = 'eibun_iossc', iosPend = null;
+  function iosScName() { return lsGet(IOS_SC_KEY) || '読み上げ音声'; }
+  function iosNames(cb) {
+    gasCall({ vlist: '1' }, function (data) {
+      if (data && data.ok && typeof data.names === 'string') { cvNames = {}; each(data.names.split(' '), function (n) { if (n) cvNames[n] = 1; }); cvAt = now(); }
+      cb();
+    });
+  }
+  function iosMissing(d) {
+    var idx = vcIdx(), miss = [];
+    each(chunkTexts(docSents(d)), function (t) { if (/[\r\n]/.test(t)) return; if (!idx[vcHash('Ios|' + t)] && !(cvNames && cvNames[gasName('Ios', t)])) miss.push(t); });
+    return miss;
+  }
+  function iosMake(id) {
+    var d = rdDocs[id]; if (!d) return;
+    if (!gasUrl || !KEY) { $('rd-status').textContent = '先に「⚙ 翻訳の設定」（Apps Script）をしてください。'; return; }
+    $('rd-status').textContent = 'ドライブにある iPhone の声を確かめています…';
+    iosNames(function () {
+      if (!rdDocs[id]) return;
+      var miss = iosMissing(d);
+      if (!miss.length) { if (mkJob) { mkJob.run = 0; mkQueue.unshift(mkJob); } startJob(id, 'Ios'); return; }   // 全部ドライブにある：この端末に入れる
+      $('rd-status').textContent = 'ショートカットに渡す準備をしています…';
+      gasPostJ({ act: 'sjob', t: miss }, function (r, e) {
+        if (!r || !r.ok || !r.id) {
+          $('rd-status').textContent = r && (r.ok || /act|Unexpected/i.test(String(r.error))) ? 'Apps Script が古いコードのままです。「⚙ 翻訳の設定」のコードに貼り替えて、「新バージョン」でデプロイしてください。' : '準備できませんでした（' + gmErrText((r && r.error) || e) + '）。';
+          return;
+        }
+        iosPend = { id: id, n: miss.length, at: now() };
+        var g = gasB(), u = g + (g.indexOf('?') >= 0 ? '&' : '?') + 'sj=' + r.id;
+        $('rd-status').textContent = 'ショートカット「' + iosScName() + '」で iPhone の声を作ります（' + miss.length + ' まとまり）。終わったら、このアプリに戻ってください。';
+        location.href = 'shortcuts://run-shortcut?name=' + encodeURIComponent(iosScName()) + '&input=text&text=' + encodeURIComponent(u);
+      });
+    });
+  }
+  // ショートカットから戻ってきたとき
+  function iosBack() {
+    var pd = iosPend; if (!pd || document.hidden) return;
+    if (now() - pd.at > 3 * 3600000 || !rdDocs[pd.id]) { iosPend = null; return; }
+    if (now() - pd.at < 1500) return;   // ショートカットに切り替わる前
+    iosPend = null;
+    var show = function (t) { if (rdCur && rdCur.id === pd.id) $('rd-status').textContent = t; };
+    show('できた iPhone の声を確かめています…');
+    iosNames(function () {
+      var miss = iosMissing(rdDocs[pd.id]);
+      if (!miss.length) { if (mkJob) { mkJob.run = 0; mkQueue.unshift(mkJob); } startJob(pd.id, 'Ios'); return; }
+      var made = Math.max(0, pd.n - miss.length);
+      show((made ? 'iPhone の声を ' + made + ' / ' + pd.n + ' まとまり作りました。' : 'iPhone の声がまだドライブに届いていません。') + 'ショートカットが最後まで動いたか確かめて、もう一度「🎙 iPhoneの声を作って保存」を押してください（できた分はそのまま使えます）。');
+      makeButton();
+    });
+  }
+  document.addEventListener('visibilitychange', iosBack);
+  on(window, 'pageshow', iosBack);
+  on(window, 'focus', iosBack);
   function stopJob(msg) {
     var job = mkJob; if (!job) return;
     job.run = 0; mkJob = null; mkRun = 0;
@@ -5630,8 +5698,9 @@
     if (gasUrl) {
       var og = document.createElement('optgroup'); og.label = 'AIの声（Gemini・ネット）';
       var oa = document.createElement('optgroup'); oa.label = 'AIの声（Microsoft Azure・ネット）';
-      each(GM_VOICES, function (g) { var o = document.createElement('option'); o.value = 'gm:' + g[0]; o.textContent = 'AI ' + g[0] + '（' + g[1] + '）'; (g[2] ? oa : og).appendChild(o); });
-      sel.appendChild(oa); sel.appendChild(og);
+      var oi = document.createElement('optgroup'); oi.label = 'iPhone の声（ショートカットで作ってドライブに保存）';
+      each(GM_VOICES, function (g) { var o = document.createElement('option'); o.value = 'gm:' + g[0]; o.textContent = g[2] === 'ios' ? '📱 iPhone の声（作って保存したもの）' : 'AI ' + g[0] + '（' + g[1] + '）'; (g[2] === 'az' ? oa : g[2] === 'ios' ? oi : og).appendChild(o); });
+      sel.appendChild(oa); sel.appendChild(og); sel.appendChild(oi);
     }
     var og2 = document.createElement('optgroup'); og2.label = 'この端末の声';
     each(vs, function (v) { if (voiceScore(v) < 0) return; var o = document.createElement('option'); o.value = v.voiceURI || v.name; o.textContent = v.name + '（' + v.lang + (/premium/i.test(v.voiceURI || '') ? '・プレミアム' : /enhanced/i.test(v.voiceURI || '') ? '・拡張' : /compact/i.test(v.voiceURI || '') ? '・標準' : '') + '）'; og2.appendChild(o); });
@@ -6980,6 +7049,8 @@
       var pr = gmAudio.play(); if (pr && pr['catch']) pr['catch'](function () { show('音声を再生できませんでした。もう一度押してください。'); });
     }, false, vOver);
   }
+  if ($('ios-sc')) $('ios-sc').value = iosScName();
+  on($('ios-sc-save'), 'click', function () { var v = String($('ios-sc').value || '').replace(/^\s+|\s+$/g, '').slice(0, 60); if (v) lsSet(IOS_SC_KEY, v); else lsDel(IOS_SC_KEY); $('ios-sc').value = iosScName(); $('ios-msg').textContent = 'ショートカットの名前を「' + iosScName() + '」にしました。'; });
   on($('az-test'), 'click', function () { if (!gasUrl) { $('az-msg').textContent = '先に上の翻訳の設定（テストして保存）をしてください。'; return; } gmSample($('az-msg'), 'Ava'); });
   on($('gm-test'), 'click', function () { if (!gasUrl) { $('gm-msg').textContent = '先に上の翻訳の設定（テストして保存）をしてください。'; return; } gmSample($('gm-msg')); });
   on($('fl-small'), 'click', function () { flSize = Math.max(14, flSize - 2); lsSet('memo_fl_size', String(flSize)); $('fl-text').style.fontSize = flSize + 'px'; });
@@ -7002,6 +7073,9 @@
     "      out = { ok: true, names: voiceNames() };",
     "    } else if (p.page) {",
     "      out = fetchPage(String(p.page));",
+    "    } else if (p.sj) {   // iPhone の声：ショートカットに文の一覧を渡す（1 行に 1 まとまり）",
+    "      var sjl = sjGet(p.sj);",
+    "      return ContentService.createTextOutput(sjl ? sjl.join(\"\\n\") : \"\").setMimeType(ContentService.MimeType.TEXT);",
     "    } else if (p.f === \"quota\") {",
     "      out = quotaInfo([]);   // アドレスで聞かれたときは合計だけ",
     "    } else if (p.f === \"purge\") {",
@@ -7152,7 +7226,13 @@
     "  try {",
     "    if (!tkOk(e.parameter || {})) throw new Error(\"APP_TOKEN\");",
     "    var b = JSON.parse(e.postData.contents);",
-    "    if (b.act === \"quota\") {   // 容量：自分のファイル（ids）だけ名前つきで",
+    "    if (e.parameter && e.parameter.sj) {   // iPhone の声：ショートカットから音声（Base64）を受け取って保存",
+    "      out = sjPut(String(e.parameter.sj), Number(e.parameter.i) || 0, String(b.a || \"\"));",
+    "    } else if (b.act === \"sjob\") {   // iPhone の声：作ってほしい まとまり を預かる（6 時間）",
+    "      var sid = Utilities.getUuid().replace(/-/g, \"\").slice(0, 16), list = (b.t || []).slice(0, 400).map(function (x) { return String(x).slice(0, 1500); });",
+    "      CacheService.getScriptCache().put(\"sj_\" + sid, JSON.stringify(list), 21600);",
+    "      out = { ok: true, id: sid, n: list.length };",
+    "    } else if (b.act === \"quota\") {   // 容量：自分のファイル（ids）だけ名前つきで",
     "      out = quotaInfo(b.ids || []);",
     "    } else if (b.act === \"one\") {   // 小さいファイル（8MB まで）は1回で",
     "      var file = shareFolder().createFile(Utilities.newBlob(Utilities.base64Decode(b.data), b.type || \"application/octet-stream\", String(b.name || \"file\").slice(0, 200)));",
@@ -7399,7 +7479,27 @@
     "  if (code === 401 || code === 403) return { ok: false, error: \"azkey \" + code };",
     "  return { ok: false, error: \"azure \" + code + \" \" + body.slice(0, 100) };",
     "}",
+    "// iPhone の声：預かった一覧と、受け取った音声の保存（名前は ttsSaved と同じ「声|文」の指紋）",
+    "function sjGet(id) {",
+    "  var s = CacheService.getScriptCache().get(\"sj_\" + String(id).replace(/[^a-f0-9]/g, \"\"));",
+    "  try { return s ? JSON.parse(s) : null; } catch (e) { return null; }",
+    "}",
+    "function sjPut(id, i, a) {",
+    "  var list = sjGet(id);",
+    "  if (!list) return { ok: false, error: \"sjgone\" };",
+    "  var text = list[i - 1];   // ショートカットの番号は 1 から",
+    "  if (!text) return { ok: false, error: \"sjindex\" };",
+    "  var bytes = Utilities.base64Decode(a.replace(/[^A-Za-z0-9+\\/=]/g, \"\"));",
+    "  if (bytes.length < 100) return { ok: false, error: \"sjempty\" };",
+    "  var name = Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, \"Ios|\" + text, Utilities.Charset.UTF_8)).replace(/=+$/, \"\") + \".wav\";",
+    "  var folder = voiceFolder(), it = folder.getFilesByName(name);",
+    "  while (it.hasNext()) it.next().setTrashed(true);   // 作り直したときは新しいほうに",
+    "  folder.createFile(Utilities.newBlob(bytes, \"audio/mp4\", name));",
+    "  voiceNameAdd(name);",
+    "  return { ok: true, i: i };",
+    "}",
     "function tts(text, voice) {",
+    "  if (voice === \"Ios\") return { ok: false, error: \"iosnot\" };   // iPhone の声は、ショートカットで作ったものだけ",
     "  if (AZ_VOICES[voice]) return azTts(text, voice);",
     "  var key = PropertiesService.getScriptProperties().getProperty(\"GEMINI_KEY\");",
     "  if (!key) return { ok: false, error: \"nokey\" };",
