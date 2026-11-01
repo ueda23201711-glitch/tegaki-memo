@@ -4089,20 +4089,29 @@
       });
     });
   }
-  // ショートカットから戻ってきたとき
+  // ショートカットから戻ってきたとき。ショートカットは裏で動き続けるので、できるまで 15 秒ごとに確かめる
+  var iosTimer = null;
   function iosBack() {
     var pd = iosPend; if (!pd || document.hidden) return;
     if (now() - pd.at > 3 * 3600000 || !rdDocs[pd.id]) { iosPend = null; return; }
-    if (now() - pd.at < 1500) return;   // ショートカットに切り替わる前
-    iosPend = null;
+    if (now() - pd.at < 1500 || pd.busy) return;   // ショートカットに切り替わる前・確かめている途中
+    pd.busy = true;
+    if (iosTimer) { clearTimeout(iosTimer); iosTimer = null; }
     var show = function (t) { if (rdCur && rdCur.id === pd.id) $('rd-status').textContent = t; };
-    show('できた iPhone の声を確かめています…');
     iosNames(function () {
-      var miss = iosMissing(rdDocs[pd.id]);
-      if (!miss.length) { if (mkJob) { mkJob.run = 0; mkQueue.unshift(mkJob); } startJob(pd.id, 'Ios'); return; }
-      var made = Math.max(0, pd.n - miss.length);
-      show((made ? 'iPhone の声を ' + made + ' / ' + pd.n + ' まとまり作りました。' : 'iPhone の声がまだドライブに届いていません。') + 'ショートカットが最後まで動いたか確かめて、もう一度「🎙 iPhoneの声を作って保存」を押してください（できた分はそのまま使えます）。');
-      makeButton();
+      pd.busy = false;
+      if (iosPend !== pd) return;
+      var miss = iosMissing(rdDocs[pd.id]), made = Math.max(0, pd.n - miss.length);
+      if (!miss.length) { iosPend = null; if (mkJob) { mkJob.run = 0; mkQueue.unshift(mkJob); } startJob(pd.id, 'Ios'); return; }
+      if (made > (pd.made || 0)) { pd.made = made; pd.last = now(); }
+      if (!pd.last) pd.last = now();
+      if (now() - pd.last > 240000) {   // 4 分のあいだ増えない：ショートカットが止まった
+        iosPend = null;
+        show('iPhone の声を ' + made + ' / ' + pd.n + ' まとまり作りました。ショートカットが止まったようです。もう一度「🎙 iPhoneの声を作って保存」を押すと、残りを作ります（できた分はそのまま使えます）。');
+        makeButton(); return;
+      }
+      show('📱 ショートカットが iPhone の声を作っています… ' + made + ' / ' + pd.n + ' まとまり（このまま待つと、できたら自動でこの端末に入れます）');
+      iosTimer = setTimeout(iosBack, 15000);
     });
   }
   document.addEventListener('visibilitychange', iosBack);
