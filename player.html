@@ -263,7 +263,7 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     var fallback = function () { gasCall({ f: 'get', id: fid, part: String(k) }, cb); };
     if (gws === false || !window.Worker || !window.MessageChannel || !gasUrl) { fallback(); return; }
     try { if (!gws) gws = [new Worker('gas-worker.js'), new Worker('gas-worker.js')]; } catch (e) { gws = false; fallback(); return; }
-    var url = gasUrl + (gasUrl.indexOf('?') >= 0 ? '&' : '?') + 'f=get&id=' + encodeURIComponent(fid) + '&part=' + k;
+    var url = gasB() + (gasB().indexOf('?') >= 0 ? '&' : '?') + 'f=get&id=' + encodeURIComponent(fid) + '&part=' + k;
     var w = gws[gwi++ % gws.length], ch = new MessageChannel(), done = false;
     var t = setTimeout(function () { if (done) return; done = true; fallback(); }, 90000);
     ch.port1.onmessage = function (ev) {
@@ -276,10 +276,46 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     };
     try { w.postMessage({ url: url }, [ch.port2]); } catch (e) { done = true; clearTimeout(t); gws = false; fallback(); }
   }
+  // SHA-256（古い iPad でも動くように自前で）。Apps Script に付ける確認用の文字列を、合言葉から作る
+  function sha256hex(str) {
+    var s = unescape(encodeURIComponent(str)), K = [], H = [1779033703, -1150833019, 1013904242, -1521486534, 1359893119, -1694144372, 528734635, 1541459225], n = 2, c = 0;
+    var frac = function (x) { return ((x - Math.floor(x)) * 4294967296) | 0; };
+    while (c < 64) { var p = true; for (var d = 2; d * d <= n; d++) if (n % d === 0) { p = false; break; } if (p) { K.push(frac(Math.pow(n, 1 / 3))); c++; } n++; }
+    var b = [], i, L = s.length;
+    for (i = 0; i < L; i++) b[i >> 2] |= (s.charCodeAt(i) & 255) << (24 - (i % 4) * 8);
+    b[L >> 2] |= 128 << (24 - (L % 4) * 8);
+    b[((L + 8) >> 6 << 4) + 15] = L * 8;
+    var r = function (x, y) { return (x >>> y) | (x << (32 - y)); };
+    for (i = 0; i < b.length; i += 16) {
+      var w = [], a = H.slice(0), j;
+      for (j = 0; j < 64; j++) {
+        if (j < 16) w[j] = b[i + j] | 0;
+        else { var s0 = r(w[j - 15], 7) ^ r(w[j - 15], 18) ^ (w[j - 15] >>> 3), s1 = r(w[j - 2], 17) ^ r(w[j - 2], 19) ^ (w[j - 2] >>> 10); w[j] = (w[j - 16] + s0 + w[j - 7] + s1) | 0; }
+        var t1 = (a[7] + (r(a[4], 6) ^ r(a[4], 11) ^ r(a[4], 25)) + ((a[4] & a[5]) ^ (~a[4] & a[6])) + K[j] + w[j]) | 0;
+        var t2 = ((r(a[0], 2) ^ r(a[0], 13) ^ r(a[0], 22)) + ((a[0] & a[1]) ^ (a[0] & a[2]) ^ (a[1] & a[2]))) | 0;
+        a = [(t1 + t2) | 0, a[0], a[1], a[2], (a[3] + t1) | 0, a[4], a[5], a[6]];
+      }
+      for (j = 0; j < 8; j++) H[j] = (H[j] + a[j]) | 0;
+    }
+    var out = ''; for (i = 0; i < 8; i++) out += ('00000000' + (H[i] >>> 0).toString(16)).slice(-8);
+    return out;
+  }
+  // Apps Script の URL に確認用の文字列（tk）を付ける。URL だけ漏れても、Apps Script はこれがないと動かない
+  var gasTkC = { k: null, t: '' };
+  function gasTk() { if (!KEY) return ''; if (gasTkC.k !== KEY) gasTkC = { k: KEY, t: sha256hex('tegaki-gas|' + KEY).slice(0, 32) }; return gasTkC.t; }
+  function gasB() { if (!gasUrl) return ''; var t = gasTk(); return t ? gasB() + (gasB().indexOf('?') >= 0 ? '&' : '?') + 'tk=' + t : gasUrl; }
+  // Apps Script が確認用の文字列を受け付けなかったとき（1 回だけ案内）
+  var gasTkWarned = false;
+  function gasTkCheck(d) {
+    if (gasTkWarned || !d || d.ok !== false || String(d.error || '').indexOf('APP_TOKEN') < 0) return;
+    gasTkWarned = true;
+    window.alert('Apps Script が、この合言葉を受け付けませんでした。\n\nApps Script の「プロジェクトの設定」→「スクリプト プロパティ」で APP_TOKENS と APP_TOKENS_SINCE を削除してください。そのあと 30 分以内に、使っているアプリ（英文リーダー・手書きメモ）をそれぞれ一度開くと、受け付けられるようになります。');
+  }
   function gasCall(params, cb) {
+    var cb0 = cb; cb = function (d, e) { gasTkCheck(d); cb0(d, e); };
     if (!gasUrl) { cb(null, 'nourl'); return; }
     var q = []; for (var k in params) q.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
-    var url = gasUrl + (gasUrl.indexOf('?') >= 0 ? '&' : '?') + q.join('&'), done = false;
+    var url = gasB() + (gasB().indexOf('?') >= 0 ? '&' : '?') + q.join('&'), done = false;
     var jsonp = function () {
       var name = '__ep' + (++jsonpN) + '_' + now(), sc = document.createElement('script'), fin = false;
       var end = function (d, e) { if (fin) return; fin = true; try { delete window[name]; } catch (er) { window[name] = undefined; } if (sc.parentNode) sc.parentNode.removeChild(sc); cb(d, e); };
@@ -605,7 +641,7 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
   function relayLink(d) {
     if (!swOk || !(driveKey || gasUrl) || !d.lv.drive) return '';
     // key：ドライブ API、gas：API がだめなとき Apps Script から分割で受け取る（大きいファイルなど）
-    return '__drive__?id=' + encodeURIComponent(d.lv.drive) + (driveKey ? '&key=' + encodeURIComponent(driveKey) : '') + (gasUrl ? '&gas=' + encodeURIComponent(gasUrl) : '') + (d.lv.size ? '&size=' + d.lv.size : '') + '&type=' + encodeURIComponent(d.lv.type || 'video/mp4');
+    return '__drive__?id=' + encodeURIComponent(d.lv.drive) + (driveKey ? '&key=' + encodeURIComponent(driveKey) : '') + (gasUrl ? '&gas=' + encodeURIComponent(gasB()) : '') + (d.lv.size ? '&size=' + d.lv.size : '') + '&type=' + encodeURIComponent(d.lv.type || 'video/mp4');
   }
   var v = $('vid'), cur = null, curId = '', blobUrl = '', links = [], linkErr = [], srcMode = '';
   // btns: [[文字, 押したとき, 'sub'(控えめ)]]
@@ -802,6 +838,8 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     if (!gasUrl) {
       msg('ドライブの動画を見るには、英文リーダーで「翻訳の設定（Apps Script）」が必要です。'); return;
     }
+    // 新しい端末は中継で見る。動画を「リンクを知っている全員」にするのは、中継が使えない古い iPad などだけ
+    if (!OLD && swOk) { msg('ドライブから直接は再生できませんでした。いったんこの端末に取り込むと見られます。', '', [dlBtn(id)]); return; }
     msg('☁ ドライブの動画を読み込んでいます…');
     gasCall({ f: 'link', id: d.lv.drive }, function (r, e) {
       if (curId !== id) return;
