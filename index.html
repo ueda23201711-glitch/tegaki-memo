@@ -6377,10 +6377,38 @@
     });
   }
   // 取り込んだ記事を英文として開く（同じページなら前のものを開く）
+  // 長い英文（1 万 8 千字超）は捨てずに「本」にする：段落の区切りで約 1 万 5 千字ずつの章に分ける（長すぎる段落は文の区切りで）
+  function addLongAsBook(text, title, src) {
+    var paras = String(text).split(/\n\s*\n|\n/), pieces = [];
+    each(paras, function (p) {
+      p = p.replace(/^\s+|\s+$/g, ''); if (!p) return;
+      if (p.length <= 15000) { pieces.push(p); return; }
+      var buf = '';
+      each(p.replace(/([.!?。])\s+/g, '$1\u0001').split('\u0001'), function (s) { if (buf && buf.length + s.length > 15000) { pieces.push(buf); buf = ''; } buf += (buf ? ' ' : '') + s; });
+      if (buf) pieces.push(buf);
+    });
+    var parts = [], cur = [];
+    each(pieces, function (p) { if (cur.length && cur.join('\n\n').length + p.length > 15000) { parts.push(cur.join('\n\n')); cur = []; } cur.push(p); });
+    if (cur.length) parts.push(cur.join('\n\n'));
+    title = String(title || autoTitle(text)).replace(/^[🌐📚]\s*/, '').slice(0, 80);
+    var book = 'b' + newId(), at = now(), b = {}, first = null;
+    each(parts, function (t, ci) {
+      var id = newId() + ci, name = 'パート ' + (ci + 1) + '/' + parts.length;
+      rdDocs[id] = { title: '📚 ' + title + ' — ' + name, text: t, at: at - ci, book: book, bookTitle: title, ch: ci + 1, chN: parts.length, chTitle: name, ns: splitSentences(t).length };
+      if (src) rdDocs[id].src = String(src).slice(0, 500);
+      b['reader/' + id] = rdDocs[id];
+      if (!first) first = id;
+    });
+    rdSaveLocal();
+    if (KEY) api('PATCH', '', b, function () {});
+    rdOpenBook[book] = 1;
+    openRdDoc(first, true);
+    $('rd-status').textContent = '📚 長い英文なので、' + parts.length + ' つのパートに分けて「本」にしました（約 ' + Math.round(text.length / 1000) + ' 千字）。一覧では本の中に並びます。';
+  }
   function rdAddDoc(text, title, src) {
     text = String(text || '').replace(/\r/g, '').replace(/^\s+|\s+$/g, '');
     if (!text) return;
-    if (text.length > 20000) text = text.slice(0, 20000);
+    if (text.length > 18000) { addLongAsBook(text, title, src); return; }
     var tt = String(title || '').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '').replace(/\s+[-|—–:･・]\s+[^-|—–:]{2,40}$/, '');   // 「記事名 - サイト名」のサイト名を外す
     var norm = function (x) { return String(x).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/^\s+|\s+$/g, ''); };
     if (tt && /[A-Za-z]{3}/.test(tt) && norm(text.slice(0, 400)).indexOf(norm(tt).slice(0, 40)) < 0) text = tt + '\n\n' + text;
@@ -6476,7 +6504,7 @@
     if (!text) { alert('英文を入力するか、貼り付けてください。'); return; }
     if (/^https?:\/\/\S+$/.test(text)) { rdFetchUrl(text); return; }
     $('rd-in').value = '';
-    if (text.length > 20000) text = text.slice(0, 20000);
+    if (text.length > 18000) { addLongAsBook(text, ''); return; }
     // 同じ英文が履歴にあればそれを開く（動画のものは除く）
     var ids = rdIds();
     for (var i = 0; i < ids.length; i++) if (rdDocs[ids[i]].text === text) { openRdDoc(ids[i]); return; }
