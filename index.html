@@ -194,7 +194,7 @@
   .rd-sent { background: #fff; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(31,42,48,.1); }
   .rd-sent.ab { border-left: 5px solid #2463c9; }
   .rd-sent.hard { border-right: 5px solid #d9534f; }
-  .rd-hard { float: right; padding: 3px 7px; margin: 0 0 0 6px; font-size: 14px; background: #f1f4f6; color: #9aa6ad; }
+  .rd-hard { float: right; padding: 3px 7px; margin: 0 0 0 6px; font-size: 14px; background: #f1f4f6; color: #9aa6ad; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
   .rd-sent.hard .rd-hard { background: #fbe3e1; color: #c0392b; font-weight: 700; }
   .fl-s.ab { background: #e3eefc; }
   .rd-sent.now { box-shadow: 0 0 0 3px #e8b44c; background: #fffbea; }
@@ -3671,6 +3671,26 @@
     if (KEY) { var b = {}; b['reader/' + rdCur.id + '/hard/s' + i] = onn ? 1 : null; api('PATCH', '', b, function () {}); }
     hardLabel();
   }
+  // まとめて印：前に押した ❓ から i までを、前に押したときと同じ状態（付ける／外す）にする（Shift＋クリック・長押し）
+  var hardLast = null;   // { doc, i, onn }
+  function hardRange(i) {
+    if (!rdCur) return false;
+    var hl = hardLast; if (!hl || hl.doc !== rdCur.id || hl.i === i) return false;
+    var a = Math.min(hl.i, i), z = Math.max(hl.i, i), d = rdCur.d, b = {}, kids = $('rd-text').childNodes;
+    d.hard = d.hard || {};
+    for (var k = a; k <= z && k < rdSents.length; k++) {
+      if (hl.onn) d.hard['s' + k] = 1; else delete d.hard['s' + k];
+      b['reader/' + rdCur.id + '/hard/s' + k] = hl.onn ? 1 : null;
+      var el = kids[k];
+      if (el && el.id !== 'rd-flow') { el.className = el.className.replace(/ hard\b/g, '') + (hl.onn ? ' hard' : ''); }
+    }
+    rdSaveLocal();
+    if (KEY) api('PATCH', '', b, function () {});
+    hardLast = { doc: rdCur.id, i: i, onn: hl.onn };
+    hardLabel();
+    $('rd-status').textContent = '❓ ' + (a + 1) + '〜' + (z + 1) + ' 文目（' + (z - a + 1) + ' 文）の印を' + (hl.onn ? '付けました' : '外しました') + '。';
+    return true;
+  }
   // 印の文だけ：i から先で次の印の文（なければ最初の印の文。印がなければ -1）
   function nextHard(i) {
     var n = rdSents.length, k;
@@ -6760,7 +6780,21 @@
     each(rdSents, function (s, si) {
       var blk = document.createElement('div'); blk.className = 'rd-sent' + (isHard(si) ? ' hard' : '') + (si === rdIdx ? ' now' : '');
       var hb = document.createElement('button'); hb.type = 'button'; hb.className = 'rd-hard'; hb.textContent = '❓'; hb.title = 'わからなかった文の印（もう一度押すと外す）';
-      (function (blk0) { on(hb, 'click', function (e) { e.stopPropagation(); var onn = !isHard(si); setHard(si, onn); if (onn) blk0.className += ' hard'; else blk0.className = blk0.className.replace(/ hard\b/, ''); }); })(blk);
+      hb.title = 'わからなかった文の印（もう一度押すと外す）。Shift を押しながらクリック、または長押しで、前に押した ❓ からここまでをまとめて';
+      (function (blk0) {
+        var lpT = null, lpDone = false;
+        on(hb, 'touchstart', function () { lpDone = false; if (lpT) clearTimeout(lpT); lpT = setTimeout(function () { lpT = null; if (hardRange(si)) lpDone = true; }, 600); });
+        var lpOff = function () { if (lpT) { clearTimeout(lpT); lpT = null; } };
+        on(hb, 'touchend', lpOff); on(hb, 'touchmove', lpOff); on(hb, 'touchcancel', lpOff);
+        on(hb, 'contextmenu', function (e) { if (e.preventDefault) e.preventDefault(); });
+        on(hb, 'click', function (e) {
+          e.stopPropagation();
+          if (lpDone) { lpDone = false; return; }
+          if (e.shiftKey && hardRange(si)) return;
+          var onn = !isHard(si); setHard(si, onn); hardLast = { doc: rdCur.id, i: si, onn: onn };
+          if (onn) blk0.className += ' hard'; else blk0.className = blk0.className.replace(/ hard\b/, '');
+        });
+      })(blk);
       blk.appendChild(hb);
       var pb = document.createElement('button'); pb.type = 'button'; pb.className = 'rd-say'; pb.textContent = '🔊';
       if (d.cues && d.cues[si]) { pb.className = 'rd-say yt'; pb.textContent = '▶ ' + fmtSec(d.cues[si][0]); on(pb, 'click', function () { ytSeek(si); }); }
