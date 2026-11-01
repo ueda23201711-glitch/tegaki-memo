@@ -683,6 +683,7 @@
     <div class="dq-top"><h3>☁ 容量（ドライブ・Firebase）</h3><button id="dq-x" type="button" title="閉じる" aria-label="閉じる">✕</button></div>
     <div id="dq-body"><p class="note">調べています…</p></div>
     <div id="fb-q"></div>
+    <div id="dq-files"></div>
     <div class="row"><button id="dq-re" type="button">↻ もう一度調べる</button> <button id="dq-close" class="primary" type="button">閉じる</button></div>
   </div>
 </div>
@@ -5118,7 +5119,7 @@
   var dqData = null, dqShared = {};   // dqShared[ドライブのID] = 📎 ファイル共有の一覧のキー
   function dqOpen() { $('dq-dlg').className = ''; dqLoad(); fbShow(); }
   function dqLoad() {
-    var body = $('dq-body');
+    var body = $('dq-body'); $('dq-files').innerHTML = '';
     if (!gasUrl) { body.innerHTML = '<p class="note">容量を調べるには「⚙ 翻訳の設定」（Apps Script）が必要です。</p>'; return; }
     body.innerHTML = '<p class="note">調べています…（ファイルが多いと少しかかります）</p>';
     // このアプリが使っているファイル：英文の動画と、📎 ファイル共有で送ったファイル
@@ -5155,7 +5156,8 @@
     if (trash > 0) h += '<p class="note" style="margin:4px 0">ゴミ箱のファイルも容量を使います（30日で自動的に消えます）。</p>';
     if (r.appTrashN) h += '<div class="dq-warn" style="background:#eef4fb;color:#1f3a5a">アプリ（このアプリ・ほかのアプリ）で消して、ゴミ箱に残っているファイルが ' + dqSize(r.appTrash) + ' あります。 <button id="dq-purge" type="button" style="font-size:13px;padding:4px 10px;margin-top:4px">完全に消して空ける</button></div>';
     var fs = (r.files || []).slice().sort(function (a, b) { return (b.s || 0) - (a.s || 0); }), big = fs.length ? fs[0].s || 1 : 1;
-    h += '<div class="dq-sec">このアプリのファイル（大きい順・' + fs.length + ' 件）</div>';
+    body.innerHTML = h; h = '';
+    h += '<div class="dq-sec" style="margin-top:14px">このアプリのファイル（大きい順・' + fs.length + ' 件）</div>';
     if (!fs.length) h += '<p class="note">ありません。</p>';
     each(fs, function (f) {
       var ids = dqDocsOf(f.id), names = [];
@@ -5166,8 +5168,8 @@
         + '<i class="w" style="width:' + Math.max(2, Math.round((f.s || 0) * 100 / big)) + '%"></i>'
         + '<button type="button" data-dqdel="' + dqEsc(f.id) + '">🗑 完全に消す</button></div>';
     });
-    body.innerHTML = h;
-    each(body.querySelectorAll('[data-dqdel]'), function (b) { on(b, 'click', function () { dqDel(b.getAttribute('data-dqdel'), b); }); });
+    $('dq-files').innerHTML = h;
+    each($('dq-files').querySelectorAll('[data-dqdel]'), function (b) { on(b, 'click', function () { dqDel(b.getAttribute('data-dqdel'), b); }); });
     if ($('dq-purge')) on($('dq-purge'), 'click', function () {
       if (!window.confirm('アプリで消してゴミ箱に残っているファイル（' + dqSize(r.appTrash) + '）を完全に消しますか？\n（元に戻せません。アプリと関係のないゴミ箱のファイルには触れません）')) return;
       $('dq-purge').disabled = true; $('dq-purge').textContent = '消しています…';
