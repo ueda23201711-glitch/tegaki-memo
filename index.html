@@ -609,7 +609,7 @@
         </div>
       </div>
       <p class="note">保存した単語・熟語は <a href="/kiku-memo/" target="_blank">📚 メモ単語帳</a> で学習できます（iPad 2/3 は <a href="/kiku-memo/ipad.html" target="_blank">こちら</a>）。</p>
-      <h3 id="rd-hist-h" class="rd-h">これまでの英文 <button id="rd-sync" type="button" class="rd-selbtn" title="ほかの端末で追加・変更した英文を読み込む">🔄 最新にする</button> <button id="rd-quota" type="button" class="rd-selbtn" title="Google ドライブの使用量と、動画の一覧（消して空ける）">☁ ドライブの容量</button> <button id="rd-sort" type="button" class="rd-selbtn" title="よく見る・読む英文を上に（もう一度押すと、追加した順に戻る）">👁 よく見る順</button> <button id="rd-fsort" type="button" class="rd-selbtn" title="★の多い英文を上に（もう一度押すと、追加した順に戻る）">⭐ 好み順</button> <button id="rd-sel" type="button" class="rd-selbtn">☑ 選んで削除</button></h3>
+      <h3 id="rd-hist-h" class="rd-h">これまでの英文 <button id="rd-sync" type="button" class="rd-selbtn" title="ほかの端末で追加・変更した英文を読み込む">🔄 最新にする</button> <button id="rd-quota" type="button" class="rd-selbtn" title="Google ドライブと Firebase の使用量、動画の一覧（消して空ける）">☁ ドライブの容量</button> <button id="rd-sort" type="button" class="rd-selbtn" title="よく見る・読む英文を上に（もう一度押すと、追加した順に戻る）">👁 よく見る順</button> <button id="rd-fsort" type="button" class="rd-selbtn" title="★の多い英文を上に（もう一度押すと、追加した順に戻る）">⭐ 好み順</button> <button id="rd-sel" type="button" class="rd-selbtn">☑ 選んで削除</button></h3>
       <p class="note" id="rd-sync-msg"></p>
       <div id="rd-selbar" class="hidden"><span id="rd-selcount">0 件を選択</span>
         <button id="rd-selall" type="button">すべて選ぶ</button>
@@ -680,8 +680,9 @@
 </div>
 <div id="dq-dlg" class="hidden">
   <div class="dlg">
-    <div class="dq-top"><h3>☁ Google ドライブの容量</h3><button id="dq-x" type="button" title="閉じる" aria-label="閉じる">✕</button></div>
+    <div class="dq-top"><h3>☁ 容量（ドライブ・Firebase）</h3><button id="dq-x" type="button" title="閉じる" aria-label="閉じる">✕</button></div>
     <div id="dq-body"><p class="note">調べています…</p></div>
+    <div id="fb-q"></div>
     <div class="row"><button id="dq-re" type="button">↻ もう一度調べる</button> <button id="dq-close" class="primary" type="button">閉じる</button></div>
   </div>
 </div>
@@ -5115,7 +5116,7 @@
   function dqEsc(t) { return String(t || '').replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function dqDocsOf(fid) { var a = []; for (var k in rdDocs) { var d = rdDocs[k]; if (d && d.lv && d.lv.drive === fid) a.push(k); } return a; }
   var dqData = null, dqShared = {};   // dqShared[ドライブのID] = 📎 ファイル共有の一覧のキー
-  function dqOpen() { $('dq-dlg').className = ''; dqLoad(); }
+  function dqOpen() { $('dq-dlg').className = ''; dqLoad(); fbShow(); }
   function dqLoad() {
     var body = $('dq-body');
     if (!gasUrl) { body.innerHTML = '<p class="note">容量を調べるには「⚙ 翻訳の設定」（Apps Script）が必要です。</p>'; return; }
@@ -5194,6 +5195,75 @@
     });
   }
   on($('rd-quota'), 'click', dqOpen);
+
+  /* ---- 🔥 Firebase（メモ・英文のクラウド）の使用量。無料プランの保存は 1GB まで。
+     Firebase には使用量を聞く仕組みがないので、この合言葉のデータを項目ごとに読み込んで大きさを測る（目安）。
+     読み込みは無料分（月 10GB）を少し使うので、ボタンを押したときだけ調べる。結果は端末に覚えておく ---- */
+  var FB_FREE = 1073741824, FB_LAST = 'fbq-last';
+  var fbNames = { reader: '英文', readerbm: '英文のしおり', notes: '手書きメモ', img: 'メモの画像', index: 'メモの一覧', folders: 'フォルダ', memovocab: 'メモ単語帳', settings: '設定', files: '📎 ファイル共有の一覧', clips: 'クリップ', tx: '受け渡し' };
+  var fbCols = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#7a5cd6', '#3fa7b5', '#9a7b4f'];
+  function fbBytes(t) { try { return new Blob([t]).size; } catch (e) { return String(t).length; } }
+  function fbConsole() {
+    var m = /^https:\/\/([^.\/]+)\./.exec(DB_URL || ''); if (!m) return '';
+    var inst = m[1], pid = inst.replace(/-default-rtdb$/, '');
+    return 'https://console.firebase.google.com/project/' + encodeURIComponent(pid) + '/database/' + encodeURIComponent(inst) + '/usage';
+  }
+  function fbGetText(path, q, cb) {
+    var x = new XMLHttpRequest();
+    x.open('GET', DB_URL + '/memos/' + KEY + path + '.json' + (q || ''), true);
+    x.timeout = 180000;
+    x.onreadystatechange = function () { if (x.readyState !== 4) return; if (x.status >= 200 && x.status < 300) cb(null, x.responseText || ''); else cb({ status: x.status }); };
+    x.send();
+  }
+  function fbShow(msg) {
+    var box = $('fb-q'); if (!box) return;
+    var h = '<div class="dq-sec" style="margin-top:14px">🔥 Firebase（メモ・英文のクラウド）</div>';
+    var last = null; try { last = JSON.parse(lsGet(FB_LAST + '|' + DB_URL + '|' + KEY) || 'null'); } catch (e) {}
+    if (msg) h += '<p class="note">' + msg + '</p>';
+    else if (last && last.items) h += fbHtml(last);
+    else h += '<p class="note">無料プランで保存できるのは <b>1GB</b> までです。下のボタンで、いまの使用量を調べられます。</p>';
+    if (!msg) h += '<div class="row"><button id="fb-go" type="button">🔥 Firebase の使用量を調べる</button></div>'
+      + '<p class="note" style="margin:4px 0">データを一度すべて読み込んで大きさを測ります（目安）。読み込みには無料分（月 10GB）を少し使うので、ときどき調べれば十分です。'
+      + (fbConsole() ? ' 正確な数字は <a href="' + fbConsole() + '" target="_blank" rel="noopener">Firebase のコンソール（使用量）</a> で見られます。' : '') + '</p>';
+    box.innerHTML = h;
+    if ($('fb-go')) on($('fb-go'), 'click', fbMeasure);
+  }
+  function fbHtml(r) {
+    var used = r.total || 0, h = '', dt = new Date(r.at || 0);
+    h += '<p class="dq-hero">使用中 <b>' + dqSize(used) + '</b> ／ 1 GB（残り <b style="font-size:18px">' + dqSize(Math.max(0, FB_FREE - used)) + '</b>）</p>';
+    var items = r.items.slice().sort(function (a, b) { return b[1] - a[1]; });
+    h += '<div class="dq-bar" role="img" aria-label="Firebase の使用量の内訳">';
+    each(items, function (g, i) { if (g[1] > 0) h += '<i style="width:' + Math.max(0.6, g[1] * 100 / FB_FREE) + '%;background:' + fbCols[i % fbCols.length] + '" title="' + dqEsc(fbNames[g[0]] || g[0]) + '：' + dqSize(g[1]) + '"></i>'; });
+    h += '</div><ul class="dq-leg">';
+    each(items, function (g, i) { h += '<li><s style="background:' + fbCols[i % fbCols.length] + '"></s><span>' + dqEsc(fbNames[g[0]] || g[0]) + '</span><em>' + dqSize(g[1]) + '</em></li>'; });
+    h += '<li><s style="background:#e3e7ea"></s><span>空き</span><em>' + dqSize(Math.max(0, FB_FREE - used)) + '</em></li></ul>';
+    if (used > FB_FREE * 0.8) h += '<div class="dq-warn">⚠ 1GB に近づいています。使わない英文やメモを消してください（いっぱいになると、保存できなくなります）。</div>';
+    h += '<p class="note" style="margin:4px 0">' + (dt.getMonth() + 1) + '/' + dt.getDate() + ' ' + dt.getHours() + ':' + ('0' + dt.getMinutes()).slice(-2) + ' に調べた結果（この合言葉の分）</p>';
+    return h;
+  }
+  function fbMeasure() {
+    if (!KEY) { fbShow('調べるには合言葉が必要です。'); return; }
+    fbShow('調べています…');
+    fbGetText('', '?shallow=true', function (err, t) {
+      var ks = []; try { var o = JSON.parse(t || 'null'); if (o && typeof o === 'object') for (var k in o) if (o.hasOwnProperty(k)) ks.push(k); } catch (e) {}
+      if (err) { fbShow('調べられませんでした（' + errText(err) + '）。'); return; }
+      var items = [], total = 0, i = 0;
+      var next = function () {
+        if (i >= ks.length) {
+          var r = { at: Date.now(), total: total, items: items };
+          lsSet(FB_LAST + '|' + DB_URL + '|' + KEY, JSON.stringify(r));
+          fbShow(); return;
+        }
+        var k = ks[i++];
+        fbShow('調べています…（' + i + ' / ' + ks.length + '：' + dqEsc(fbNames[k] || k) + '）');
+        fbGetText('/' + encodeURIComponent(k), '', function (e2, t2) {
+          if (e2) { fbShow('調べられませんでした（' + errText(e2) + '）。'); return; }
+          var n = fbBytes(t2 || ''); items.push([k, n]); total += n; next();
+        });
+      };
+      next();
+    });
+  }
   on($('rd-sort'), 'click', function () { if (lsGet(SORT_KEY) === 'pop') lsDel(SORT_KEY); else lsSet(SORT_KEY, 'pop'); renderRdHistory(); });
   on($('rd-fsort'), 'click', function () { if (lsGet(SORT_KEY) === 'fav') lsDel(SORT_KEY); else lsSet(SORT_KEY, 'fav'); renderRdHistory(); });
   on($('dq-re'), 'click', dqLoad);
