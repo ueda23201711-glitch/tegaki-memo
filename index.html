@@ -6624,7 +6624,7 @@
     b.className = 'primary';
   }
   on($('rd-resume'), 'click', function () { var v = lastGet(); if (!v) return; useBump(v.id); rdShowAt(v.id, v.n, v.t, false); });
-  setInterval(function () { if (rdCur && !document.hidden) lastSave(); }, 10000);
+  setInterval(function () { if (rdCur && !document.hidden) lastSave(); }, 5000);
   document.addEventListener('visibilitychange', function () { if (document.hidden) lastSave(); });
   on(window, 'pagehide', lastSave);
   function rdShowInput() {
