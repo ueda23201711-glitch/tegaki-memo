@@ -3677,6 +3677,7 @@
     $('fl-play').textContent = rdSpeaking ? '■ 停止' : (rdIdx > 0 ? '▶ 続きから' : '▶ 最初から');
   }
   function stopSpeak() {
+    if (pk && pk.lv) { try { var vv = $('lv-video'); if (vv && gmAudio) vv.currentTime = gmAudio.currentTime; } catch (e0) {} }   // 動画の音で聞いていた：動画も同じ場面に
     rdSpeaking = false; rdQueue = []; playGen++; gmStop(); pk = null; pkPaused = false; pkLabel();
     if (!flOpen) markSentence(-1);
     try { speechSynthesis.cancel(); } catch (e) {}
@@ -4062,8 +4063,9 @@
   function pkOk() { return !!((window.AudioContext || window.webkitAudioContext) && window.Blob && window.URL && URL.createObjectURL && window.Uint8Array && window.DataView); }
   function pkLabel() {
     var b = $('rd-pocket'); if (!b) return;
-    b.className = gasUrl && /^gm:/.test(rdVoiceName) && rdCur && !(rdCur.d.cues && (rdCur.d.yt || rdCur.d.lv)) ? (pk ? 'primary' : '') : 'hidden';
-    b.textContent = pk ? (pkPaused ? '🎧 ポケット：一時停止中（■ やめる）' : '🎧 ポケットで再生中（■ やめる）') : '🎧 ポケットで聞く';
+    var isLv = !!(rdCur && rdCur.d.lv && rdCur.d.cues && !lvOld);
+    b.className = rdCur && (isLv || (gasUrl && /^gm:/.test(rdVoiceName) && !(rdCur.d.cues && rdCur.d.yt))) ? (pk ? 'primary' : '') : 'hidden';
+    b.textContent = pk ? (pkPaused ? '🎧 ポケット：一時停止中（■ やめる）' : '🎧 ポケットで再生中（■ やめる）') : isLv ? '🎧 ポケットで聞く（動画の音）' : '🎧 ポケットで聞く';
   }
   function pkAC() { if (!pkCtx) { var C = window.AudioContext || window.webkitAudioContext; pkCtx = new C(); } return pkCtx; }
   function pkBytes(src, cb) {
@@ -4159,8 +4161,8 @@
       if (rdCur && rdCur.id === id) pkPlay(id, start);
     });
   }
-  function pkPlay(id, start) {
-    var voice = gmVoice(), key = id + '|' + voice, P = pkCache[key]; if (!P || !gmAudio) return;
+  function pkPlay(id, start, P0) {
+    var voice = gmVoice(), key = id + '|' + voice, P = P0 || pkCache[key]; if (!P || !gmAudio) return;
     stopSpeak();
     pk = P; pk.id = id; pkPaused = false; rdSpeaking = true; msWas = true; playLabel(); pkLabel();
     var au = gmAudio, seeked = !(start > 0);
@@ -4177,10 +4179,12 @@
     };
     au.onended = function () { if (pk === P) pkEnded(id); };
     au.onerror = function () { if (pk === P) { stopSpeak(); pkStatus(id, '🎧 この端末で再生できませんでした。'); } };
-    au.src = P.url; gmRate();
+    var setRate = function () { if (P.lv) { try { var r = $('lv-video').playbackRate || 1; au.defaultPlaybackRate = r; au.playbackRate = r; } catch (e) {} } else gmRate(); };
+    au.src = P.url; setRate();
     try { au.load(); } catch (e) {}
-    gmRate();
+    setRate();
     var pr = au.play(); if (pr && pr['catch']) pr['catch'](function () { if (pk === P) { pkPaused = true; rdSpeaking = false; playLabel(); pkLabel(); pkStatus(id, '🎧 準備できました。▶ 再生 を押してください。'); } });
+    if (P.lv) { pkStatus(id, '🎧 動画の音をポケットで再生中：画面を消しても、最後まで流れます。'); return; }
     pkStatus(id, '🎧 ポケットで再生中：画面を消しても、章の終わりまで流れます' + (pkNextId(id) ? '（次の章へも続きます）' : '') + '。');
     // 次の章を先に作っておく
     var nid = pkNextId(id), keep = [key];
@@ -4191,6 +4195,7 @@
     pkKeep(keep);
   }
   function pkEnded(id) {
+    if (pk && pk.lv) { stopSpeak(); pkStatus(id, '🎧 最後まで聞きました。'); return; }
     var voice = gmVoice(), nid = pkNextId(id);
     if (nid) {
       openChapter(nid, -1);
@@ -4202,11 +4207,35 @@
   function pkPause() { if (!pk) return; try { gmAudio.pause(); } catch (e) {} pkPaused = true; rdSpeaking = false; playLabel(); pkLabel(); }
   function pkResume() { if (!pk) return; pkPaused = false; rdSpeaking = true; var pr = gmAudio.play(); if (pr && pr['catch']) pr['catch'](function () {}); playLabel(); pkLabel(); }
   function pkSeekSent(k) { if (!pk) return; k = Math.max(0, Math.min(pk.sentT.length - 1, k)); try { gmAudio.currentTime = pk.sentT[k]; } catch (e) {} rdIdx = k; if (!document.hidden) markSentence(k); }
+  // 端末に取り込んだ動画：同じファイルを「音」として再生する（動画として再生すると、画面を消したとき止められる）
+  function pkVideo(id) {
+    var d = rdDocs[id], cues = d.cues, v = $('lv-video');
+    var t0 = 0; try { t0 = v && v.currentTime ? v.currentTime : 0; } catch (e) {}
+    if (!t0 && rdIdx >= 0 && cues[rdIdx]) t0 = cues[rdIdx][0];
+    var go = function (url) {
+      if (!rdCur || rdCur.id !== id) return;
+      try { if (lvA) lvA.pauseVideo(); else if (v) v.pause(); } catch (e) {}
+      var sentT = []; each(cues, function (c, i) { sentT[i] = c[0]; });
+      var k = 0; for (var q = 0; q < sentT.length; q++) { if (sentT[q] <= t0 + 0.05) k = q; else break; }
+      var P = { url: url, sentT: sentT, dur: 0, lv: true };
+      pkPlay(id, -1, P);
+      // 見ていた場面から（字幕の時刻は正確なので、そのまま合わせる）
+      var au = gmAudio, once = function () { au.removeEventListener('loadedmetadata', once); try { au.currentTime = t0; } catch (e) {} };
+      if (t0 > 0) { if (au.readyState >= 1) { try { au.currentTime = t0; } catch (e) {} } else au.addEventListener('loadedmetadata', once); }
+      rdIdx = k;
+    };
+    if (lvMem[id]) { go(lvMem[id]); return; }
+    lvGet(id, function (blob) {
+      if (!blob) { pkStatus(id, '🎧 この動画はまだ端末に入っていません。先に「⬇ この端末に取り込む」をしてください（ドライブから直接の再生は、画面を消すと止まることがあります）。'); return; }
+      try { go(URL.createObjectURL(blob)); } catch (e) { pkStatus(id, '🎧 再生できませんでした。'); }
+    });
+  }
   on($('rd-pocket'), 'click', function () {
     if (!rdCur) return;
     if (pk) { stopSpeak(); pkStatus(rdCur.id, ''); return; }
     if (!pkOk()) { $('rd-status').textContent = 'この端末では使えません。'; return; }
     gmUnlock();   // タップした瞬間に鳴らしておく（あとで再生できるように）
+    if (rdCur.d.lv && rdCur.d.cues) { pkVideo(rdCur.id); return; }
     var start = rdIdx >= 0 ? rdIdx : rdLastIdx >= 0 ? rdLastIdx : topSent();
     pkStart(rdCur.id, start > 0 ? start : 0);
   });
@@ -7411,7 +7440,7 @@
   });
   on($('rd-my'), 'click', function () { window.open(/OS [5-9]_\d.* like Mac OS X/.test(navigator.userAgent) ? '/kiku-memo/ipad.html' : '/kiku-memo/', '_blank'); });
   on($('rd-new'), 'click', function () { $('rd-in').value = ''; rdShowInput(); });
-  on($('rd-play'), 'click', function () { if (ytOn()) { ytToggle(); return; } if (pk && pkPaused) { pkResume(); return; } if (pk && rdSpeaking) { pkPause(); return; } if (rdSpeaking) stopSpeak(); else playFrom(rdIdx >= 0 ? rdIdx : rdLastIdx >= 0 && rdLastIdx < rdSents.length ? rdLastIdx : 0); });
+  on($('rd-play'), 'click', function () { if (pk && pkPaused) { pkResume(); return; } if (pk && rdSpeaking) { pkPause(); return; } if (ytOn()) { ytToggle(); return; } if (rdSpeaking) stopSpeak(); else playFrom(rdIdx >= 0 ? rdIdx : rdLastIdx >= 0 && rdLastIdx < rdSents.length ? rdLastIdx : 0); });
   on($('yt-go'), 'click', ytLoad);
   on($('yt-safari-btn'), 'click', function () { ytOpenOut(0); });
   on($('yt-loop'), 'click', function () { ytLoop = !ytLoop; ytLoopIdx = ytLoop ? rdIdx : -1; ytLoopLabel(); });
