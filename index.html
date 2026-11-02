@@ -5795,7 +5795,10 @@
     gotoSent(Math.max(0, Math.min(rdSents.length - 1, Math.round(f * (rdSents.length - 1)))));
   });
   function closeFlow() {
-    if (flOnly) setFlOnly(false); stopSpeak(); flOpen = false; $('rd-flow').className = 'hidden'; markSentence(-1); }
+    var k = -1; try { k = rdSpeaking && rdIdx >= 0 ? rdIdx : flTop(); } catch (e) {}
+    if (flOnly) setFlOnly(false); stopSpeak(); flOpen = false; $('rd-flow').className = 'hidden'; markSentence(-1);
+    if (k >= 0) { rdLastIdx = k; rdScrollTo(k); }   // 閉じたあとも、読んでいたところを表示（続きの場所もそこに）
+  }
   function fillVoices() { fillVoiceSel($('fl-voice')); fillVoiceSel($('rd-voice')); }
   function fillVoiceSel(sel) {
     var vs = enVoices();
@@ -6607,15 +6610,27 @@
     for (var i = 0; i < kids.length && i < rdSents.length; i++) { var r = kids[i].getBoundingClientRect ? kids[i].getBoundingClientRect() : null; if (r && r.bottom > top) return i; }
     return -1;
   }
+  // 「通しで聞く」の画面で、見えているいちばん上の文
+  function flTop() {
+    var top = flOnly ? 0 : Math.max($('rd-flow').getBoundingClientRect().top, $('fl-ctrl').getBoundingClientRect().bottom);
+    for (var i = 0; i < flEls.length; i++) { var r = flEls[i].getBoundingClientRect(); if (r.bottom > top + 4) return i; }
+    return -1;
+  }
+  // 英文の画面で、文 k が上のボタンのすぐ下に来るようにする
+  function rdScrollTo(k) {
+    var el = $('rd-text').childNodes[k]; if (!el) return;
+    try { $('rd-body').scrollTop += el.getBoundingClientRect().top - ($('rd-ctrl').getBoundingClientRect().bottom + 8); } catch (e) {}
+  }
   function lastSave() {
     if (!rdCur || !rdDocs[rdCur.id]) return;
     var t = -1; try { t = capNow(); } catch (e) {}
     // 読み上げ中はその文。そうでなければ、画面に見えているいちばん上の文（スクロールで読み進めた場所）
     var n = -1;
     if (rdSpeaking && rdIdx >= 0) n = rdIdx;
+    else if (flOpen) { try { n = flTop(); } catch (e3) {} }
     else { try { n = topSent(); } catch (e2) {} }
     if (n < 0) n = rdIdx >= 0 ? rdIdx : rdLastIdx;
-    lsSet(LAST_KEY, JSON.stringify({ id: rdCur.id, n: n, t: t > 0 ? Math.round(t * 10) / 10 : -1, at: now() }));
+    lsSet(LAST_KEY, JSON.stringify({ id: rdCur.id, n: n, t: t > 0 ? Math.round(t * 10) / 10 : -1, fl: flOpen ? 1 : 0, at: now() }));
   }
   function lastGet() { var v = null; try { v = JSON.parse(lsGet(LAST_KEY) || 'null'); } catch (e) {} return v && v.id && rdDocs[v.id] ? v : null; }
   function resumeShow() {
@@ -6628,10 +6643,11 @@
   }
   on($('rd-resume'), 'click', function () {
     var v = lastGet(); if (!v) return; useBump(v.id); rdShowAt(v.id, v.n, v.t, false);
-    // その文が、上のボタンのすぐ下に来るように（次に覚える場所がずれないように）
+    // その文が、上のボタンのすぐ下に来るように（次に覚える場所がずれないように）。「通しで聞く」で読んでいたなら、その画面で
     if (v.n >= 0) setTimeout(function () {
-      var el = $('rd-text').childNodes[v.n]; if (!rdCur || rdCur.id !== v.id || !el) return;
-      try { $('rd-body').scrollTop += el.getBoundingClientRect().top - ($('rd-ctrl').getBoundingClientRect().bottom + 8); } catch (e) {}
+      if (!rdCur || rdCur.id !== v.id) return;
+      rdScrollTo(v.n);
+      if (v.fl) { rdIdx = v.n; openFlow(); setTimeout(function () { var fe = flEls[v.n]; if (!fe) return; try { if (flOnly) window.scrollTo(0, Math.max(0, fe.offsetTop - 8)); else $('rd-flow').scrollTop += fe.getBoundingClientRect().top - ($('fl-ctrl').getBoundingClientRect().bottom + 8); } catch (e) {} }, 150); }
     }, 400);
   });
   setInterval(function () { if (rdCur && !document.hidden) lastSave(); }, 5000);
