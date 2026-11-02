@@ -6603,15 +6603,18 @@
   /* ---- 前回の続き：最後に見ていた英文・本・動画と、その場所を覚えておく（この端末） ---- */
   var LAST_KEY = 'eibun_last';
   function topSent() {
-    var kids = $('rd-text').childNodes, top = $('rd-body').getBoundingClientRect().top + 60;
+    var kids = $('rd-text').childNodes, top = Math.max($('rd-body').getBoundingClientRect().top, $('rd-ctrl').getBoundingClientRect().bottom) + 4;
     for (var i = 0; i < kids.length && i < rdSents.length; i++) { var r = kids[i].getBoundingClientRect ? kids[i].getBoundingClientRect() : null; if (r && r.bottom > top) return i; }
     return -1;
   }
   function lastSave() {
     if (!rdCur || !rdDocs[rdCur.id]) return;
     var t = -1; try { t = capNow(); } catch (e) {}
-    var n = rdIdx >= 0 ? rdIdx : rdLastIdx;
-    if (n < 0) { try { n = topSent(); } catch (e2) {} }
+    // 読み上げ中はその文。そうでなければ、画面に見えているいちばん上の文（スクロールで読み進めた場所）
+    var n = -1;
+    if (rdSpeaking && rdIdx >= 0) n = rdIdx;
+    else { try { n = topSent(); } catch (e2) {} }
+    if (n < 0) n = rdIdx >= 0 ? rdIdx : rdLastIdx;
     lsSet(LAST_KEY, JSON.stringify({ id: rdCur.id, n: n, t: t > 0 ? Math.round(t * 10) / 10 : -1, at: now() }));
   }
   function lastGet() { var v = null; try { v = JSON.parse(lsGet(LAST_KEY) || 'null'); } catch (e) {} return v && v.id && rdDocs[v.id] ? v : null; }
@@ -6623,7 +6626,14 @@
     b.textContent = '▶ 前回の続き：' + name.slice(0, 50) + ' ' + where;
     b.className = 'primary';
   }
-  on($('rd-resume'), 'click', function () { var v = lastGet(); if (!v) return; useBump(v.id); rdShowAt(v.id, v.n, v.t, false); });
+  on($('rd-resume'), 'click', function () {
+    var v = lastGet(); if (!v) return; useBump(v.id); rdShowAt(v.id, v.n, v.t, false);
+    // その文が、上のボタンのすぐ下に来るように（次に覚える場所がずれないように）
+    if (v.n >= 0) setTimeout(function () {
+      var el = $('rd-text').childNodes[v.n]; if (!rdCur || rdCur.id !== v.id || !el) return;
+      try { $('rd-body').scrollTop += el.getBoundingClientRect().top - ($('rd-ctrl').getBoundingClientRect().bottom + 8); } catch (e) {}
+    }, 400);
+  });
   setInterval(function () { if (rdCur && !document.hidden) lastSave(); }, 5000);
   document.addEventListener('visibilitychange', function () { if (document.hidden) lastSave(); });
   on(window, 'pagehide', lastSave);
