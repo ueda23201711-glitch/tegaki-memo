@@ -3631,7 +3631,7 @@
     } catch (e) {}
   }
   /* ---- 車で聞く（CarPlay・ロック画面の再生中の表示と、ボタンでの操作） ---- */
-  var msOn = !!(navigator.mediaSession && window.MediaMetadata), msSet = false;
+  var msOn = !!(navigator.mediaSession && window.MediaMetadata), msSet = false, msWas = false;   // msWas：この英文で読み上げを始めたことがある
   function msUpdate() {
     if (!msOn) return;
     try {
@@ -3640,21 +3640,23 @@
         navigator.mediaSession.metadata = new MediaMetadata({ title: t.slice(0, 80), artist: d.book ? (d.bookTitle || '') : '英文リーダー', album: '英文リーダー',
           artwork: [{ src: location.href.replace(/[#?].*$/, '').replace(/[^\/]*$/, '') + 'icons/icon-v2-512.png', sizes: '512x512', type: 'image/png' }] });
       }
-      navigator.mediaSession.playbackState = rdSpeaking ? 'playing' : 'paused';
+      if (rdSpeaking) msWas = true;
+      navigator.mediaSession.playbackState = rdSpeaking ? 'playing' : msWas ? 'paused' : 'none';
     } catch (e) {}
     if (msSet) return;
     msSet = true;
     var h = function (a, f) { try { navigator.mediaSession.setActionHandler(a, f); } catch (e) {} };
     var cur = function () { return rdIdx >= 0 ? rdIdx : rdLastIdx >= 0 && rdLastIdx < rdSents.length ? rdLastIdx : 0; };
-    var pauseKeep = function () { var k = cur(); stopSpeak(); rdIdx = k; if (!flOpen) markSentence(k); rdIdx = k; playLabel(); };
+    // 読み上げていないとき・単語を見ているときの合図は受けない（単語の発音で iPhone が「一時停止」などを送ってくるため）
+    var pauseKeep = function () { if (wordBusy() || !rdSpeaking) return; var k = cur(); stopSpeak(); rdIdx = k; if (!flOpen) markSentence(k); rdIdx = k; playLabel(); };
     // 単語の発音（端末の声）を鳴らすと、iPhone が「再生」の合図を送ってくることがある：単語を見ている間は受けない
-    h('play', function () { if (wordBusy()) return; if (rdCur && !rdSpeaking) playFrom(cur()); });
+    h('play', function () { if (wordBusy() || !msWas) return; if (rdCur && !rdSpeaking) playFrom(cur()); });
     h('pause', pauseKeep);
     h('stop', pauseKeep);
-    h('nexttrack', function () { if (rdCur) playFrom(Math.min(rdSents.length - 1, cur() + 1)); });
-    h('previoustrack', function () { if (rdCur) playFrom(Math.max(0, cur() - 1)); });
-    h('seekforward', function () { if (rdCur) playFrom(Math.min(rdSents.length - 1, cur() + 1)); });
-    h('seekbackward', function () { if (rdCur) playFrom(cur()); });   // 今の文をもう一度
+    h('nexttrack', function () { if (wordBusy()) return; if (rdCur) playFrom(Math.min(rdSents.length - 1, cur() + 1)); });
+    h('previoustrack', function () { if (wordBusy()) return; if (rdCur) playFrom(Math.max(0, cur() - 1)); });
+    h('seekforward', function () { if (wordBusy()) return; if (rdCur) playFrom(Math.min(rdSents.length - 1, cur() + 1)); });
+    h('seekbackward', function () { if (wordBusy()) return; if (rdCur) playFrom(cur()); });   // 今の文をもう一度
   }
   // 本：章の終わりまで聞いたら、次の章へ（オン・オフは下のバーで）
   var autoNext = lsGet('memo_autonext') !== '0';
@@ -6790,7 +6792,7 @@
     rdSents = [];
     each(list, function (t) { rdSents.push({ text: t, toks: tokenize(t), idioms: [] }); });
     renderRd(); showDocTitle(); cvBox(); cvLoad();
-    $('rd-body').scrollTop = 0; rdIdx = -1; rdLastIdx = -1; wordResume = -1;
+    $('rd-body').scrollTop = 0; rdIdx = -1; rdLastIdx = -1; wordResume = -1; msWas = false;
     if (typeof d.bm === 'number' && d.bm > 0 && d.bm < rdSents.length) setTimeout(function () { if (rdCur && rdCur.id === id) $('rd-status').textContent = '🔖 しおりがあります（' + pctOf(d.bm, rdSents.length) + '%）。下の「↩ しおりへ」で続きから読めます。'; }, 0);
     progSoon();
     if ((d.yt || d.lv) && d.cues) ytOpen(d); else ytClose();
