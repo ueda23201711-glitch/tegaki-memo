@@ -3688,6 +3688,7 @@
     if (!rdSents.length) return;
     stopSpeak();
     rdSpeaking = true; playLabel(); keepAwake(true);
+    if (useGemini() && txtLoop()) { gmPlayFrom(ytLoopIdx, true); return; }   // 1文くり返し：その文だけをくり返す
     if (useGemini() && !hardOnly) { gmPlayFrom(i); return; }   // 印の文だけのときは、1 文ずつ飛ばせる端末の声で
     devicePlay(i);
   }
@@ -3695,6 +3696,7 @@
     var gen = ++playGen;
     var step = function (k) {
       if (!rdSpeaking || gen !== playGen) return;
+      if (txtLoop()) k = ytLoopIdx;   // 1文くり返し
       if (abB >= 0 && (k > abB || k < abA)) k = abA;   // A-B リピート
       if (hardOnly) { var hk = nextHard(k); if (hk < 0) { stopSpeak(); playLabel(); return; } k = hk; }   // 印の文だけ（最後まで行ったら最初の印へ）
       if (k >= rdSents.length) { rdIdx = 0; stopSpeak(); rdLastIdx = -1; if (flOpen) markSentence(-1); playLabel(); nextChapterGo(); return; }
@@ -4011,7 +4013,8 @@
     gmUnlock(); gmNote('');
     var step = function (c) {
       if (gen !== playGen || !rdSpeaking) return;
-      if (c >= chunks.length) { if (!one && abB >= 0) { gmPlayFrom(abA); return; } rdIdx = 0; stopSpeak(); rdLastIdx = -1; if (flOpen) markSentence(-1); playLabel(); if (!one) nextChapterGo(); return; }
+      if (c >= chunks.length) { if (!one && abB >= 0) { gmPlayFrom(abA); return; }
+        if (one && txtLoop() && !gmOne0) { setTimeout(function () { if (gen === playGen && rdSpeaking && txtLoop()) gmPlayFrom(ytLoopIdx, true); }, 400); return; } rdIdx = 0; stopSpeak(); rdLastIdx = -1; if (flOpen) markSentence(-1); playLabel(); if (!one) nextChapterGo(); return; }
       var ch = chunks[c], st0 = c === 0 ? ch.from : ch.a;
       markSentence(st0);
       var ready = !!gmCache[gmVoice() + '|' + ch.text];
@@ -5707,7 +5710,9 @@
     var map = { '0.6': 0.5, '0.75': 0.75, '0.9': 1, '1': 1.25, '1.15': 1.5 };
     try { ytPlayer.setPlaybackRate(map[String(rdRate)] || 1); } catch (e) {}
   }
-  function ytLoopLabel() { $('yt-loop').textContent = ytLoop ? '🔂 1文くり返し：オン' : '🔂 1文くり返し：オフ'; $('yt-loop').className = ytOn() ? (ytLoop ? 'primary' : '') : 'hidden'; }
+  // 本・英文（動画なし）でも使う：読み上げ・ポケットで、その文だけをくり返す
+  function txtLoop() { return ytLoop && ytLoopIdx >= 0 && !ytOn(); }
+  function ytLoopLabel() { var show = ytOn() || !!(rdCur && !rdCur.d.yt && !rdCur.d.lv); $('yt-loop').textContent = ytLoop ? '🔂 1文くり返し：オン' + (!ytOn() && ytLoopIdx >= 0 ? '（' + (ytLoopIdx + 1) + ' 文目）' : '') : '🔂 1文くり返し：オフ'; $('yt-loop').className = show ? (ytLoop ? 'primary' : '') : 'hidden'; }
   // 再生している場所に合わせてセリフを光らせる（くり返しのときは戻す）
   function ytTick() {
     if (!ytOn() || !ytPlayer || !ytReady) return;
@@ -7088,6 +7093,7 @@
     each(list, function (t) { rdSents.push({ text: t, toks: tokenize(t), idioms: [] }); });
     renderRd(); showDocTitle(); cvBox(); cvLoad();
     $('rd-body').scrollTop = 0; rdIdx = -1; rdLastIdx = -1; wordResume = -1; msWas = false;
+    ytLoop = false; ytLoopIdx = -1; setTimeout(ytLoopLabel, 0);
     if (typeof d.bm === 'number' && d.bm > 0 && d.bm < rdSents.length) setTimeout(function () { if (rdCur && rdCur.id === id) $('rd-status').textContent = '🔖 しおりがあります（' + pctOf(d.bm, rdSents.length) + '%）。下の「↩ しおりへ」で続きから読めます。'; }, 0);
     progSoon();
     if ((d.yt || d.lv) && d.cues) ytOpen(d); else ytClose();
@@ -7183,7 +7189,9 @@
   }
   var rdCont = lsGet('memo_rd_cont') === '1';
   function contLabel() { $('rd-cont').textContent = rdCont ? '🔁 続けて：オン' : '🔁 続けて：オフ'; $('rd-cont').className = rdCont ? 'primary' : ''; }
+  var gmOne0 = false;   // 🔊 で1文だけ（くり返さない）
   function playOne(si) {
+    if (txtLoop()) { ytLoopIdx = si; ytLoopLabel(); playFrom(si); return; }   // 1文くり返し中：その文に変えてくり返す
     if (rdCont) { playFrom(si); return; }   // 「続けて」がオンなら、その文から最後まで
     stopSpeak(); markSentence(si);
     if (useGemini()) { rdSpeaking = true; playLabel(); gmPlayFrom(si, true); return; }
@@ -7481,7 +7489,16 @@
   on($('rd-play'), 'click', function () { if (pk && pkPaused) { pkResume(); return; } if (pk && rdSpeaking) { pkPause(); return; } if (ytOn()) { ytToggle(); return; } if (rdSpeaking) stopSpeak(); else playFrom(rdIdx >= 0 ? rdIdx : rdLastIdx >= 0 && rdLastIdx < rdSents.length ? rdLastIdx : 0); });
   on($('yt-go'), 'click', ytLoad);
   on($('yt-safari-btn'), 'click', function () { ytOpenOut(0); });
-  on($('yt-loop'), 'click', function () { ytLoop = !ytLoop; ytLoopIdx = ytLoop ? rdIdx : -1; ytLoopLabel(); });
+  on($('yt-loop'), 'click', function () {
+    ytLoop = !ytLoop;
+    var k = rdIdx >= 0 ? rdIdx : -1;
+    if (ytLoop && k < 0 && !ytOn()) { k = rdLastIdx >= 0 ? rdLastIdx : topSent(); if (k < 0) k = 0; }
+    ytLoopIdx = ytLoop ? k : -1; ytLoopLabel();
+    if (ytOn()) return;
+    if (pk) { if (ytLoop) { try { gmAudio.currentTime = pk.sentT[k]; } catch (e) {} pkHere(k); } return; }   // ポケット：再生しながらくり返す
+    if (ytLoop) { markSentence(k); $('rd-status').textContent = '🔂 ' + (k + 1) + ' 文目をくり返します。ほかの文の 🔊 を押すと、その文に変わります。'; if (rdSpeaking) playFrom(k); }
+    else if (rdSpeaking) { var c = rdIdx; playFrom(c >= 0 ? c : 0); }
+  });
   on(window, 'resize', function () { if (ytOn()) ytSize(); });
   on($('rd-flowbtn'), 'click', openFlow);
   on($('rd-make'), 'click', makeAll);
