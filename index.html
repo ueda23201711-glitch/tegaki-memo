@@ -6660,14 +6660,7 @@
     var del = document.createElement('button'); del.type = 'button'; del.textContent = '削除'; del.className = 'danger';
     on(del, 'click', function (e) { e.stopPropagation(); if (!window.confirm('「' + d0.bookTitle + '」（' + chs.length + ' 章）を削除しますか？')) return; delDocs(chs); renderRdHistory(); });
     var ren = document.createElement('button'); ren.type = 'button'; ren.textContent = '✎'; ren.title = '本の題名を直す'; ren.className = 'rd-ren';
-    on(ren, 'click', function (e) {
-      e.stopPropagation();
-      var t = window.prompt('本の題名', d0.bookTitle || ''); if (t === null) return;
-      t = t.replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '').slice(0, 80); if (!t) return;
-      var up = {};
-      each(chs, function (c) { var x = rdDocs[c]; x.bookTitle = t; x.title = '📚 ' + t + ' — ' + (x.chTitle || ''); up['reader/' + c + '/bookTitle'] = t; up['reader/' + c + '/title'] = x.title; });
-      rdSaveLocal(); if (KEY) api('PATCH', '', up, function () {}); renderRdHistory();
-    });
+    on(ren, 'click', function (e) { e.stopPropagation(); renameBook(bk); });
     var bf = bookFav(bk), fv = document.createElement('button'); fv.type = 'button'; fv.className = 'rd-fav' + (bf ? ' on' : ''); fv.textContent = favStr(bf); fv.title = '本の好み（押すたびに ★1→★2→★3→なし）';
     on(fv, 'click', function (e) { e.stopPropagation(); var n = (bookFav(bk) + 1) % 4; setBookFav(bk, n); fv.textContent = favStr(n); fv.className = 'rd-fav' + (n ? ' on' : ''); if (lsGet(SORT_KEY) === 'fav') renderRdHistory(); });
     // 1 行目は題名だけ、2 行目の左に日付・しおり、右に ★・続きから・✎・削除（英文の行と同じ並び）
@@ -7046,9 +7039,21 @@
     showDocTitle();
   }
   on($('rd-src-ed'), 'click', editSrcUrl);
+  // 本の題名を直す：すべての章と一覧の題名をまとめて変える（端末とクラウドの両方）
+  function renameBook(bk) {
+    var chs = bookChapters(bk); if (!chs.length) return;
+    var d0 = rdDocs[chs[0]];
+    var t = window.prompt('本の題名（すべての章と一覧の題名が変わります）', d0.bookTitle || ''); if (t === null) return;
+    t = t.replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '').slice(0, 80); if (!t) return;
+    var up = {};
+    each(chs, function (c) { var x = rdDocs[c]; x.bookTitle = t; x.title = '📚 ' + t + ' — ' + (x.chTitle || ('パート ' + x.ch + '/' + chs.length)); x.named = 1; up['reader/' + c + '/bookTitle'] = t; up['reader/' + c + '/title'] = x.title; up['reader/' + c + '/named'] = 1; });
+    rdSaveLocal(); if (KEY) api('PATCH', '', up, function () {});
+    if (rdCur) { showDocTitle(); try { progUpdate(); msUpdate(); } catch (e) {} } else renderRdHistory();
+  }
   // 題名を直す（端末とクラウドの両方）
   function renameDoc(id) {
     var d = rdDocs[id]; if (!d) return;
+    if (d.book) { renameBook(d.book); return; }   // 本の章：本の題名として、すべての章と一覧に
     var mark = /^(🌐|🎬) /.exec(d.title || ''), cur = String(d.title || '').replace(/^(🌐|🎬) /, '');
     var t = window.prompt('この英文の題名', cur);
     if (t === null) return;
