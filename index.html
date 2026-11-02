@@ -640,6 +640,7 @@
         <button id="lv-save" class="hidden" type="button" title="ドライブの動画をこの端末に取り込んで、次からすぐ見られるようにする">⬇ この端末に取り込む</button>
         <button id="rd-cont" type="button" title="🔊 で読んだあと、次の文も続けて読む">🔁 続けて：オフ</button>
         <button id="rd-flowbtn" type="button">📖 通しで聞く</button>
+        <button id="rd-pocket" class="hidden" type="button" title="AI の声を章ごとに1本の音声にして再生します。画面を消しても、ポケットの中でも章の終わりまで流れます（次の章へも続きます）">🎧 ポケットで聞く</button>
         <button id="rd-make" class="hidden" type="button" title="この英文の AI の声を先に作ってドライブに保存しておく">🎙 AIの声を作って保存</button>
         <select id="rd-rate" title="速さ">
           <option value="0.6">ゆっくり</option><option value="0.75">やや遅く</option><option value="0.9">ふつう</option><option value="1">少し速く</option><option value="1.15">速く</option>
@@ -3649,15 +3650,15 @@
     var h = function (a, f) { try { navigator.mediaSession.setActionHandler(a, f); } catch (e) {} };
     var cur = function () { return rdIdx >= 0 ? rdIdx : rdLastIdx >= 0 && rdLastIdx < rdSents.length ? rdLastIdx : 0; };
     // 読み上げていないとき・単語を見ているときの合図は受けない（単語の発音で iPhone が「一時停止」などを送ってくるため）
-    var pauseKeep = function () { if (wordBusy() || !rdSpeaking) return; var k = cur(); stopSpeak(); rdIdx = k; if (!flOpen) markSentence(k); rdIdx = k; playLabel(); };
+    var pauseKeep = function () { if (wordBusy() || !rdSpeaking) return; if (pk) { pkPause(); return; } var k = cur(); stopSpeak(); rdIdx = k; if (!flOpen) markSentence(k); rdIdx = k; playLabel(); };
     // 単語の発音（端末の声）を鳴らすと、iPhone が「再生」の合図を送ってくることがある：単語を見ている間は受けない
-    h('play', function () { if (wordBusy() || !msWas) return; if (rdCur && !rdSpeaking) playFrom(cur()); });
+    h('play', function () { if (wordBusy() || !msWas) return; if (pk && pkPaused) { pkResume(); return; } if (rdCur && !rdSpeaking) playFrom(cur()); });
     h('pause', pauseKeep);
     h('stop', pauseKeep);
-    h('nexttrack', function () { if (wordBusy()) return; if (rdCur) playFrom(Math.min(rdSents.length - 1, cur() + 1)); });
-    h('previoustrack', function () { if (wordBusy()) return; if (rdCur) playFrom(Math.max(0, cur() - 1)); });
-    h('seekforward', function () { if (wordBusy()) return; if (rdCur) playFrom(Math.min(rdSents.length - 1, cur() + 1)); });
-    h('seekbackward', function () { if (wordBusy()) return; if (rdCur) playFrom(cur()); });   // 今の文をもう一度
+    h('nexttrack', function () { if (wordBusy()) return; if (pk) { pkSeekSent(cur() + 1); return; } if (rdCur) playFrom(Math.min(rdSents.length - 1, cur() + 1)); });
+    h('previoustrack', function () { if (wordBusy()) return; if (pk) { pkSeekSent(cur() - 1); return; } if (rdCur) playFrom(Math.max(0, cur() - 1)); });
+    h('seekforward', function () { if (wordBusy()) return; if (pk) { pkSeekSent(cur() + 1); return; } if (rdCur) playFrom(Math.min(rdSents.length - 1, cur() + 1)); });
+    h('seekbackward', function () { if (wordBusy()) return; if (pk) { pkSeekSent(cur()); return; } if (rdCur) playFrom(cur()); });   // 今の文をもう一度
   }
   // 本：章の終わりまで聞いたら、次の章へ（オン・オフは下のバーで）
   var autoNext = lsGet('memo_autonext') !== '0';
@@ -3676,7 +3677,7 @@
     $('fl-play').textContent = rdSpeaking ? '■ 停止' : (rdIdx > 0 ? '▶ 続きから' : '▶ 最初から');
   }
   function stopSpeak() {
-    rdSpeaking = false; rdQueue = []; playGen++; gmStop();
+    rdSpeaking = false; rdQueue = []; playGen++; gmStop(); pk = null; pkPaused = false; pkLabel();
     if (!flOpen) markSentence(-1);
     try { speechSynthesis.cancel(); } catch (e) {}
     keepAwake(false); playLabel();
@@ -4052,6 +4053,164 @@
     step(0);
   }
 
+  /* ---- 🎧 ポケットで聞く：AI の声のまとまりをつなげて、章ごとに1本の音声にして再生する
+     1本の音声なら、画面を消しても iPhone は止めない（まとまりごとに次を読み込む処理が要らない）。
+     Azure（MP3）はそのままつなげる。Gemini（WAV）・iPhone の声（M4A）は、いったん音にほどいて 16kHz の WAV にする。
+     文の位置は、まとまりの長さを文字数で割って見積もる（画面をつけたとき、今の文を光らせる）。
+     章の終わりで、次の章（先に作っておく）へそのまま続ける ---- */
+  var pk = null, pkPaused = false, pkCache = {}, pkGen = 0, pkCtx = null;
+  function pkOk() { return !!((window.AudioContext || window.webkitAudioContext) && window.Blob && window.URL && URL.createObjectURL && window.Uint8Array && window.DataView); }
+  function pkLabel() {
+    var b = $('rd-pocket'); if (!b) return;
+    b.className = gasUrl && /^gm:/.test(rdVoiceName) && rdCur && !(rdCur.d.cues && (rdCur.d.yt || rdCur.d.lv)) ? (pk ? 'primary' : '') : 'hidden';
+    b.textContent = pk ? (pkPaused ? '🎧 ポケット：一時停止中（■ やめる）' : '🎧 ポケットで再生中（■ やめる）') : '🎧 ポケットで聞く';
+  }
+  function pkAC() { if (!pkCtx) { var C = window.AudioContext || window.webkitAudioContext; pkCtx = new C(); } return pkCtx; }
+  function pkBytes(src, cb) {
+    if (/^data:/.test(src)) { try { var bin = atob(src.slice(src.indexOf(',') + 1)), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); cb(u.buffer); } catch (e) { cb(null); } return; }
+    var x = new XMLHttpRequest();
+    try { x.open('GET', src, true); x.responseType = 'arraybuffer'; } catch (e2) { cb(null); return; }
+    x.onload = function () { cb(x.response || null); }; x.onerror = function () { cb(null); };
+    x.send();
+  }
+  function pkDecode(buf, cb) {
+    var done = false, fin = function (ab) { if (done) return; done = true; cb(ab || null); };
+    try { var pr = pkAC().decodeAudioData(buf.slice(0), function (ab) { fin(ab); }, function () { fin(null); }); if (pr && pr.then) pr.then(fin, function () { fin(null); }); } catch (e) { fin(null); }
+  }
+  function pkStripId3(u8) {
+    if (u8.length > 10 && u8[0] === 0x49 && u8[1] === 0x44 && u8[2] === 0x33) { var sz = ((u8[6] & 127) << 21) | ((u8[7] & 127) << 14) | ((u8[8] & 127) << 7) | (u8[9] & 127); return u8.subarray(10 + sz); }
+    return u8;
+  }
+  var PK_RATE = 16000;
+  function pkResample(ab) {
+    var src = ab.getChannelData(0), r = ab.sampleRate / PK_RATE, n = Math.floor(src.length / r), out = new Float32Array(n);
+    for (var i = 0; i < n; i++) { var x = i * r, k = Math.floor(x), f = x - k; out[i] = src[k] * (1 - f) + (k + 1 < src.length ? src[k + 1] : 0) * f; }
+    return out;
+  }
+  function pkWav(pcms) {
+    var n = 0; each(pcms, function (q) { n += q.length; });
+    var buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf), o = 0;
+    var ws = function (t) { for (var i = 0; i < t.length; i++) v.setUint8(o++, t.charCodeAt(i)); };
+    var u32 = function (x) { v.setUint32(o, x, true); o += 4; }, u16 = function (x) { v.setUint16(o, x, true); o += 2; };
+    ws('RIFF'); u32(36 + n * 2); ws('WAVE'); ws('fmt '); u32(16); u16(1); u16(1); u32(PK_RATE); u32(PK_RATE * 2); u16(2); u16(16); ws('data'); u32(n * 2);
+    var i16 = new Int16Array(buf, 44, n), j = 0;
+    each(pcms, function (q) { for (var i = 0; i < q.length; i++) { var x = q[i]; i16[j++] = x <= -1 ? -32768 : x >= 1 ? 32767 : (x < 0 ? x * 32768 : x * 32767); } });
+    return new Blob([buf], { type: 'audio/wav' });
+  }
+  // 英文 id の声 voice を1本にする。prog(i, n)。cb({url, sentT, dur} | null, エラー)
+  function pkBuild(id, voice, prog, cb) {
+    var d = rdDocs[id]; if (!d) { cb(null, 'nodoc'); return; }
+    var sents = docSents(d), chunks = [], k = 0;
+    while (k < sents.length) {
+      var a = k, len = 0, t = [];
+      while (k < sents.length && (k === a || (len + sents[k].length <= 600 && k - a < 8))) { len += sents[k].length + 1; t.push(sents[k]); k++; }
+      chunks.push({ a: a, b: k - 1, text: t.join(' ') });
+    }
+    var mp3 = isAz(voice), parts = [], durs = [], i = 0;
+    var next = function () {
+      if (i >= chunks.length) { fin(); return; }
+      if (prog) prog(i, chunks.length);
+      var ch = chunks[i];
+      gmFetch(ch.text, function (r) {
+        if (!r || r.err) { cb(null, r && r.err ? r.err : 'error'); return; }
+        pkBytes(r.src, function (buf) {
+          if (!buf) { cb(null, 'read'); return; }
+          pkDecode(buf, function (ab) {
+            if (!ab) { cb(null, 'decode'); return; }
+            durs.push(ab.duration);
+            parts.push(mp3 ? pkStripId3(new Uint8Array(buf)) : pkResample(ab));
+            i++; setTimeout(next, 0);
+          });
+        });
+      }, false, voice);
+    };
+    var fin = function () {
+      var blob = null;
+      try { blob = mp3 ? new Blob(parts, { type: 'audio/mpeg' }) : pkWav(parts); } catch (e) { cb(null, 'blob'); return; }
+      var sentT = [], T = 0;
+      each(chunks, function (ch, ci) {
+        var acc = 0;
+        for (var q = ch.a; q <= ch.b; q++) { sentT[q] = T + durs[ci] * acc / ch.text.length; acc += sents[q].length + 1; }
+        T += durs[ci];
+      });
+      cb({ url: URL.createObjectURL(blob), sentT: sentT, dur: T }, null);
+    };
+    next();
+  }
+  // 作った音声は、今の章と次の章の2つだけ覚えておく（メモリを使いすぎないように）
+  function pkKeep(keys) {
+    for (var k in pkCache) if (pkCache.hasOwnProperty(k) && keys.indexOf(k) < 0) { try { URL.revokeObjectURL(pkCache[k].url); } catch (e) {} delete pkCache[k]; }
+  }
+  function pkNextId(id) {
+    var d = rdDocs[id]; if (!autoNext || !d || !d.book) return null;
+    var c = bookChapters(d.book), k = c.indexOf(id);
+    return k >= 0 && k < c.length - 1 ? c[k + 1] : null;
+  }
+  function pkStatus(id, t) { if (rdCur && rdCur.id === id) $('rd-status').textContent = t; }
+  function pkStart(id, start) {
+    var voice = gmVoice(), key = id + '|' + voice;
+    if (pkCache[key]) { pkPlay(id, start); return; }
+    var my = ++pkGen;
+    pkStatus(id, '🎧 ポケットで聞く準備をしています…');
+    pkBuild(id, voice, function (i, n) { if (my === pkGen) pkStatus(id, '🎧 ポケットで聞く準備をしています… ' + i + ' / ' + n + '（まだない声は AI が作ります）'); }, function (P, err) {
+      if (my !== pkGen) return;
+      if (!P) { pkStatus(id, '🎧 準備できませんでした（' + gmErrText(err) + '）。'); return; }
+      pkCache[key] = P;
+      if (rdCur && rdCur.id === id) pkPlay(id, start);
+    });
+  }
+  function pkPlay(id, start) {
+    var voice = gmVoice(), key = id + '|' + voice, P = pkCache[key]; if (!P || !gmAudio) return;
+    stopSpeak();
+    pk = P; pk.id = id; pkPaused = false; rdSpeaking = true; msWas = true; playLabel(); pkLabel();
+    var au = gmAudio, seeked = !(start > 0);
+    var seekNow = function () { if (seeked) return; var d = au.duration; if (!d || !isFinite(d)) return; seeked = true; try { au.currentTime = Math.max(0, (P.sentT[start] || 0) - 0.2); } catch (e) {} au.muted = false; };
+    au.muted = !seeked;
+    au.onloadedmetadata = seekNow;
+    au.ontimeupdate = function () {
+      if (pk !== P) return;
+      if (!seeked) { seekNow(); return; }
+      var t = au.currentTime + 0.05, k = 0, st = P.sentT;
+      for (var q = 0; q < st.length; q++) { if (st[q] <= t) k = q; else break; }
+      if (k !== rdIdx && !document.hidden && rdCur && rdCur.id === id) markSentence(k);
+      else if (document.hidden) rdIdx = k;
+    };
+    au.onended = function () { if (pk === P) pkEnded(id); };
+    au.onerror = function () { if (pk === P) { stopSpeak(); pkStatus(id, '🎧 この端末で再生できませんでした。'); } };
+    au.src = P.url; gmRate();
+    try { au.load(); } catch (e) {}
+    gmRate();
+    var pr = au.play(); if (pr && pr['catch']) pr['catch'](function () { if (pk === P) { pkPaused = true; rdSpeaking = false; playLabel(); pkLabel(); pkStatus(id, '🎧 準備できました。▶ 再生 を押してください。'); } });
+    pkStatus(id, '🎧 ポケットで再生中：画面を消しても、章の終わりまで流れます' + (pkNextId(id) ? '（次の章へも続きます）' : '') + '。');
+    // 次の章を先に作っておく
+    var nid = pkNextId(id), keep = [key];
+    if (nid) {
+      var nk = nid + '|' + voice; keep.push(nk);
+      if (!pkCache[nk]) pkBuild(nid, voice, null, function (P2) { if (P2) pkCache[nk] = P2; });
+    }
+    pkKeep(keep);
+  }
+  function pkEnded(id) {
+    var voice = gmVoice(), nid = pkNextId(id);
+    if (nid) {
+      openChapter(nid, -1);
+      if (pkCache[nid + '|' + voice]) pkPlay(nid, 0); else pkStart(nid, 0);
+      return;
+    }
+    stopSpeak(); rdLastIdx = -1; pkStatus(id, '🎧 最後まで聞きました。');
+  }
+  function pkPause() { if (!pk) return; try { gmAudio.pause(); } catch (e) {} pkPaused = true; rdSpeaking = false; playLabel(); pkLabel(); }
+  function pkResume() { if (!pk) return; pkPaused = false; rdSpeaking = true; var pr = gmAudio.play(); if (pr && pr['catch']) pr['catch'](function () {}); playLabel(); pkLabel(); }
+  function pkSeekSent(k) { if (!pk) return; k = Math.max(0, Math.min(pk.sentT.length - 1, k)); try { gmAudio.currentTime = pk.sentT[k]; } catch (e) {} rdIdx = k; if (!document.hidden) markSentence(k); }
+  on($('rd-pocket'), 'click', function () {
+    if (!rdCur) return;
+    if (pk) { stopSpeak(); pkStatus(rdCur.id, ''); return; }
+    if (!pkOk()) { $('rd-status').textContent = 'この端末では使えません。'; return; }
+    gmUnlock();   // タップした瞬間に鳴らしておく（あとで再生できるように）
+    var start = rdIdx >= 0 ? rdIdx : rdLastIdx >= 0 ? rdLastIdx : topSent();
+    pkStart(rdCur.id, start > 0 ? start : 0);
+  });
+
   /* ---- この英文の AI の声を先に全部作って保存しておく（1分3回・1日の回数の範囲で） ---- */
   /* ---- AIの声を作って保存（英文ごとの作業。ほかの英文を開いても続ける） ---- */
   var mkRun = 0, mkJob = null, mkQueue = [];   // mkJob = {id, title, voice, chunks, i, made, had, netTry, run}
@@ -4079,6 +4238,7 @@
   }
   function makeButton() {
     $('rd-make').className = gasUrl && /^gm:/.test(rdVoiceName) ? '' : 'hidden';
+    pkLabel();
     var b = $('rd-make'), here = rdCur && mkJob && mkJob.id === rdCur.id, waiting = rdCur && inQueue(rdCur.id);
     if (here) { b.textContent = '■ 作るのを止める（' + mkJob.i + ' / ' + mkJob.chunks.length + '）'; b.title = ''; }
     else if (mkJob || waiting) { b.textContent = waiting ? '🎙 順番待ち → こちらを先に' : '🎙 こちらを優先して作る'; b.title = '「' + (mkJob ? docTitle(mkJob.id) : '') + '」の声づくりを一時停止して、この英文を先に作ります（終わったら元の作業を再開）'; }
@@ -6970,6 +7130,7 @@
   // 単語を見るとき：読み上げを止める（続きの場所は覚えておく）。止めた直後に話すと頭が切れるので、少しあけて発音
   function pauseForWord() {
     wordAt = now();
+    if (pk) { var wp = !pkPaused; pkPause(); wordResume = -1; return wp; }   // ポケットで聞いているとき：一時停止（続きはそのまま）
     var was = rdSpeaking || (gmAudio && !gmAudio.paused);
     if (rdSpeaking) wordResume = rdIdx >= 0 ? rdIdx : rdLastIdx;
     rdSpeaking = false; playGen++; rdQueue = []; gmStop();
@@ -6982,7 +7143,8 @@
     var s = rdSents[si], t = s.toks[ti];
     var was = pauseForWord();
     if (!(flOpen && flPlayAt >= 0) && !ytOn() && wordResume >= 0 && was) $('pop-play').textContent = '▶ 続きから再生';
-    $('pop-play').className = (flOpen && flPlayAt >= 0) || (!ytOn() && wordResume >= 0 && was) ? '' : 'hidden';
+    if (pk && was) $('pop-play').textContent = '▶ 続きから再生';
+    $('pop-play').className = (flOpen && flPlayAt >= 0) || (!ytOn() && (wordResume >= 0 || pk) && was) ? '' : 'hidden';
     sayWord(t.w, was);
     $('pop-head').textContent = t.w;
     $('pop-sub').textContent = '';
@@ -7249,7 +7411,7 @@
   });
   on($('rd-my'), 'click', function () { window.open(/OS [5-9]_\d.* like Mac OS X/.test(navigator.userAgent) ? '/kiku-memo/ipad.html' : '/kiku-memo/', '_blank'); });
   on($('rd-new'), 'click', function () { $('rd-in').value = ''; rdShowInput(); });
-  on($('rd-play'), 'click', function () { if (ytOn()) { ytToggle(); return; } if (rdSpeaking) stopSpeak(); else playFrom(rdIdx >= 0 ? rdIdx : rdLastIdx >= 0 && rdLastIdx < rdSents.length ? rdLastIdx : 0); });
+  on($('rd-play'), 'click', function () { if (ytOn()) { ytToggle(); return; } if (pk && pkPaused) { pkResume(); return; } if (pk && rdSpeaking) { pkPause(); return; } if (rdSpeaking) stopSpeak(); else playFrom(rdIdx >= 0 ? rdIdx : rdLastIdx >= 0 && rdLastIdx < rdSents.length ? rdLastIdx : 0); });
   on($('yt-go'), 'click', ytLoad);
   on($('yt-safari-btn'), 'click', function () { ytOpenOut(0); });
   on($('yt-loop'), 'click', function () { ytLoop = !ytLoop; ytLoopIdx = ytLoop ? rdIdx : -1; ytLoopLabel(); });
@@ -7258,7 +7420,7 @@
   on($('rd-make'), 'click', makeAll);
   on($('rd-cont'), 'click', function () { rdCont = !rdCont; lsSet('memo_rd_cont', rdCont ? '1' : '0'); contLabel(); });
   contLabel();
-  on($('pop-play'), 'click', function () { $('word-pop').className = 'hidden'; wordAt = 0; if (flOpen && flPlayAt >= 0) playFrom(flPlayAt); else if (ytOn() && ytPlayer && ytPlayer.playVideo) ytPlayer.playVideo(); else if (wordResume >= 0 && wordResume < rdSents.length) { var k = wordResume; wordResume = -1; playFrom(k); } });
+  on($('pop-play'), 'click', function () { $('word-pop').className = 'hidden'; wordAt = 0; if (pk && pkPaused) { pkResume(); return; } if (flOpen && flPlayAt >= 0) playFrom(flPlayAt); else if (ytOn() && ytPlayer && ytPlayer.playVideo) ytPlayer.playVideo(); else if (wordResume >= 0 && wordResume < rdSents.length) { var k = wordResume; wordResume = -1; playFrom(k); } });
   on($('fl-close'), 'click', closeFlow);
   on($('fl-only'), 'click', function () { stopSpeak(); setFlOnly(true); });
   on($('fl-exit'), 'click', function () { setFlOnly(false); });
