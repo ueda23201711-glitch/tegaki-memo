@@ -637,6 +637,7 @@
         <button id="rd-ep" class="hidden" type="button" title="字幕プレイヤーで、画面いっぱいに大きな英日字幕で見る（今の場面から）">🎬 字幕プレイヤーで見る</button>
         <button id="rd-ab" type="button" title="1回目に押した文（A）から2回目に押した文（B）までをくり返す">🅰🅱 A-B リピート</button>
         <button id="rd-hardonly" class="hidden" type="button" title="❓ の印を付けた文だけを、続けて再生・読み上げする">❓ 印の文だけ：オフ</button>
+        <button id="rd-hardclr" class="hidden" type="button" title="この英文（本ならこの章）の ❓ の印をすべて外す">❓✕ 印を全部外す</button>
         <button id="lv-save" class="hidden" type="button" title="ドライブの動画をこの端末に取り込んで、次からすぐ見られるようにする">⬇ この端末に取り込む</button>
         <button id="rd-cont" type="button" title="🔊 で読んだあと、次の文も続けて読む">🔁 続けて：オフ</button>
         <button id="rd-flowbtn" type="button">📖 通しで聞く</button>
@@ -3761,6 +3762,7 @@
     if (!n && hardOnly) hardOnly = false;
     b.className = n ? (hardOnly ? 'primary' : '') : 'hidden';
     b.textContent = '❓ 印の文だけ（' + n + '）：' + (hardOnly ? 'オン' : 'オフ');
+    var c = $('rd-hardclr'); if (c) c.className = n ? '' : 'hidden';
   }
   var rdLastIdx = -1;   // 最後に読んだ（光らせた）文。止めたあとも、続きの場所として覚えておく
   function markSentence(k) {
@@ -7509,6 +7511,18 @@
   on($('fl-only'), 'click', function () { stopSpeak(); setFlOnly(true); });
   on($('fl-exit'), 'click', function () { setFlOnly(false); });
   on($('rd-ab'), 'click', abPress);
+  // この英文（本ならこの章）の ❓ の印をすべて外す
+  on($('rd-hardclr'), 'click', function () {
+    if (!rdCur) return;
+    var d = rdCur.d, n = hardCount(d); if (!n) return;
+    if (!window.confirm((d.book ? 'この章' : 'この英文') + 'の ❓ の印（' + n + ' 文）をすべて外しますか？')) return;
+    delete d.hard; hardOnly = false; hardCur = -1;
+    rdSaveLocal();
+    if (KEY) { var b = {}; b['reader/' + rdCur.id + '/hard'] = null; api('PATCH', '', b, function () {}); }
+    each($('rd-text').childNodes, function (el) { if (el.className) el.className = el.className.replace(/ hard\b/g, ''); });
+    hardLabel();
+    $('rd-status').textContent = '❓ の印をすべて外しました（' + n + ' 文）。';
+  });
   on($('rd-hardonly'), 'click', function () {
     hardOnly = !hardOnly; hardCur = -1; hardLabel();
     if (!hardOnly || !rdCur) return;
