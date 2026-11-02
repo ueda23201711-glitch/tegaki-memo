@@ -618,6 +618,16 @@
         <button id="rd-seldel" type="button" class="danger">選んだものを削除</button>
         <button id="rd-selmerge" type="button" class="hidden">📚 選んだ本を1冊にまとめる</button>
         <button id="rd-selend" type="button">やめる</button></div>
+      <div id="rd-filter" style="display:none; margin:0 0 8px;">
+        <input id="rf-q" type="search" placeholder="🔍 題名で探す（一部だけでも）" autocomplete="off" style="width:100%; box-sizing:border-box; font-size:16px; padding:8px 10px; border:1px solid #c9d2d8; border-radius:8px; margin:0 0 6px;">
+        <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+          <select id="rf-type" style="font-size:15px; padding:5px 6px;"><option value="">種類：すべて</option><option value="book">📚 本</option><option value="yt">🎬 YouTube</option><option value="lv">🎞 取り込んだ動画</option><option value="web">🌐 記事</option><option value="txt">✎ 貼り付けた英文</option></select>
+          <select id="rf-fav" style="font-size:15px; padding:5px 6px;"><option value="0">★：すべて</option><option value="1">★ 以上</option><option value="2">★★ 以上</option><option value="3">★★★</option></select>
+          <select id="rf-st" style="font-size:15px; padding:5px 6px;"><option value="">状態：すべて</option><option value="reading">読みかけ（しおり・前回の続き）</option><option value="hard">❓ の印がある</option></select>
+          <span id="rf-n" class="note" style="margin:0"></span>
+          <button id="rf-clr" type="button" class="hidden" style="font-size:13px; padding:4px 10px;">✕ 絞り込みを解除</button>
+        </div>
+      </div>
       <div id="rd-hist"></div>
     </div>
     <div id="rd-view" class="hidden">
@@ -6675,11 +6685,65 @@
     on(row, 'click', function () { if (rdOpenBook[bk]) delete rdOpenBook[bk]; else rdOpenBook[bk] = 1; renderRdHistory(); });
     return row;
   }
+  /* ---- 一覧の絞り込み：題名の一部・種類・★・状態（選んだものは、この端末に覚えておく） ---- */
+  var RF_KEY = 'eibun_rfilter';
+  function rfGet() { var v = null; try { v = JSON.parse(lsGet(RF_KEY) || 'null'); } catch (e) {} return v || { q: '', type: '', fav: 0, st: '' }; }
+  function rfSet(v) { lsSet(RF_KEY, JSON.stringify(v)); }
+  function rfOn(f) { return !!(f.q || f.type || Number(f.fav) || f.st); }
+  function rfType(d) { return d.book ? 'book' : d.yt ? 'yt' : d.lv ? 'lv' : (/^🌐 /.test(d.title || '') || (d.src && !d.cues)) ? 'web' : 'txt'; }
+  function rfNorm(t) { return String(t || '').toLowerCase().replace(/\s+/g, ' '); }
+  // 1つの英文（本は章）が条件に合うか
+  function rfPass(id, f, lastId) {
+    var d = rdDocs[id]; if (!d) return false;
+    if (f.type && rfType(d) !== f.type) return false;
+    if (Number(f.fav) && favOf(id) < Number(f.fav)) return false;
+    if (f.st === 'hard') {
+      if (d.book) { var hh = false; each(bookChapters(d.book), function (c) { if (hardCount(rdDocs[c])) hh = true; }); if (!hh) return false; }
+      else if (!hardCount(d)) return false;
+    }
+    if (f.st === 'reading') {
+      var rd = function (x, xid) { return !!x && ((typeof x.bm === 'number' && x.bm > 0) || x.vbm > 0 || xid === lastId); };
+      if (d.book) { var rr = false; each(bookChapters(d.book), function (c) { if (rd(rdDocs[c], c)) rr = true; }); if (!rr) return false; }
+      else if (!rd(d, id)) return false;
+    }
+    if (f.q) {
+      var q = rfNorm(f.q), hay = rfNorm(d.title) + ' ' + rfNorm(d.bookTitle) + ' ' + rfNorm(d.chTitle);
+      if (hay.indexOf(q) < 0) return false;
+    }
+    return true;
+  }
+  function rfUi(f, total, hit) {
+    $('rd-filter').style.display = total >= 1 ? '' : 'none';
+    if (document.activeElement !== $('rf-q')) $('rf-q').value = f.q || '';
+    $('rf-type').value = f.type || ''; $('rf-fav').value = String(Number(f.fav) || 0); $('rf-st').value = f.st || '';
+    var on1 = rfOn(f);
+    $('rf-n').textContent = on1 ? hit + ' / ' + total + ' 件' : '';
+    $('rf-clr').className = on1 ? '' : 'hidden';
+  }
+  var rfTimer = null;
+  function rfChange() { var f = rfGet(); f.q = String($('rf-q').value || '').replace(/^\s+|\s+$/g, ''); f.type = $('rf-type').value; f.fav = Number($('rf-fav').value) || 0; f.st = $('rf-st').value; rfSet(f); renderRdHistory(); }
+  on($('rf-q'), 'input', function () { if (rfTimer) clearTimeout(rfTimer); rfTimer = setTimeout(rfChange, 150); });
+  on($('rf-q'), 'search', rfChange);
+  on($('rf-type'), 'change', rfChange); on($('rf-fav'), 'change', rfChange); on($('rf-st'), 'change', rfChange);
+  on($('rf-clr'), 'click', function () { rfSet({ q: '', type: '', fav: 0, st: '' }); $('rf-q').value = ''; renderRdHistory(); });
   function renderRdHistory() {
     if (!rdCur) { try { resumeShow(); } catch (e0) {} }
     cvLoad(); if (lvCanPlay && !lvOld) lvScan();
     var box = $('rd-hist'); box.innerHTML = '';
     var ids = rdIds();
+    // 絞り込み（本は、どれかの章が合えば本ごと出す。題名で探したときは、合った章を開いて見せる）
+    var rf = rfGet(), rfAct = rfOn(rf), rfOk = {}, rfTotal = 0, rfHit = 0, rfSeenB = {}, lastV = null;
+    try { lastV = lastGet(); } catch (e1) {}
+    if (rfAct) {
+      each(ids, function (id) {
+        var d = rdDocs[id], key = d.book ? 'B:' + d.book : id, ok = rfPass(id, rf, lastV && lastV.id);
+        if (ok) rfOk[id] = 1;
+        if (!rfSeenB[key]) { rfSeenB[key] = { n: 1, hit: 0 }; rfTotal++; }
+        if (ok && !rfSeenB[key].hit) { rfSeenB[key].hit = 1; rfHit++; }
+      });
+      ids = ids.filter(function (id) { return rfOk[id]; });
+    } else { var sB = {}; each(ids, function (id) { var d = rdDocs[id], key = d.book ? 'B:' + d.book : id; if (!sB[key]) { sB[key] = 1; rfTotal++; } }); rfHit = rfTotal; }
+    rfUi(rf, rfTotal, rfHit);
     var sn = rdSerials(), mode = lsGet(SORT_KEY) || '', pop = mode === 'pop', um = useMap();
     var useCmp = function (x, y) { var a = um[x] || [0, 0], b = um[y] || [0, 0]; return (b[0] - a[0]) || (b[1] - a[1]); };
     var atCmp = function (x, y) { return (rdDocs[y].at || 0) - (rdDocs[x].at || 0); };
@@ -6687,7 +6751,8 @@
     if (mode === 'fav') ids.sort(function (x, y) { return (favOf(y) - favOf(x)) || useCmp(x, y) || atCmp(x, y); });
     $('rd-sort').textContent = pop ? '🕒 追加した順に戻す' : '👁 よく見る順';
     $('rd-fsort').textContent = mode === 'fav' ? '🕒 追加した順に戻す' : '⭐ 好み順';
-    $('rd-hist-h').style.display = ids.length ? '' : 'none';
+    $('rd-hist-h').style.display = rfTotal ? '' : 'none';
+    if (rfAct && !ids.length) { var em = document.createElement('p'); em.className = 'note'; em.textContent = '条件に合う英文はありません。'; box.appendChild(em); }
     if (rdSel && !ids.length) rdSel = null;
     $('rd-selbar').className = rdSel ? '' : 'hidden';
     $('rd-sel').className = rdSel ? 'rd-selbtn hidden' : 'rd-selbtn';
@@ -6701,7 +6766,7 @@
       if (!d.book) { rows.push(id); return; }
       if (seenB[d.book]) return;
       seenB[d.book] = 1; rows.push('B:' + d.book);
-      if (rdOpenBook[d.book]) each(bookChapters(d.book), function (c) { rows.push(c); });
+      if (rdOpenBook[d.book] || (rfAct && rf.q)) each(bookChapters(d.book), function (c) { if (!rfAct || rfOk[c]) rows.push(c); });
     });
     var shown = 0;
     each(rows, function (id) {
