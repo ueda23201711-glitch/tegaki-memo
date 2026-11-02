@@ -3994,6 +3994,15 @@
   function gmPlayFrom(i, one) {
     if (!one && abB >= 0 && (i < abA || i > abB)) i = abA;
     var gen = ++playGen, chunks = one ? [{ a: i, b: i, from: i, skip: 0, text: rdSents[i].text }] : gmChunks(i);
+    // 1 文だけ：その文を含む「まとまり」の声が保存してあれば、それを使って、その文のところだけ再生する（新しく作らない）
+    if (one) {
+      var c0 = gmChunks(i)[0], v0 = gmVoice();
+      if (c0 && c0.b > c0.a && (gmCache[v0 + '|' + c0.text] || vcIdx()[vcHash(v0 + '|' + c0.text)] || (cvNames && cvNames[gasName(v0, c0.text)]))) {
+        var upto = 0; for (var q0 = c0.a; q0 <= i; q0++) upto += rdSents[q0].text.length + 1;
+        c0.endAt = Math.min(1, upto / c0.text.length);
+        chunks = [c0];
+      }
+    }
     if (!one && abB >= 0) { var cl = []; each(chunks, function (ch) { if (ch.a <= abB) cl.push(ch); }); chunks = cl; }
     gmOne = !!one;
     gmUnlock(); gmNote('');
@@ -4023,6 +4032,9 @@
           var d = au.duration; if (!d || !isFinite(d)) return;
           if (!seeked) { seekNow(); return; }
           var f = au.currentTime / d, tot = ch.text.length, acc = 0;
+          if (one && ch.endAt && ch.endAt < 1 && au.currentTime >= d * ch.endAt + 0.15) {   // 1 文だけ：その文の終わりで止める
+            if (done) return; done = true; au.ontimeupdate = null; try { au.pause(); } catch (e) {} step(c + 1); return;
+          }
           if (!one && abB >= 0 && ch.b > abB && abB >= ch.a) {   // B の文を読み終えたら A へ
             var endAt = 0; for (var q3 = ch.a; q3 <= abB; q3++) endAt += rdSents[q3].text.length + 1;
             if (f >= (endAt - 1) / tot) { if (done) return; done = true; au.ontimeupdate = null; try { au.pause(); } catch (e) {} gmPlayFrom(abA); return; }
