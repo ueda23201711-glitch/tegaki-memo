@@ -407,6 +407,7 @@
   .item { position: absolute; }
   .item img { display: block; width: 100%; height: 100%; pointer-events: none; -webkit-user-drag: none; }
   .item.txt { white-space: pre-wrap; word-wrap: break-word; line-height: 1.3; }
+  .item.txt .lnk { color: #1a5fb4; text-decoration: underline; word-break: break-all; }
   .item.loading { background: #f1f4f6; border: 1px dashed #c9d2d8; box-sizing: border-box; }
   .item.sel { outline: 2px solid #2463c9; }
   .handle-w { position: absolute; right: -40px; top: 50%; margin-top: -16px; width: 22px; height: 32px; border-radius: 10px; background: #2d6a4f; border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.3); box-sizing: border-box; }
@@ -670,6 +671,11 @@
     <div id="pop-sub" class="note"></div>
     <div id="pop-chips"></div>
     <div id="pop-mean"></div>
+    <div id="pop-ext" class="row" style="margin:6px 0 0">
+      <button id="pop-left" type="button" title="前の語もつなげて、熟語として調べる">◀ 前の語も</button>
+      <button id="pop-right" type="button" title="後ろの語もつなげて、熟語として調べる">後ろの語も ▶</button>
+      <button id="pop-edit" type="button" title="保存する日本語訳を書き換える">✎ 訳を直す</button>
+    </div>
     <div id="pop-idiom"></div>
     <div class="row">
       <button id="pop-save" class="primary" type="button">＋ メモ単語帳に保存</button>
@@ -1385,7 +1391,7 @@
         // Pencilのみ：指は画像・文字を動かすのに使う
         e.preventDefault();
         var hit = hitItem(e.clientX, e.clientY);
-        if (hit) { selectItem(hit.id); dragStart(e.clientX, e.clientY, hit, 'move', e.pointerId); }
+        if (hit) { selectItem(hit.id); dragStart(e.clientX, e.clientY, hit, 'move', e.pointerId); var lu = linkAt(hit, e.clientX, e.clientY); if (lu && dragging) dragging.url = lu; }
         else if (selectedId) selectItem(null);
         return;
       }
@@ -2127,7 +2133,7 @@
         el.style.color = it.c || '#1f2a30';
         el.style.fontFamily = fontCss(it.f);
         el.style.fontSize = (Number(it.s || 40) * scale) + 'px';
-        el.textContent = it.tx || '';
+        txtWithLinks(el, it.tx || '');
       }
       if (it.id === selectedId) {
         el.className += ' sel';
@@ -2137,6 +2143,34 @@
       if (it.k === 'txt' && scale > 0) it.h = Math.round(el.offsetHeight / scale);   // 当たり判定用
     });
     placeItemBar();
+  }
+  // 文字の中の URL を、タップで開けるリンクにする（動かさずに指を離したとき開く）
+  var URL_RE = /(https?:\/\/[^\s<>"'（）「」『』、。]+)/;
+  function txtWithLinks(el, t) {
+    var parts = String(t).split(URL_RE);
+    for (var i = 0; i < parts.length; i++) {
+      if (!parts[i]) continue;
+      if (i % 2) {
+        var u = parts[i].replace(/[.,;:!?)\]]+$/, ''), rest = parts[i].slice(u.length);
+        var a = document.createElement('span'); a.className = 'lnk'; a.setAttribute('data-url', u); a.textContent = u; el.appendChild(a);
+        if (rest) el.appendChild(document.createTextNode(rest));
+      } else el.appendChild(document.createTextNode(parts[i]));
+    }
+  }
+  // 画面の位置にあるリンク（文字の中の URL）
+  function linkAt(it, cx, cy) {
+    var el = it && itemEl(it.id); if (!el) return null;
+    var ls = el.querySelectorAll('.lnk');
+    for (var i = 0; i < ls.length; i++) {
+      var rs = ls[i].getClientRects ? ls[i].getClientRects() : [];
+      for (var j = 0; j < rs.length; j++) if (cx >= rs[j].left - 4 && cx <= rs[j].right + 4 && cy >= rs[j].top - 4 && cy <= rs[j].bottom + 4) return ls[i].getAttribute('data-url');
+    }
+    return null;
+  }
+  function openLink(u) {
+    if (!/^https?:\/\//.test(u)) return;
+    var w = null; try { w = window.open(u, '_blank', 'noopener'); } catch (e) {}
+    if (!w) { try { location.href = u; } catch (e2) {} }
   }
   // 右下の青：大きさ（文字も大きく）、右の緑（文字だけ）：幅だけ（折り返しが変わる）
   function addHandles(el, it) {
@@ -2409,6 +2443,7 @@
   function dragEnd() {
     if (!dragging) return;
     var d = dragging; dragging = null;
+    if (!d.moved && d.url) { openLink(d.url); return; }   // リンクをタップした（動かしていない）
     if (d.moved) { undoStack.push(d.before); if (undoStack.length > 40) undoStack.shift(); redoStack = []; changed(); }
   }
   function itemsDown(x, y, target, ptr, e) {
@@ -2418,6 +2453,8 @@
     var isHandle = target.getAttribute && target.getAttribute('data-handle');
     if (selectedId !== it.id) selectItem(it.id);
     dragStart(x, y, it, isHandle === 'w' ? 'width' : isHandle ? 'resize' : 'move', ptr);
+    var lk = !isHandle && target.getAttribute && target.getAttribute('data-url');
+    if (lk && dragging) dragging.url = lk;
   }
   function sameDrag(ptr) { return dragging && (dragging.ptr === undefined || dragging.ptr === ptr); }
   if (window.PointerEvent) {
@@ -3608,9 +3645,10 @@
     if (msSet) return;
     msSet = true;
     var h = function (a, f) { try { navigator.mediaSession.setActionHandler(a, f); } catch (e) {} };
-    var cur = function () { return rdIdx >= 0 ? rdIdx : 0; };
+    var cur = function () { return rdIdx >= 0 ? rdIdx : rdLastIdx >= 0 && rdLastIdx < rdSents.length ? rdLastIdx : 0; };
     var pauseKeep = function () { var k = cur(); stopSpeak(); rdIdx = k; if (!flOpen) markSentence(k); rdIdx = k; playLabel(); };
-    h('play', function () { if (rdCur && !rdSpeaking) playFrom(cur()); });
+    // 単語の発音（端末の声）を鳴らすと、iPhone が「再生」の合図を送ってくることがある：単語を見ている間は受けない
+    h('play', function () { if (wordBusy()) return; if (rdCur && !rdSpeaking) playFrom(cur()); });
     h('pause', pauseKeep);
     h('stop', pauseKeep);
     h('nexttrack', function () { if (rdCur) playFrom(Math.min(rdSents.length - 1, cur() + 1)); });
@@ -3654,7 +3692,7 @@
       if (!rdSpeaking || gen !== playGen) return;
       if (abB >= 0 && (k > abB || k < abA)) k = abA;   // A-B リピート
       if (hardOnly) { var hk = nextHard(k); if (hk < 0) { stopSpeak(); playLabel(); return; } k = hk; }   // 印の文だけ（最後まで行ったら最初の印へ）
-      if (k >= rdSents.length) { rdIdx = 0; stopSpeak(); if (flOpen) markSentence(-1); playLabel(); nextChapterGo(); return; }
+      if (k >= rdSents.length) { rdIdx = 0; stopSpeak(); rdLastIdx = -1; if (flOpen) markSentence(-1); playLabel(); nextChapterGo(); return; }
       markSentence(k);
       speak(rdSents[k].text, function () { if (rdSpeaking) setTimeout(function () { step(k + 1); }, 250); });
     };
@@ -3717,8 +3755,9 @@
     b.className = n ? (hardOnly ? 'primary' : '') : 'hidden';
     b.textContent = '❓ 印の文だけ（' + n + '）：' + (hardOnly ? 'オン' : 'オフ');
   }
+  var rdLastIdx = -1;   // 最後に読んだ（光らせた）文。止めたあとも、続きの場所として覚えておく
   function markSentence(k) {
-    rdIdx = k; progSoon();
+    rdIdx = k; if (k >= 0) rdLastIdx = k; progSoon();
     each($('rd-text').childNodes, function (el, i) { if (el.id !== 'rd-flow') el.className = 'rd-sent' + (abIn(i) ? ' ab' : '') + (isHard(i) ? ' hard' : '') + (i === k ? ' now' : ''); });
     if (flOpen) {
       each(flEls, function (el, i) { el.className = 'fl-s' + (abIn(i) ? ' ab' : '') + (i === k ? ' now' : k >= 0 && i < k ? ' done' : ''); });
@@ -3958,7 +3997,7 @@
     gmUnlock(); gmNote('');
     var step = function (c) {
       if (gen !== playGen || !rdSpeaking) return;
-      if (c >= chunks.length) { if (!one && abB >= 0) { gmPlayFrom(abA); return; } rdIdx = 0; stopSpeak(); if (flOpen) markSentence(-1); playLabel(); if (!one) nextChapterGo(); return; }
+      if (c >= chunks.length) { if (!one && abB >= 0) { gmPlayFrom(abA); return; } rdIdx = 0; stopSpeak(); rdLastIdx = -1; if (flOpen) markSentence(-1); playLabel(); if (!one) nextChapterGo(); return; }
       var ch = chunks[c], st0 = c === 0 ? ch.from : ch.a;
       markSentence(st0);
       var ready = !!gmCache[gmVoice() + '|' + ch.text];
@@ -6751,7 +6790,7 @@
     rdSents = [];
     each(list, function (t) { rdSents.push({ text: t, toks: tokenize(t), idioms: [] }); });
     renderRd(); showDocTitle(); cvBox(); cvLoad();
-    $('rd-body').scrollTop = 0; rdIdx = -1;
+    $('rd-body').scrollTop = 0; rdIdx = -1; rdLastIdx = -1; wordResume = -1;
     if (typeof d.bm === 'number' && d.bm > 0 && d.bm < rdSents.length) setTimeout(function () { if (rdCur && rdCur.id === id) $('rd-status').textContent = '🔖 しおりがあります（' + pctOf(d.bm, rdSents.length) + '%）。下の「↩ しおりへ」で続きから読めます。'; }, 0);
     progSoon();
     if ((d.yt || d.lv) && d.cues) ytOpen(d); else ytClose();
@@ -6856,17 +6895,33 @@
 
   /* ---- 単語・熟語をタップしたとき ---- */
   var popItem = null;   // {w, m, ex, si}
+  var wordAt = 0, wordResume = -1;
+  function wordBusy() { return $('word-pop').className !== 'hidden' || now() - wordAt < 5000; }
+  // 単語を見るとき：読み上げを止める（続きの場所は覚えておく）。止めた直後に話すと頭が切れるので、少しあけて発音
+  function pauseForWord() {
+    wordAt = now();
+    var was = rdSpeaking || (gmAudio && !gmAudio.paused);
+    if (rdSpeaking) wordResume = rdIdx >= 0 ? rdIdx : rdLastIdx;
+    rdSpeaking = false; playGen++; rdQueue = []; gmStop();
+    try { speechSynthesis.cancel(); } catch (e) {}
+    keepAwake(false); playLabel();
+    return was;
+  }
+  function sayWord(t, was) { wordAt = now(); if (was) setTimeout(function () { wordAt = now(); speak(t); }, 250); else speak(t); }
   function wordTap(si, ti) {
     var s = rdSents[si], t = s.toks[ti];
-    $('pop-play').className = flOpen && flPlayAt >= 0 ? '' : 'hidden';
-    try { speechSynthesis.cancel(); } catch (e) {} rdSpeaking = false; $('rd-play').textContent = '▶ 再生';
-    speak(t.w);
+    var was = pauseForWord();
+    if (!(flOpen && flPlayAt >= 0) && !ytOn() && wordResume >= 0 && was) $('pop-play').textContent = '▶ 続きから再生';
+    $('pop-play').className = (flOpen && flPlayAt >= 0) || (!ytOn() && wordResume >= 0 && was) ? '' : 'hidden';
+    sayWord(t.w, was);
     $('pop-head').textContent = t.w;
     $('pop-sub').textContent = '';
     $('pop-mean').textContent = '辞書を引いています…';
     $('pop-chips').innerHTML = '';
     $('pop-idiom').innerHTML = '';
     $('pop-save').disabled = true; $('pop-msg').textContent = '';
+    popItem = { w: t.w.toLowerCase(), m: '', si: si, a: ti, b: ti };
+    var mySeq = ++extSeq;
     $('word-pop').className = '';
     // この単語を含む熟語
     each(s.idioms, function (f) {
@@ -6880,10 +6935,11 @@
       $('pop-idiom').appendChild(d);
     });
     lookupWord(t.w, function (list) {
+      if (mySeq !== extSeq) return;   // その間に「前の語も／後ろの語も」を押した
       $('pop-chips').innerHTML = '';
       if (!list.length) {
         $('pop-mean').textContent = '辞書に見つかりませんでした。';
-        if (gasUrl) translateOne(t.w, function (j) { if (j) { $('pop-mean').textContent = '（翻訳）' + j; popItem = { w: t.w.toLowerCase(), m: j, si: si, a: ti, b: ti }; $('pop-save').disabled = false; } });
+        if (gasUrl) translateOne(t.w, function (j) { if (mySeq !== extSeq) return; if (j) { $('pop-mean').textContent = '（翻訳）' + j; popItem = { w: t.w.toLowerCase(), m: j, si: si, a: ti, b: ti }; $('pop-save').disabled = false; } });
         return;
       }
       var pick = function (k) {
@@ -6922,20 +6978,74 @@
   }
   function phraseTap(f, si) {
     var p = phrases[f.pi];
-    try { speechSynthesis.cancel(); } catch (e) {}
+    var was = pauseForWord();
     var spoken = rdSents[si].text.slice(rdSents[si].toks[f.s].s, rdSents[si].toks[f.e].e);
-    speak(spoken);
+    sayWord(spoken, was);
     $('pop-head').textContent = p[0];
     $('pop-sub').textContent = '文中では「' + spoken + '」';
     $('pop-chips').innerHTML = '';
     $('pop-mean').textContent = p[2] ? p[1] : prettyMean(p[1]);
     $('pop-idiom').innerHTML = '';
     $('pop-msg').textContent = '';
-    popItem = { w: p[0], m: p[2] ? p[1] : cleanMean(p[1], 70), si: si, a: f.s, b: f.e };
+    popItem = { w: p[0], m: p[2] ? p[1] : cleanMean(p[1], 70), si: si, a: f.s, b: f.e }; extSeq++;
     $('pop-save').disabled = false;
     $('word-pop').className = '';
   }
-  on($('pop-say'), 'click', function () { if (popItem) speak(popItem.w.replace(/～/g, 'something')); else speak($('pop-head').textContent); });
+  /* ---- 自分で熟語を選ぶ：前後の語をつなげて調べる（辞書の熟語になければ翻訳）。保存する訳は書き換えられる ---- */
+  var extSeq = 0;
+  function popExtend(dir) {
+    var it = popItem; if (!it || it.si === undefined || !rdSents[it.si]) return;
+    var s = rdSents[it.si], toks = s.toks, a = it.a, b = it.b;
+    if (dir < 0) a--; else b++;
+    if (a < 0 || b >= toks.length) return;
+    var phrase = s.text.slice(toks[a].s, toks[b].e).replace(/\s+/g, ' ');
+    var w = phrase.replace(/^[A-Z](?=[a-z])/, function (c) { return c.toLowerCase(); });
+    var my = ++extSeq;
+    sayWord(phrase, false);
+    $('pop-head').textContent = w;
+    $('pop-sub').textContent = '文中では「' + phrase + '」';
+    $('pop-chips').innerHTML = ''; $('pop-idiom').innerHTML = ''; $('pop-msg').textContent = '';
+    popItem = { w: w, m: '', si: it.si, a: a, b: b };
+    $('pop-save').disabled = true;
+    // 辞書の熟語と同じ並びか
+    var hit = null, n = b - a + 1;
+    var keys = [toks[a].l].concat(toks[a].lem); if (BE.indexOf(toks[a].l) >= 0) keys.push('be');
+    each(keys, function (k) {
+      each((phraseIdx && phraseIdx[k]) || [], function (pi) {
+        if (hit !== null) return;
+        var pt = phrases[pi][0].toLowerCase().split(/\s+/);
+        if (pt.length !== n) return;
+        for (var q = 0; q < n; q++) if (!tokMatch(pt[q], toks[a + q])) return;
+        hit = pi;
+      });
+    });
+    if (hit !== null) {
+      var pp = phrases[hit];
+      $('pop-head').textContent = pp[0];
+      $('pop-mean').textContent = pp[2] ? pp[1] : prettyMean(pp[1]);
+      popItem = { w: pp[0], m: pp[2] ? pp[1] : cleanMean(pp[1], 70), si: it.si, a: a, b: b };
+      $('pop-save').disabled = false;
+      return;
+    }
+    if (!gasUrl) { $('pop-mean').textContent = '辞書の熟語にはありません。「✎ 訳を直す」で訳を入れると保存できます。'; return; }
+    $('pop-mean').textContent = '訳しています…';
+    translateOne(phrase, function (j) {
+      if (my !== extSeq) return;
+      $('pop-mean').textContent = j ? '（翻訳）' + j : '訳を作れませんでした。「✎ 訳を直す」で訳を入れると保存できます。';
+      if (j) { popItem.m = j; $('pop-save').disabled = false; }
+    });
+  }
+  on($('pop-left'), 'click', function () { popExtend(-1); });
+  on($('pop-right'), 'click', function () { popExtend(1); });
+  on($('pop-edit'), 'click', function () {
+    if (!popItem) return;
+    var v = window.prompt('「' + popItem.w + '」の日本語訳（My単語帳にはこの訳で保存します）', popItem.m || '');
+    if (v === null) return;
+    v = v.replace(/[\t\r\n]+/g, ' ').replace(/^\s+|\s+$/g, '');
+    if (!v) return;
+    popItem.m = v; $('pop-mean').textContent = v; $('pop-save').disabled = false; $('pop-msg').textContent = '';
+  });
+  on($('pop-say'), 'click', function () { wordAt = now(); if (popItem) speak(popItem.w.replace(/～/g, 'something')); else speak($('pop-head').textContent); });
   on($('pop-close'), 'click', function () { $('word-pop').className = 'hidden'; });
   on($('word-pop'), 'click', function (e) { if (e.target === $('word-pop')) $('word-pop').className = 'hidden'; });
 
@@ -7069,7 +7179,7 @@
   });
   on($('rd-my'), 'click', function () { window.open(/OS [5-9]_\d.* like Mac OS X/.test(navigator.userAgent) ? '/kiku-memo/ipad.html' : '/kiku-memo/', '_blank'); });
   on($('rd-new'), 'click', function () { $('rd-in').value = ''; rdShowInput(); });
-  on($('rd-play'), 'click', function () { if (ytOn()) { ytToggle(); return; } if (rdSpeaking) stopSpeak(); else playFrom(rdIdx >= 0 ? rdIdx : 0); });
+  on($('rd-play'), 'click', function () { if (ytOn()) { ytToggle(); return; } if (rdSpeaking) stopSpeak(); else playFrom(rdIdx >= 0 ? rdIdx : rdLastIdx >= 0 && rdLastIdx < rdSents.length ? rdLastIdx : 0); });
   on($('yt-go'), 'click', ytLoad);
   on($('yt-safari-btn'), 'click', function () { ytOpenOut(0); });
   on($('yt-loop'), 'click', function () { ytLoop = !ytLoop; ytLoopIdx = ytLoop ? rdIdx : -1; ytLoopLabel(); });
@@ -7078,7 +7188,7 @@
   on($('rd-make'), 'click', makeAll);
   on($('rd-cont'), 'click', function () { rdCont = !rdCont; lsSet('memo_rd_cont', rdCont ? '1' : '0'); contLabel(); });
   contLabel();
-  on($('pop-play'), 'click', function () { $('word-pop').className = 'hidden'; if (flOpen && flPlayAt >= 0) playFrom(flPlayAt); else if (ytOn() && ytPlayer && ytPlayer.playVideo) ytPlayer.playVideo(); });
+  on($('pop-play'), 'click', function () { $('word-pop').className = 'hidden'; wordAt = 0; if (flOpen && flPlayAt >= 0) playFrom(flPlayAt); else if (ytOn() && ytPlayer && ytPlayer.playVideo) ytPlayer.playVideo(); else if (wordResume >= 0 && wordResume < rdSents.length) { var k = wordResume; wordResume = -1; playFrom(k); } });
   on($('fl-close'), 'click', closeFlow);
   on($('fl-only'), 'click', function () { stopSpeak(); setFlOnly(true); });
   on($('fl-exit'), 'click', function () { setFlOnly(false); });
