@@ -4174,10 +4174,16 @@
       if (!seeked) { seekNow(); return; }
       var t = au.currentTime + 0.05, k = 0, st = P.sentT;
       for (var q = 0; q < st.length; q++) { if (st[q] <= t) k = q; else break; }
+      var g = pkGuide(P, k, au.currentTime); if (g >= 0) k = g;
       if (k !== rdIdx && !document.hidden && rdCur && rdCur.id === id) markSentence(k);
       else if (document.hidden) rdIdx = k;
     };
-    au.onended = function () { if (pk === P) pkEnded(id); };
+    au.onended = function () {
+      if (pk !== P) return;
+      var g = pkLoopStart(P);   // くり返し（❓だけ・A-B・1文）のときは、最後まで来たら頭へ
+      if (g >= 0) { try { au.currentTime = P.sentT[g]; } catch (e) {} var pr2 = au.play(); if (pr2 && pr2['catch']) pr2['catch'](function () {}); pkHere(g); return; }
+      pkEnded(id);
+    };
     au.onerror = function () { if (pk === P) { stopSpeak(); pkStatus(id, '🎧 この端末で再生できませんでした。'); } };
     var setRate = function () { if (P.lv) { try { var r = $('lv-video').playbackRate || 1; au.defaultPlaybackRate = r; au.playbackRate = r; } catch (e) {} } else gmRate(); };
     au.src = P.url; setRate();
@@ -4204,6 +4210,35 @@
     }
     stopSpeak(); rdLastIdx = -1; pkStatus(id, '🎧 最後まで聞きました。');
   }
+  /* ---- ポケットでのくり返し（方法A：再生しながら飛ばす）。❓の文だけ・A-B リピート・1文くり返し（動画）
+     文の終わり（次の文の頭の時刻）に来たら、次の印の文や A、同じ文の頭へ移す。
+     画面を消していると、iPhone がこの処理を遅らせることがあるので、少し遅れて飛ぶことがある ---- */
+  function pkEnd(P, k) { return k + 1 < P.sentT.length ? P.sentT[k + 1] : Infinity; }
+  function pkHere(k) { rdIdx = k; if (!document.hidden) markSentence(k); }
+  function pkMode() { return ytLoop && ytLoopIdx >= 0 ? 'one' : abB >= 0 ? 'ab' : hardOnly ? 'hard' : ''; }
+  function pkLoopStart(P) {
+    var m = pkMode();
+    if (m === 'one') return ytLoopIdx;
+    if (m === 'ab') return abA;
+    if (m === 'hard') return nextHard(0);
+    return -1;
+  }
+  // 今の文 k・時刻 t。飛ばしたら、移った先の文を返す（飛ばさなければ -1）
+  function pkGuide(P, k, t) {
+    var m = pkMode(), au = gmAudio, to = -1;
+    if (!m) return -1;
+    if (m === 'one') { if (t >= pkEnd(P, ytLoopIdx) - 0.05 || t < P.sentT[ytLoopIdx] - 1) to = ytLoopIdx; }
+    else if (m === 'ab') { if (t >= pkEnd(P, abB) - 0.05 || k < abA) to = abA; }
+    else {
+      // 印の文の終わりの少し手前で、次の印の文へ（すぐ後ろも印の文なら、そのまま流す）。印のない文に入っていたら、次の印の文へ
+      if (isHard(k)) { if (t >= pkEnd(P, k) - 0.2 && !isHard(k + 1)) to = nextHard(k + 1); }
+      else to = nextHard(k);
+    }
+    if (to < 0) return -1;
+    try { au.currentTime = P.sentT[to]; } catch (e) {}
+    pkHere(to);
+    return to;
+  }
   function pkPause() { if (!pk) return; try { gmAudio.pause(); } catch (e) {} pkPaused = true; rdSpeaking = false; playLabel(); pkLabel(); }
   function pkResume() { if (!pk) return; pkPaused = false; rdSpeaking = true; var pr = gmAudio.play(); if (pr && pr['catch']) pr['catch'](function () {}); playLabel(); pkLabel(); }
   function pkSeekSent(k) { if (!pk) return; k = Math.max(0, Math.min(pk.sentT.length - 1, k)); try { gmAudio.currentTime = pk.sentT[k]; } catch (e) {} rdIdx = k; if (!document.hidden) markSentence(k); }
@@ -4222,7 +4257,7 @@
       // 見ていた場面から（字幕の時刻は正確なので、そのまま合わせる）
       var au = gmAudio, once = function () { au.removeEventListener('loadedmetadata', once); try { au.currentTime = t0; } catch (e) {} };
       if (t0 > 0) { if (au.readyState >= 1) { try { au.currentTime = t0; } catch (e) {} } else au.addEventListener('loadedmetadata', once); }
-      rdIdx = k;
+      pkHere(k);
     };
     if (lvMem[id]) { go(lvMem[id]); return; }
     lvGet(id, function (blob) {
@@ -4237,7 +4272,10 @@
     gmUnlock();   // タップした瞬間に鳴らしておく（あとで再生できるように）
     if (rdCur.d.lv && rdCur.d.cues) { pkVideo(rdCur.id); return; }
     var start = rdIdx >= 0 ? rdIdx : rdLastIdx >= 0 ? rdLastIdx : topSent();
-    pkStart(rdCur.id, start > 0 ? start : 0);
+    if (start < 0) start = 0;
+    if (hardOnly) { var h0 = nextHard(start); if (h0 >= 0) start = h0; }
+    if (abB >= 0 && (start < abA || start > abB)) start = abA;
+    pkStart(rdCur.id, start);
   });
 
   /* ---- この英文の AI の声を先に全部作って保存しておく（1分3回・1日の回数の範囲で） ---- */
@@ -7457,6 +7495,7 @@
   on($('rd-hardonly'), 'click', function () {
     hardOnly = !hardOnly; hardCur = -1; hardLabel();
     if (!hardOnly || !rdCur) return;
+    if (pk) { var hk = nextHard(rdIdx > 0 ? rdIdx : 0); if (hk >= 0) { try { gmAudio.currentTime = pk.sentT[hk]; } catch (e) {} pkHere(hk); } $('rd-status').textContent = '🎧 ❓ 印の文だけを、ポケットでくり返します。'; return; }
     var k = nextHard(rdIdx > 0 ? rdIdx : 0); if (k < 0) return;
     if (ytOn()) { markSentence(k); gotoSent(k); if (ytPlayer && ytReady) hardGo(k); else ytSeek(k); return; }   // 動画：その印の文から再生（印のない文は飛ばす）
     markSentence(k); gotoSent(k);
