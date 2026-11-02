@@ -560,6 +560,7 @@
   <div class="body" id="rd-body">
     <div id="mk-banner" class="hidden"></div>
     <div id="rd-input" class="rd-wrap">
+      <button id="rd-resume" class="hidden primary" type="button" style="display:block; width:100%; text-align:left; margin:0 0 10px; padding:10px 12px; line-height:1.4;"></button>
       <div class="clip-send">
         <textarea id="rd-in" placeholder="英文を貼り付けてください（Kindle などからコピーした文章）。英語の記事のアドレス（https://…）を貼ると、そのページの本文を読み込みます"></textarea>
         <div class="row">
@@ -6438,6 +6439,7 @@
     return row;
   }
   function renderRdHistory() {
+    if (!rdCur) { try { resumeShow(); } catch (e0) {} }
     cvLoad(); if (lvCanPlay && !lvOld) lvScan();
     var box = $('rd-hist'); box.innerHTML = '';
     var ids = rdIds();
@@ -6598,11 +6600,39 @@
   });
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { rdSyncNew(true); if (rdCur) rdSyncBm(); } });
   setInterval(function () { if (!document.hidden && !rdCur && $('rd-hist') && $('rd-hist').offsetWidth > 0) rdSyncNew(false); }, 30000);
+  /* ---- 前回の続き：最後に見ていた英文・本・動画と、その場所を覚えておく（この端末） ---- */
+  var LAST_KEY = 'eibun_last';
+  function topSent() {
+    var kids = $('rd-text').childNodes, top = $('rd-body').getBoundingClientRect().top + 60;
+    for (var i = 0; i < kids.length && i < rdSents.length; i++) { var r = kids[i].getBoundingClientRect ? kids[i].getBoundingClientRect() : null; if (r && r.bottom > top) return i; }
+    return -1;
+  }
+  function lastSave() {
+    if (!rdCur || !rdDocs[rdCur.id]) return;
+    var t = -1; try { t = capNow(); } catch (e) {}
+    var n = rdIdx >= 0 ? rdIdx : rdLastIdx;
+    if (n < 0) { try { n = topSent(); } catch (e2) {} }
+    lsSet(LAST_KEY, JSON.stringify({ id: rdCur.id, n: n, t: t > 0 ? Math.round(t * 10) / 10 : -1, at: now() }));
+  }
+  function lastGet() { var v = null; try { v = JSON.parse(lsGet(LAST_KEY) || 'null'); } catch (e) {} return v && v.id && rdDocs[v.id] ? v : null; }
+  function resumeShow() {
+    var b = $('rd-resume'), v = lastGet(); if (!b) return;
+    if (!v) { b.className = 'hidden primary'; return; }
+    var d = rdDocs[v.id], name = d.book ? '📚 ' + (d.bookTitle || '') + '　第' + d.ch + '章' : String(d.title || '').replace(/^(🌐|🎬|🎞|📚) /, '');
+    var where = v.t > 0 ? '（動画 ' + fmtSec(v.t) + ' から）' : v.n > 0 ? '（' + (v.n + 1) + ' 文目から）' : '';
+    b.textContent = '▶ 前回の続き：' + name.slice(0, 50) + ' ' + where;
+    b.className = 'primary';
+  }
+  on($('rd-resume'), 'click', function () { var v = lastGet(); if (!v) return; useBump(v.id); rdShowAt(v.id, v.n, v.t, false); });
+  setInterval(function () { if (rdCur && !document.hidden) lastSave(); }, 10000);
+  document.addEventListener('visibilitychange', function () { if (document.hidden) lastSave(); });
+  on(window, 'pagehide', lastSave);
   function rdShowInput() {
+    if (rdCur) lastSave();
     stopSpeak(); ytClose(); rdCur = null;
     $('rd-input').className = ''; $('rd-view').className = 'hidden';
     $('rd-paste').className = (navigator.clipboard && navigator.clipboard.readText) ? '' : 'hidden';
-    renderRdHistory(); syncMsg(''); rdSyncNew(true);
+    renderRdHistory(); syncMsg(''); rdSyncNew(true); resumeShow();
     var y = rdListY, b = $('rd-body'); b.scrollTop = y;
     setTimeout(function () { if (!rdCur && b.scrollTop !== y) b.scrollTop = y; }, 0);
   }
