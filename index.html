@@ -5062,6 +5062,13 @@
     var capPos = function () { cb.className = v.paused || v.ended ? 'paused' : ''; };
     v.addEventListener('play', capPos); v.addEventListener('pause', capPos); v.addEventListener('ended', capPos); capPos();
     v.addEventListener('loadedmetadata', function () { setTimeout(lvSubList, 300); });
+    // 音は出るのに映像が出ない（この端末で映像の形式を読めない：AV1・HEVC・VP9 など）ときは知らせる
+    var noVid = function () {
+      if (!rdCur || !rdCur.d.lv || !(v.readyState >= 1) || v.videoWidth > 0 || v.style.display === 'none') return;
+      $('rd-status').textContent = '🎞 この動画は、この端末では映像が出ない形式のようです（音と字幕は使えます）。HandBrake などで「H.264 の mp4」（例：プリセット Apple 540p30）に変換して取り込み直すと、映像も出ます。';
+    };
+    v.addEventListener('loadedmetadata', function () { setTimeout(noVid, 800); });
+    v.addEventListener('playing', function () { setTimeout(noVid, 800); });
     v.addEventListener('loadedmetadata', function () {
       if (!rdCur || !rdCur.d.lv || !isFinite(v.duration) || v.duration <= 0) return;
       var d = rdCur.d, id = rdCur.id, dur = Math.round(v.duration);
