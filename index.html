@@ -3775,12 +3775,17 @@
     var n = rdCur ? hardCount(rdCur.d) : 0;
     if (!n && hardOnly) hardOnly = false;
     b.className = n ? (hardOnly ? 'primary' : '') : 'hidden';
-    b.textContent = '❓ 印の文だけ（' + n + '）：' + (hardOnly ? 'オン' : 'オフ');
+    // オンのときは、今の文が印の何個目かも出す（例：❓ 印の文だけ（12 / 43）：オン）
+    var at = 0;
+    var hk0 = rdIdx >= 0 ? rdIdx : rdLastIdx;
+    if (hardOnly && rdCur && hk0 >= 0 && isHard(hk0)) { for (var q = 0; q <= hk0; q++) if (isHard(q)) at++; }
+    b.textContent = '❓ 印の文だけ（' + (at ? at + ' / ' : '') + n + '）：' + (hardOnly ? 'オン' : 'オフ');
     var c = $('rd-hardclr'); if (c) c.className = n ? '' : 'hidden';
   }
   var rdLastIdx = -1;   // 最後に読んだ（光らせた）文。止めたあとも、続きの場所として覚えておく
   function markSentence(k) {
     rdIdx = k; if (k >= 0) rdLastIdx = k; progSoon();
+    if (hardOnly) hardLabel();
     each($('rd-text').childNodes, function (el, i) { if (el.id !== 'rd-flow') el.className = 'rd-sent' + (abIn(i) ? ' ab' : '') + (isHard(i) ? ' hard' : '') + (i === k ? ' now' : ''); });
     if (flOpen) {
       each(flEls, function (el, i) { el.className = 'fl-s' + (abIn(i) ? ' ab' : '') + (i === k ? ' now' : k >= 0 && i < k ? ' done' : ''); });
