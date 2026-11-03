@@ -650,6 +650,7 @@
         <button id="rd-ab" type="button" title="1回目に押した文（A）から2回目に押した文（B）までをくり返す">🅰🅱 A-B リピート</button>
         <button id="rd-hardonly" class="hidden" type="button" title="❓ の印を付けた文だけを、続けて再生・読み上げする">❓ 印の文だけ：オフ</button>
         <button id="rd-hardclr" class="hidden" type="button" title="この英文（本ならこの章）の ❓ の印をすべて外す">❓✕ 印を全部外す</button>
+        <button id="rd-repl" type="button" title="英文の中の文字を、まとめて置き換える（聞き取りのまちがいを直すときなど）">🔁 置き換え</button>
         <button id="lv-save" class="hidden" type="button" title="ドライブの動画をこの端末に取り込んで、次からすぐ見られるようにする">⬇ この端末に取り込む</button>
         <button id="rd-cont" type="button" title="🔊 で読んだあと、次の文も続けて読む">🔁 続けて：オフ</button>
         <button id="rd-flowbtn" type="button">📖 通しで聞く</button>
@@ -690,6 +691,7 @@
       <button id="pop-left" type="button" title="前の語もつなげて、熟語として調べる">◀ 前の語も</button>
       <button id="pop-right" type="button" title="後ろの語もつなげて、熟語として調べる">後ろの語も ▶</button>
       <button id="pop-edit" type="button" title="保存する日本語訳を書き換える">✎ 訳を直す</button>
+      <button id="pop-sent" type="button" title="この単語がある文の英語を直す（字幕の聞き取りまちがいなど）">✎ この文の英語を直す</button>
     </div>
     <div id="pop-idiom"></div>
     <div class="row">
@@ -7628,6 +7630,83 @@
   });
   // ボタンを選んだままスペースを押したとき、ボタンが二重に押されないように
   on(document, 'keyup', function (e) { if ((e.key === ' ' || e.keyCode === 32) && !keyTyping(e.target) && keyReady() && e.target && e.target.tagName === 'BUTTON') e.preventDefault(); });
+  /* ---- 英文を直す：1文を直す（単語の窓から）・まとめて置き換え。直した文だけ訳を作り直す ---- */
+  // id の英文を update(d) で書き換えて保存。変わっていない文の訳はそのまま使う。open：開き直す
+  function rdTextChanged(id, update, open) {
+    var d = rdDocs[id]; if (!d) return 0;
+    var oldList = docSents(d), trMap = {};
+    if (d.tr) each(oldList, function (t, k) { if (d.tr[k]) trMap[t] = d.tr[k]; });
+    update(d, oldList);
+    if (d.cues) d.text = cueTexts(d.cues).join('\n');
+    var nl = docSents(d), tr = [], miss = 0;
+    each(nl, function (t) { var x = trMap[t] || ''; tr.push(x); if (!x && t) miss++; });
+    d.tr = tr; if (miss) d.trPart = 1; else delete d.trPart;
+    d.ns = nl.length;
+    rdSaveLocal();
+    if (KEY) { var b = {}; b['reader/' + id] = d; api('PATCH', '', b, function () {}); }
+    if (open) {
+      var top = -1; try { top = topSent(); } catch (e) {}
+      openRdDoc(id);
+      if (top >= 0) setTimeout(function () { if (rdCur && rdCur.id === id) rdScrollTo(Math.min(top, rdSents.length - 1)); }, 120);
+    }
+    return miss;
+  }
+  // 1文を直す
+  function editSentence(si) {
+    if (!rdCur || !rdSents[si]) return;
+    var id = rdCur.id, old = rdSents[si].text;
+    var v = window.prompt('この文の英語を直す（直した文の訳は作り直します）', old); if (v === null) return;
+    v = v.replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, ''); if (!v || v === old) return;
+    $('word-pop').className = 'hidden';
+    rdTextChanged(id, function (d, oldList) {
+      if (d.cues) { if (d.cues[si]) d.cues[si][1] = v; return; }
+      var t = String(d.text || '').replace(/\r/g, '').replace(/[ \t]+/g, ' '), pos = 0, done = false;
+      for (var k = 0; k <= si && k < oldList.length; k++) {
+        var at = t.indexOf(oldList[k], pos); if (at < 0) break;
+        if (k === si) { t = t.slice(0, at) + v + t.slice(at + oldList[k].length); done = true; break; }
+        pos = at + oldList[k].length;
+      }
+      if (!done) { var a2 = t.indexOf(old); if (a2 >= 0) t = t.slice(0, a2) + v + t.slice(a2 + old.length); }
+      d.text = t;
+    }, true);
+    $('rd-status').textContent = '✎ ' + (si + 1) + ' 文目を直しました。' + (gasUrl ? '訳を作り直しています…' : '');
+  }
+  on($('pop-sent'), 'click', function () { if (popItem && popItem.si !== undefined) editSentence(popItem.si); });
+  // まとめて置き換え（大文字・小文字は区別しない。単語の途中には当てない。文の頭なら大文字にそろえる）
+  function replRe(find) {
+    var esc = find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+    return new RegExp((/^[A-Za-z0-9]/.test(find) ? '(^|[^A-Za-z0-9])' : '()') + '(' + esc + ')' + (/[A-Za-z0-9]$/.test(find) ? '(?=[^A-Za-z0-9]|$)' : ''), 'gi');
+  }
+  function replIn(t, re, to) {
+    return String(t).replace(re, function (m, pre, hit) {
+      var r = to;
+      if (/^[A-Z]/.test(hit) && /^[a-z]/.test(to) && !/^[A-Z]{2}/.test(hit)) r = to.charAt(0).toUpperCase() + to.slice(1);
+      return pre + r;
+    });
+  }
+  function replCount(t, re) { var n = 0; String(t).replace(re, function () { n++; return ''; }); return n; }
+  on($('rd-repl'), 'click', function () {
+    if (!rdCur) return;
+    var d = rdCur.d;
+    var find = window.prompt('置き換える前の文字（英語。例：in my house）\n大文字・小文字は区別しません', ''); if (find === null) return;
+    find = find.replace(/^\s+|\s+$/g, ''); if (!find) return;
+    var re = replRe(find), ids = [rdCur.id];
+    var cnt = function (x) { var dd = rdDocs[x]; if (!dd) return 0; if (dd.cues) { var n = 0; each(dd.cues, function (c) { n += replCount(c[1], re); }); return n; } return replCount(dd.text, re); };
+    var here = cnt(rdCur.id), all = here;
+    if (d.book) { var chs = bookChapters(d.book), tot = 0; each(chs, function (c) { tot += cnt(c); }); if (tot > here && window.confirm('この本のほかの章にもあります（本全体で ' + tot + ' か所）。本のすべての章で置き換えますか？\n（「キャンセル」なら、この章の ' + here + ' か所だけ）')) { ids = chs; all = tot; } }
+    if (!all) { alert('「' + find + '」は見つかりませんでした。'); return; }
+    var to = window.prompt('「' + find + '」（' + all + ' か所）を、何に置き換えますか？', ''); if (to === null) return;
+    to = to.replace(/^\s+|\s+$/g, '');
+    if (!window.confirm('「' + find + '」→「' + to + '」に、' + all + ' か所を置き換えます。よろしいですか？')) return;
+    each(ids, function (x) {
+      if (!cnt(x)) return;
+      rdTextChanged(x, function (dd) {
+        if (dd.cues) { each(dd.cues, function (c) { c[1] = replIn(c[1], re, to).replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, ''); }); return; }
+        dd.text = replIn(dd.text, re, to);
+      }, x === rdCur.id);
+    });
+    $('rd-status').textContent = '🔁 「' + find + '」→「' + to + '」に ' + all + ' か所を置き換えました。' + (gasUrl ? '直した文の訳を作り直しています…' : '');
+  });
   on($('rd-hardclr'), 'click', function () {
     if (!rdCur) return;
     var d = rdCur.d, n = hardCount(d); if (!n) return;
