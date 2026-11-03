@@ -3704,7 +3704,8 @@
     stopSpeak();
     rdSpeaking = true; playLabel(); keepAwake(true);
     if (useGemini() && txtLoop()) { gmPlayFrom(ytLoopIdx, true); return; }   // 1文くり返し：その文だけをくり返す
-    if (useGemini() && !hardOnly) { gmPlayFrom(i); return; }   // 印の文だけのときは、1 文ずつ飛ばせる端末の声で
+    if (useGemini() && hardOnly) { var h0 = nextHard(i); if (h0 < 0) { stopSpeak(); return; } gmPlayFrom(h0, true, true); return; }   // 印の文だけ（AI の声）：印の文を順に
+    if (useGemini()) { gmPlayFrom(i); return; }
     devicePlay(i);
   }
   function devicePlay(i) {
@@ -4017,14 +4018,18 @@
     if (gmOne) { rdSpeaking = false; playLabel(); speak(rdSents[at].text, function () { markSentence(-1); }); return; }
     devicePlay(at);
   }
-  function gmPlayFrom(i, one) {
+  // chain：❓ 印の文だけ（AI の声）。印の文を再生し終えたら、次の印の文へ
+  function gmPlayFrom(i, one, chain) {
     if (!one && abB >= 0 && (i < abA || i > abB)) i = abA;
     var gen = ++playGen, chunks = one ? [{ a: i, b: i, from: i, skip: 0, text: rdSents[i].text }] : gmChunks(i);
+    var runEnd = i;
     // 1 文だけ：その文を含む「まとまり」の声が保存してあれば、それを使って、その文のところだけ再生する（新しく作らない）
     if (one) {
       var c0 = gmChunks(i)[0], v0 = gmVoice();
       if (c0 && c0.b > c0.a && (gmCache[v0 + '|' + c0.text] || vcIdx()[vcHash(v0 + '|' + c0.text)] || (cvNames && cvNames[gasName(v0, c0.text)]))) {
-        var upto = 0; for (var q0 = c0.a; q0 <= i; q0++) upto += rdSents[q0].text.length + 1;
+        // 印の文だけ：すぐ後ろも印の文なら（同じまとまりの中で）続けて流す
+        if (chain) while (runEnd + 1 <= c0.b && isHard(runEnd + 1)) runEnd++;
+        var upto = 0; for (var q0 = c0.a; q0 <= runEnd; q0++) upto += rdSents[q0].text.length + 1;
         c0.endAt = Math.min(1, upto / c0.text.length);
         chunks = [c0];
       }
@@ -4035,6 +4040,10 @@
     var step = function (c) {
       if (gen !== playGen || !rdSpeaking) return;
       if (c >= chunks.length) { if (!one && abB >= 0) { gmPlayFrom(abA); return; }
+        if (one && chain && hardOnly) {   // 次の印の文へ（最後まで行ったら最初の印へ）
+          var nx = nextHard(runEnd + 1);
+          if (nx >= 0) { setTimeout(function () { if (gen === playGen && rdSpeaking && hardOnly) gmPlayFrom(nx, true, true); }, 300); return; }
+        }
         if (one && txtLoop() && !gmOne0) { setTimeout(function () { if (gen === playGen && rdSpeaking && txtLoop()) gmPlayFrom(ytLoopIdx, true); }, 400); return; } rdIdx = 0; stopSpeak(); rdLastIdx = -1; if (flOpen) markSentence(-1); playLabel(); if (!one) nextChapterGo(); return; }
       var ch = chunks[c], st0 = c === 0 ? ch.from : ch.a;
       markSentence(st0);
@@ -7292,6 +7301,7 @@
   var gmOne0 = false;   // 🔊 で1文だけ（くり返さない）
   function playOne(si) {
     if (txtLoop()) { ytLoopIdx = si; ytLoopLabel(); playFrom(si); return; }   // 1文くり返し中：その文に変えてくり返す
+    if (hardOnly && isHard(si)) { playFrom(si); return; }   // 印の文だけ：その印の文から、印の文を順に
     if (rdCont) { playFrom(si); return; }   // 「続けて」がオンなら、その文から最後まで
     stopSpeak(); markSentence(si);
     if (useGemini()) { rdSpeaking = true; playLabel(); gmPlayFrom(si, true); return; }
