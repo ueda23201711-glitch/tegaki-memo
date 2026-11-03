@@ -7603,6 +7603,31 @@
   on($('fl-exit'), 'click', function () { setFlOnly(false); });
   on($('rd-ab'), 'click', abPress);
   // この英文（本ならこの章）の ❓ の印をすべて外す
+  /* ---- キーボード（パソコン・iPad のキーボード）：スペース＝再生／一時停止、← →＝前・次の文 ---- */
+  function keyTyping(t) { var n = t && t.tagName; return n === 'INPUT' || n === 'TEXTAREA' || n === 'SELECT' || (t && t.isContentEditable); }
+  function keyReady() { return rdCur && $('rd-view').className.indexOf('hidden') < 0 && $('word-pop').className === 'hidden' && (!$('dq-dlg') || $('dq-dlg').className === 'hidden'); }
+  on(document, 'keydown', function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey || keyTyping(e.target) || !keyReady()) return;
+    if (e.target && e.target.tagName === 'VIDEO') return;   // 動画の枠を選んでいるときは、動画そのものの操作に任せる
+    var k = e.key || '', c = e.keyCode;
+    if (k === ' ' || k === 'Spacebar' || c === 32) {
+      e.preventDefault();
+      if (e.repeat) return;
+      if (flOpen) $('fl-play').click(); else $('rd-play').click();
+      try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (er) {}
+      return;
+    }
+    var dir = k === 'ArrowLeft' || c === 37 ? -1 : k === 'ArrowRight' || c === 39 ? 1 : 0;
+    if (!dir) return;
+    e.preventDefault();
+    var cur = rdIdx >= 0 ? rdIdx : rdLastIdx >= 0 ? rdLastIdx : 0, to = Math.max(0, Math.min(rdSents.length - 1, cur + dir));
+    if (pk) { pkSeekSent(to); return; }
+    if (ytOn()) { markSentence(to); ytSeek(to); return; }
+    if (rdSpeaking) { playFrom(to); return; }
+    markSentence(to); try { if (flOpen) {} else rdScrollTo(to); } catch (er2) {}
+  });
+  // ボタンを選んだままスペースを押したとき、ボタンが二重に押されないように
+  on(document, 'keyup', function (e) { if ((e.key === ' ' || e.keyCode === 32) && !keyTyping(e.target) && keyReady() && e.target && e.target.tagName === 'BUTTON') e.preventDefault(); });
   on($('rd-hardclr'), 'click', function () {
     if (!rdCur) return;
     var d = rdCur.d, n = hardCount(d); if (!n) return;
