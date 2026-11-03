@@ -195,6 +195,8 @@
   .rd-sent.ab { border-left: 5px solid #2463c9; }
   .rd-sent.hard { border-right: 5px solid #d9534f; }
   .rd-hard { float: right; padding: 3px 7px; margin: 0 0 0 6px; font-size: 14px; background: #f1f4f6; color: #9aa6ad; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  .rd-bmk { float: right; padding: 3px 4px; margin: 0 0 0 4px; font-size: 15px; line-height: 1.2; }
+  .fl-s .rd-bmk { float: none; margin: 0 4px 0 0; padding: 0; }
   .rd-sent.hard .rd-hard { background: #fbe3e1; color: #c0392b; font-weight: 700; }
   .fl-s.ab { background: #e3eefc; }
   .rd-sent.now { box-shadow: 0 0 0 3px #e8b44c; background: #fffbea; }
@@ -5768,6 +5770,7 @@
   var flOpen = false, flEls = [], flSize = Number(lsGet('memo_fl_size') || 22);
   function openFlow() {
     if (!rdCur || !rdSents.length) return;
+    setTimeout(bmMarkUpdate, 0);
     var startAt = rdIdx > 0 ? rdIdx : topVisible();   // 今見ている文から
     stopSpeak();
     var box = $('fl-text'); box.innerHTML = ''; flEls = [];
@@ -5952,7 +5955,17 @@
     if (KEY) { var b = {}; b['reader/' + rdCur.id + '/bm'] = i; b['reader/' + rdCur.id + '/bmAt'] = d.bmAt; b['reader/' + rdCur.id + '/bmP'] = d.bmP; api('PATCH', '', b, function () {}); var b2 = {}; b2['readerbm/' + (d.book || rdCur.id)] = { id: rdCur.id, i: i, p: d.bmP, at: d.bmAt }; api('PATCH', '', b2, function () {}); }   // しおりの小さなデータは別に送る（届かなくても本体は保存される）
     if (d.book) markBookBm(rdCur.id);
     $('rd-status').textContent = '🔖 しおりを挟みました（' + d.bmP + '%・' + (i + 1) + ' 文目' + (vt > 0 ? '・動画 ' + vbmFmt(vt) : '') + '）。次に開いたときに「↩ しおりへ」で戻れます。';
-    progUpdate();
+    progUpdate(); bmMarkUpdate();
+  }
+  // しおりの文に 🔖 を付ける（英文の画面は ❓ の隣、「通しで聞く」は文の頭）
+  function bmMarkUpdate() {
+    each(document.querySelectorAll('.rd-bmk'), function (el) { if (el.parentNode) el.parentNode.removeChild(el); });
+    if (!rdCur) return;
+    var i = rdCur.d.bm; if (typeof i !== 'number' || i < 0) return;
+    var mk = function () { var m = document.createElement('span'); m.className = 'rd-bmk'; m.textContent = '🔖'; m.title = 'しおりの文'; return m; };
+    var el = $('rd-text').childNodes[i];
+    if (el && el.id !== 'rd-flow') { var hb = el.querySelector ? el.querySelector('.rd-hard') : null; if (hb && hb.nextSibling) el.insertBefore(mk(), hb.nextSibling); else el.insertBefore(mk(), el.firstChild); }
+    if (flOpen && flEls[i]) flEls[i].insertBefore(mk(), flEls[i].firstChild);
   }
   // 本：しおりは本ごとに1つ（ほかの章のしおりは外す）
   function markBookBm(id) {
@@ -5998,7 +6011,7 @@
       if (!d.book) b['readerbm/' + id] = null;
       api('PATCH', '', b, function () {});
     }
-    progUpdate();
+    progUpdate(); bmMarkUpdate();
     $('rd-status').textContent = '🔖 しおりを消しました。';
   });
   // ボタン類をたたむ／出す（この端末で覚える）
@@ -6840,7 +6853,7 @@
       }
       if (!ch) return;
       rdSaveLocal();
-      if (!rdCur) renderRdHistory(); else progUpdate();
+      if (!rdCur) renderRdHistory(); else { progUpdate(); bmMarkUpdate(); }
     });
   }
   /* ---- ほかの端末で増えた英文を読み込む ---- */
@@ -7194,6 +7207,7 @@
   }
   function renderRd() {
     if (!rdCur) return;
+    setTimeout(bmMarkUpdate, 0);   // しおりの 🔖（描き終わってから）
     var d = rdCur.d, box = $('rd-text'); box.innerHTML = '';
     var allIdioms = [];
     each(rdSents, function (s, si) {
