@@ -1934,7 +1934,7 @@
   on($('lb-del'), 'click', function (e) { e.stopPropagation(); clipDelete(); });
   on($('lb-x'), 'click', function (e) { e.stopPropagation(); lsoClear(); });
   on($('ib-dup'), 'click', function (e) { e.stopPropagation(); if (clipCopy()) clipPaste(); });
-  // キーボード：Ctrl（Mac は ⌘）＋C／X／V／D、Delete・Backspace で削除、Esc で選択をやめる
+  // キーボード：Ctrl（Mac は ⌘）＋C／X／V／D、Z で戻す・Y（Shift＋Z）でやり直す、Delete・Backspace で削除、Esc で選択をやめる
   on(document, 'keydown', function (e) {
     if (!cur || $('scr-edit').className.indexOf('hidden') >= 0 || $('text-dlg').className !== 'hidden') return;
     var tg = e.target; if (tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA' || tg.tagName === 'SELECT' || tg.isContentEditable)) return;
@@ -1942,6 +1942,8 @@
     if (!mod && (k === 'delete' || k === 'backspace' || e.keyCode === 46 || e.keyCode === 8)) { if (clipDelete()) e.preventDefault(); return; }
     if (k === 'escape' || e.keyCode === 27) { if (lso) lsoClear(); if (selectedId) selectItem(null); return; }
     if (!mod) return;
+    if (k === 'z' && !e.shiftKey) { e.preventDefault(); $('btn-undo').click(); return; }   // 戻す
+    if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); $('btn-redo').click(); return; }   // やり直す
     if (k === 'c' || k === 'x') { if (clipCopy()) { e.preventDefault(); if (k === 'x') clipDelete(); } return; }
     if (k === 'd') { if (clipCopy()) { e.preventDefault(); clipPaste(); } return; }
     if (k === 'v' && memClip && !(navigator.clipboard && navigator.clipboard.readText)) { e.preventDefault(); clipPaste(); }
@@ -3726,6 +3728,7 @@
   function hardCount(d) { var n = 0; if (d && d.hard) for (var k in d.hard) if (d.hard[k]) n++; return n; }
   function setHard(i, onn) {
     if (!rdCur) return;
+    undoPush([rdCur.id], '❓ の印');
     var d = rdCur.d; d.hard = d.hard || {};
     if (onn) d.hard['s' + i] = 1; else delete d.hard['s' + i];
     rdSaveLocal();
@@ -3737,6 +3740,7 @@
   function hardRange(i) {
     if (!rdCur) return false;
     var hl = hardLast; if (!hl || hl.doc !== rdCur.id || hl.i === i) return false;
+    undoPush([rdCur.id], '❓ の印（まとめて）');
     var a = Math.min(hl.i, i), z = Math.max(hl.i, i), d = rdCur.d, b = {}, kids = $('rd-text').childNodes;
     d.hard = d.hard || {};
     for (var k = a; k <= z && k < rdSents.length; k++) {
@@ -6258,7 +6262,9 @@
   // 選んで削除：rdSel = {id: 1}（選んでいないときは null）
   var rdSel = null;
   function delDocs(ids) {
-    var b = {};
+    var b = {}, keep = [];
+    each(ids, function (id) { if (rdDocs[id] && !rdDocs[id].lv) keep.push(id); });
+    undoPush(keep, '削除');
     each(ids, function (id) {
       if (mkJob && mkJob.id === id) stopJob('');
       for (var q = mkQueue.length - 1; q >= 0; q--) if (mkQueue[q].id === id) mkQueue.splice(q, 1);
@@ -6810,6 +6816,7 @@
       on(del, 'click', function (e) {
         e.stopPropagation();
         if (!window.confirm('この英文を履歴から削除しますか？' + (d.lv ? '（動画もドライブとこの端末から削除します）' : ''))) return;
+        if (!d.lv) undoPush([id], '削除');
         lvDrop(id);
         delete rdDocs[id]; rdSaveLocal(); renderRdHistory();
         var bd = {}; bd['reader/' + id] = null; api('PATCH', '', bd, function () {});
@@ -7081,6 +7088,7 @@
     var d0 = rdDocs[chs[0]];
     var t = window.prompt('本の題名（すべての章と一覧の題名が変わります）', d0.bookTitle || ''); if (t === null) return;
     t = t.replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '').slice(0, 80); if (!t) return;
+    undoPush(chs, '本の題名');
     var up = {};
     each(chs, function (c) { var x = rdDocs[c]; x.bookTitle = t; x.title = '📚 ' + t + ' — ' + (x.chTitle || ('パート ' + x.ch + '/' + chs.length)); x.named = 1; up['reader/' + c + '/bookTitle'] = t; up['reader/' + c + '/title'] = x.title; up['reader/' + c + '/named'] = 1; });
     rdSaveLocal(); if (KEY) api('PATCH', '', up, function () {});
@@ -7093,6 +7101,7 @@
     var mark = /^(🌐|🎬) /.exec(d.title || ''), cur = String(d.title || '').replace(/^(🌐|🎬) /, '');
     var t = window.prompt('この英文の題名', cur);
     if (t === null) return;
+    undoPush([id], '題名');
     t = t.replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '').slice(0, 80);
     if (!t) t = autoTitle(d.text);
     d.title = (mark ? mark[0] : '') + t; d.named = 1;
@@ -7620,6 +7629,54 @@
   on($('fl-exit'), 'click', function () { setFlOnly(false); });
   on($('rd-ab'), 'click', abPress);
   // この英文（本ならこの章）の ❓ の印をすべて外す
+  /* ---- 元に戻す（Ctrl＋Z・Mac は ⌘＋Z）：英文の修正・置き換え・❓ の印・題名・削除 ----
+     変える前の英文のデータを覚えておき、戻すときはそれを書き戻す（クラウドにも）。動画つきの英文の削除は戻せない（動画も消えるため） */
+  var rdUndo = [];
+  function undoPush(ids, label) {
+    var snap = [];
+    each(ids, function (id) { snap.push({ id: id, d: rdDocs[id] ? JSON.parse(JSON.stringify(rdDocs[id])) : null }); });
+    if (!snap.length) return;
+    rdUndo.push({ s: snap, label: label }); if (rdUndo.length > 30) rdUndo.shift();
+  }
+  function undoDo() {
+    var u = rdUndo.pop();
+    var msg = function (t) { if (rdCur) $('rd-status').textContent = t; else { var m = $('rd-msg'); if (m) m.textContent = t; } };
+    if (!u) { msg('↶ もう戻せる操作はありません。'); return; }
+    var b = {};
+    each(u.s, function (x) { if (x.d) rdDocs[x.id] = x.d; else delete rdDocs[x.id]; b['reader/' + x.id] = x.d; });
+    rdSaveLocal(); if (KEY) api('PATCH', '', b, function () {});
+    if (rdCur) {
+      if (rdDocs[rdCur.id]) { var id = rdCur.id, top = -1; try { top = topSent(); } catch (e) {} openRdDoc(id); if (top >= 0) setTimeout(function () { if (rdCur && rdCur.id === id) rdScrollTo(Math.min(top, rdSents.length - 1)); }, 120); }
+      else rdShowInput();
+    } else renderRdHistory();
+    msg('↶ 「' + u.label + '」を元に戻しました。');
+  }
+  // 選んだ文字がないときの Ctrl＋C：今の文（英語）をコピー
+  function copyText(t, done) {
+    var ok = function () { if (done) done(true); };
+    try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t).then(ok, function () { done && done(false); }); return; } } catch (e) {}
+    try { var ta = document.createElement('textarea'); ta.value = t; ta.style.position = 'fixed'; ta.style.top = '-1000px'; document.body.appendChild(ta); ta.select(); var r = document.execCommand('copy'); document.body.removeChild(ta); if (done) done(r); } catch (e2) { if (done) done(false); }
+  }
+  on(document, 'keydown', function (e) {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || keyTyping(e.target)) return;
+    if ($('scr-reader') && $('scr-reader').className.indexOf('hidden') >= 0) return;
+    var k = String(e.key || '').toLowerCase();
+    if (k === 'z' && !e.shiftKey) { e.preventDefault(); undoDo(); return; }
+    if (k === 'c' && rdCur && keyReady()) {
+      var sel = ''; try { sel = String(window.getSelection ? window.getSelection() : ''); } catch (er) {}
+      if (sel) return;   // 選んだ文字があれば、ふつうのコピー
+      var k2 = rdIdx >= 0 ? rdIdx : rdLastIdx >= 0 ? rdLastIdx : topSent();
+      if (k2 >= 0 && rdSents[k2]) { e.preventDefault(); copyText(rdSents[k2].text, function (ok) { $('rd-status').textContent = ok ? '📋 ' + (k2 + 1) + ' 文目の英文をコピーしました。' : 'コピーできませんでした。'; }); }
+    }
+  });
+  // 一覧の画面で Ctrl＋V（入力欄の外）：貼り付けた英文・アドレスを読み込む
+  on(document, 'paste', function (e) {
+    if (rdCur || keyTyping(e.target) || !$('scr-reader') || $('scr-reader').className.indexOf('hidden') >= 0) return;
+    var t = ''; try { t = (e.clipboardData || window.clipboardData).getData('text') || ''; } catch (er) {}
+    if (!/[A-Za-z]{2}/.test(t)) return;
+    e.preventDefault();
+    $('rd-in').value = t; rdLoad();
+  });
   /* ---- キーボード（パソコン・iPad のキーボード）：スペース＝再生／一時停止、← →＝前・次の文 ---- */
   function keyTyping(t) { var n = t && t.tagName; return n === 'INPUT' || n === 'TEXTAREA' || n === 'SELECT' || (t && t.isContentEditable); }
   function keyReady() { return rdCur && $('rd-view').className.indexOf('hidden') < 0 && $('word-pop').className === 'hidden' && (!$('dq-dlg') || $('dq-dlg').className === 'hidden'); }
@@ -7673,6 +7730,7 @@
     var v = window.prompt('この文の英語を直す（直した文の訳は作り直します）', old); if (v === null) return;
     v = v.replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, ''); if (!v || v === old) return;
     $('word-pop').className = 'hidden';
+    undoPush([id], '文の修正');
     rdTextChanged(id, function (d, oldList) {
       if (d.cues) { if (d.cues[si]) d.cues[si][1] = v; return; }
       var t = String(d.text || '').replace(/\r/g, '').replace(/[ \t]+/g, ' '), pos = 0, done = false;
@@ -7713,6 +7771,7 @@
     var to = window.prompt('「' + find + '」（' + all + ' か所）を、何に置き換えますか？', ''); if (to === null) return;
     to = to.replace(/^\s+|\s+$/g, '');
     if (!window.confirm('「' + find + '」→「' + to + '」に、' + all + ' か所を置き換えます。よろしいですか？')) return;
+    undoPush(ids, '置き換え');
     each(ids, function (x) {
       if (!cnt(x)) return;
       rdTextChanged(x, function (dd) {
@@ -7726,6 +7785,7 @@
     if (!rdCur) return;
     var d = rdCur.d, n = hardCount(d); if (!n) return;
     if (!window.confirm((d.book ? 'この章' : 'この英文') + 'の ❓ の印（' + n + ' 文）をすべて外しますか？')) return;
+    undoPush([rdCur.id], '❓ の印を全部外す');
     delete d.hard; hardOnly = false; hardCur = -1;
     rdSaveLocal();
     if (KEY) { var b = {}; b['reader/' + rdCur.id + '/hard'] = null; api('PATCH', '', b, function () {}); }

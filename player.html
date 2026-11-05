@@ -1230,6 +1230,19 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
   on(document, 'keydown', function (e) {
     if (!cur) return;
     var k = e.key || '', c = e.keyCode;
+    // Ctrl（⌘）＋C：選んだ文字がなければ、今のセリフ（英語）をコピー
+    if ((e.ctrlKey || e.metaKey) && (k === 'c' || k === 'C')) {
+      var sel = ''; try { sel = String(window.getSelection ? window.getSelection() : ''); } catch (er) {}
+      var ki = idxAt(P.t());
+      if (!sel && ki >= 0) {
+        e.preventDefault();
+        var t = cur.cues[ki][1], ok = function () { toast('📋 今のセリフをコピーしました'); };
+        try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t).then(ok, function () {}); return; } } catch (er2) {}
+        try { var ta = document.createElement('textarea'); ta.value = t; ta.style.position = 'fixed'; ta.style.top = '-1000px'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); ok(); } catch (er3) {}
+      }
+      return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (k === ' ' || c === 32) { e.preventDefault(); toggle(); }
     else if (k === 'ArrowLeft' || c === 37) { e.preventDefault(); prevS(); }
     else if (k === 'ArrowRight' || c === 39) { e.preventDefault(); nextS(); }
