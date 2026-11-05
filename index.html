@@ -6248,6 +6248,20 @@
     if (n) d.fav = n; else delete d.fav;
     rdSaveLocal();
     if (KEY) { var b = {}; b['reader/' + id + '/fav'] = n || null; api('PATCH', '', b, function () {}); }
+    favSync();
+  }
+  // 単語帳の「本ごとの一覧」で ★ の順に並べられるよう、本・英文の名前ごとの ★ を小さくまとめて送る（memos/合言葉/favs）
+  var favSyncT = null, favSent = '';
+  function favSync() {
+    if (favSyncT) clearTimeout(favSyncT);
+    favSyncT = setTimeout(function () {
+      favSyncT = null; if (!KEY) return;
+      var m = {};
+      for (var id in rdDocs) { var d = rdDocs[id]; if (!d) continue; var f = d.book ? (d.bfav || 0) : (d.fav || 0), l = srcLabel(d); if (l && f > (m[l] || 0)) m[l] = f; }
+      var js = JSON.stringify(m); if (js === favSent) return;
+      favSent = js;
+      api('PUT', '/favs', { map: js, at: now() }, function () {});
+    }, 1500);
   }
   function vbmFmt(t) { t = Math.floor(t || 0); var h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), x = t % 60; return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (x < 10 ? '0' : '') + x; }
   // 本の好み：本のすべての章に bfav として保存（本の行の ★。並べ替えでは本全体の★として使う）
@@ -6256,6 +6270,7 @@
     var up = {};
     each(bookChapters(bk), function (c) { var x = rdDocs[c]; if (!x) return; if (n) x.bfav = n; else delete x.bfav; up['reader/' + c + '/bfav'] = n || null; });
     rdSaveLocal(); if (KEY) api('PATCH', '', up, function () {});
+    favSync();
   }
   function favOf(id) { var d = rdDocs[id]; return d ? (d.book ? bookFav(d.book) : (d.fav || 0)) : 0; }
   function rdSerials() { var a = rdIds(), m = {}; for (var i = 0; i < a.length; i++) m[a[i]] = a.length - i; return m; }
@@ -6854,7 +6869,7 @@
       if (keep) rdDocs[keep.id] = keep.d;
       rdSaveLocal();
       if (!rdCur) renderRdHistory();
-      setTimeout(backfillSrc, 1500); setTimeout(lvGc, 2000);
+      setTimeout(backfillSrc, 1500); setTimeout(lvGc, 2000); setTimeout(favSync, 3000);
     });
     api('GET', '/settings/gas', undefined, function (err, u) {
       if (!err && typeof u === 'string' && u !== gasUrl) { gasUrl = u; lsSet('memo_gas', u); }
