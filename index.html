@@ -383,6 +383,12 @@
   @-webkit-keyframes spin { to { -webkit-transform: rotate(360deg); } }
   @keyframes spin { to { transform: rotate(360deg); } }
   /* 色を選ぶ画面 */
+  #shape-pop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(20,28,32,.45); z-index: 70; }
+  #shape-pop .dlg { position: absolute; left: 4%; right: 4%; top: 12%; max-width: 420px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 14px 16px; box-sizing: border-box; box-shadow: 0 8px 30px rgba(0,0,0,.3); }
+  #shape-pop h3 { margin: 4px 0 10px; font-size: 13px; color: #3b4a52; font-weight: 600; }
+  #shape-list button { width: 31%; margin: 0 1% 8px 0; padding: 12px 4px; font-size: 16px; background: #e6ebee; }
+  #shape-list button.on { background: #2f4858; color: #fff; }
+  #shape-pop .hint { font-size: 12px; color: #5b6a72; margin: 4px 0 0; line-height: 1.5; }
   #color-pop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(20,28,32,.45); z-index: 70; }
   #color-pop .dlg { position: absolute; left: 4%; right: 4%; top: 8%; max-width: 440px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 14px 16px; box-sizing: border-box; box-shadow: 0 8px 30px rgba(0,0,0,.3); }
   #color-pop h3 { margin: 4px 0 8px; font-size: 13px; color: #3b4a52; font-weight: 600; }
@@ -834,6 +840,7 @@
     <button data-tool="pen" data-color="#2463c9" type="button"><span class="dot" style="background:#2463c9"></span></button>
     <button id="btn-color" type="button"><span class="dot" id="cur-dot" style="background:conic-gradient(red,yellow,lime,aqua,blue,magenta,red)"></span> 色</button>
     <button data-tool="hl" data-color="#ffd43b" type="button"><span class="dot" id="hl-dot" style="background:#ffd43b"></span> 蛍光</button>
+    <button id="btn-shape" type="button" title="丸・四角・三角・線・矢印">◯ 図形</button>
     <button data-tool="eraser" type="button">消しゴム</button>
     <button data-tool="select" type="button">✋ 選択</button>
     <button data-tool="lasso" type="button" title="手書きの線や文字を囲んで選び、まとめて動かす・コピー・削除">➰ 囲む</button>
@@ -921,6 +928,23 @@
       <button id="ex-save" type="button">保存</button>
       <button id="ex-close" type="button">閉じる</button>
     </div>
+  </div>
+</div>
+
+<!-- 図形を選ぶ -->
+<div id="shape-pop" class="hidden">
+  <div class="dlg">
+    <h3>図形を選んで、ページの上をなぞる（引っぱる）と描けます</h3>
+    <div id="shape-list">
+      <button data-shape="ellipse" type="button">◯ 丸</button>
+      <button data-shape="rect" type="button">□ 四角</button>
+      <button data-shape="tri" type="button">△ 三角</button>
+      <button data-shape="line" type="button">／ 直線</button>
+      <button data-shape="arrow" type="button">→ 矢印</button>
+      <button data-shape="arrow2" type="button">↔ 両矢印</button>
+    </div>
+    <p class="hint">色と太さは、いまのペンの色・細/中/太が使われます。描いたあとは「➰ 囲む」で動かしたり、消しゴムで消したりできます。</p>
+    <div class="row" style="margin-top:8px"><button id="shape-cancel" type="button">やめる</button></div>
   </div>
 </div>
 
@@ -1289,6 +1313,11 @@
     }
     if (p.length === 2) {
       c.beginPath(); c.arc(p[0] * k, p[1] * k, c.lineWidth / 2, 0, Math.PI * 2); c.fill();
+    } else if (st.k) {
+      // 図形：角が丸くならないよう、点と点をまっすぐ結ぶ
+      c.beginPath(); c.moveTo(p[0] * k, p[1] * k);
+      for (var q = 2; q < p.length; q += 2) c.lineTo(p[q] * k, p[q + 1] * k);
+      c.stroke();
     } else {
       c.beginPath(); c.moveTo(p[0] * k, p[1] * k);
       for (var i = 2; i < p.length - 2; i += 2) {
@@ -1339,6 +1368,45 @@
     } catch (e) { if (saveDpr) dpr = saveDpr; thinOK = false; return ''; }
   }
 
+  /* ---- 図形（丸・四角・三角・線・矢印）：ふつうの線と同じ形で保存するので、囲む・消しゴム・戻す・同期がそのまま使える ---- */
+  var shapeKind = 'rect';
+  var SHAPE_ICON = { ellipse: '◯', rect: '□', tri: '△', line: '／', arrow: '→', arrow2: '↔' };
+  function shapePts(kind, a, b, w) {
+    var x0 = a[0], y0 = a[1], x1 = b[0], y1 = b[1], out = [], i;
+    var L = Math.min(x0, x1), R = Math.max(x0, x1), T = Math.min(y0, y1), B = Math.max(y0, y1);
+    if (kind === 'rect') return [L, T, R, T, R, B, L, B, L, T];
+    if (kind === 'tri') return [Math.round((L + R) / 2), T, R, B, L, B, Math.round((L + R) / 2), T];
+    if (kind === 'ellipse') {
+      var cx = (L + R) / 2, cy = (T + B) / 2, rx = (R - L) / 2, ry = (B - T) / 2;
+      for (i = 0; i <= 64; i++) { var t = i / 64 * Math.PI * 2; out.push(Math.round(cx + rx * Math.cos(t)), Math.round(cy + ry * Math.sin(t))); }
+      return out;
+    }
+    // 直線・矢印：ほぼ水平・垂直・45° のときは、まっすぐにそろえる
+    var dx = x1 - x0, dy = y1 - y0, len = Math.sqrt(dx * dx + dy * dy), ang = Math.atan2(dy, dx), st8 = Math.PI / 4;
+    var snap = Math.round(ang / st8) * st8; if (Math.abs(ang - snap) < 0.09) { ang = snap; x1 = Math.round(x0 + len * Math.cos(ang)); y1 = Math.round(y0 + len * Math.sin(ang)); }
+    if (kind === 'line') return [x0, y0, x1, y1];
+    var h = Math.min(len * 0.45, Math.max(30, w * 5)), sp = 0.45;
+    function head(px, py, an) { return [Math.round(px - h * Math.cos(an - sp)), Math.round(py - h * Math.sin(an - sp)), px, py, Math.round(px - h * Math.cos(an + sp)), Math.round(py - h * Math.sin(an + sp))]; }
+    var e = head(x1, y1, ang);
+    if (kind === 'arrow') return [x0, y0, x1, y1].concat(e, [x1, y1]);
+    var s0 = head(x0, y0, ang + Math.PI);
+    return s0.concat([x0, y0, x1, y1], e, [x1, y1]);
+  }
+  function syncShapeBtn() {
+    $('btn-shape').innerHTML = (SHAPE_ICON[shapeKind] || '◯') + ' 図形';
+    $('btn-shape').className = tool === 'shape' ? 'on' : '';
+    each($('shape-list').getElementsByTagName('button'), function (b) { b.className = b.getAttribute('data-shape') === shapeKind ? 'on' : ''; });
+  }
+  on($('btn-shape'), 'click', function () { syncShapeBtn(); $('shape-pop').className = ''; });
+  on($('shape-cancel'), 'click', function () { $('shape-pop').className = 'hidden'; });
+  on($('shape-pop'), 'click', function (e) { if (e.target === $('shape-pop')) $('shape-pop').className = 'hidden'; });
+  on($('shape-list'), 'click', function (e) {
+    var b = e.target; while (b && b.tagName !== 'BUTTON') b = b.parentNode;
+    if (!b) return;
+    shapeKind = b.getAttribute('data-shape'); $('shape-pop').className = 'hidden';
+    setTool('shape'); saveTool();
+  });
+
   /* ---- 入力 ---- */
   var drawing = null;            // {st, id}
   var penSeen = false;           // Apple Pencil を使ったことがある
@@ -1351,6 +1419,7 @@
   function startStroke(x, y, ptrId, pressure) {
     if (!cur || tool === 'select') return;
     if (tool === 'lasso') { lsoDown(x, y, ptrId); return; }
+    if (tool === 'shape') { var p0 = toPage(x, y); drawing = { id: ptrId, shape: shapeKind, a: p0, st: { t: 'pen', k: shapeKind, w: SIZES.pen[sizeLv - 1], c: penColor, p: [p0[0], p0[1]] } }; return; }
     var st = { t: tool, w: SIZES[tool][sizeLv - 1], p: [] };
     if (tool !== 'eraser') st.c = color;
     var pt = toPage(x, y); st.p.push(pt[0], pt[1]);
@@ -1361,6 +1430,7 @@
   function moveStroke(x, y, pressure) {
     if (!drawing) return;
     if (drawing.lasso) { lsoMove(x, y); return; }
+    if (drawing.shape) { var b0 = toPage(x, y); drawing.st.p = shapePts(drawing.shape, drawing.a, b0, drawing.st.w); drawing.moved = Math.abs(b0[0] - drawing.a[0]) + Math.abs(b0[1] - drawing.a[1]) > 6; liveDraw(); return; }
     var pt = toPage(x, y), p = drawing.st.p;
     var lx = p[p.length - 2], ly = p[p.length - 1];
     if (Math.abs(pt[0] - lx) + Math.abs(pt[1] - ly) < 2) return;
@@ -1391,6 +1461,7 @@
   function endStroke() {
     if (!drawing) return;
     if (drawing.lasso) { lsoUp(); return; }
+    if (drawing.shape && !drawing.moved) { drawing = null; lctx.clearRect(0, 0, cvLive.width, cvLive.height); return; }   // 引っぱらずに離したときは描かない
     var st = drawing.st; drawing = null;
     lctx.clearRect(0, 0, cvLive.width, cvLive.height);
     pushHistory();
@@ -1548,7 +1619,7 @@
   var cpCb = null, cpCur = '#000000';
   // 古い端末（虹色の表示ができない）では白丸＋枠に
   if ($('cur-dot').style.background.indexOf('gradient') < 0) { $('cur-dot').style.background = '#fff'; $('cur-dot').style.borderColor = '#8a969e'; }
-  function saveTool() { lsSet('memo_tool', JSON.stringify({ tool: tool, color: color, pen: penColor, hl: hlColor, size: sizeLv })); }
+  function saveTool() { lsSet('memo_tool', JSON.stringify({ tool: tool, color: color, pen: penColor, hl: hlColor, size: sizeLv, shape: shapeKind })); }
   function hex2(n) { var h = Math.round(Math.max(0, Math.min(255, n))).toString(16); return h.length < 2 ? '0' + h : h; }
   function hslToHex(h, s, l) {
     s /= 100; l /= 100;
@@ -1611,7 +1682,7 @@
   });
   function applyPickedColor(c) {
     if (tool === 'hl') { hlColor = c; color = c; }
-    else { tool = 'pen'; penColor = c; color = c; applySelectMode(); }
+    else { if (tool !== 'shape') tool = 'pen'; penColor = c; color = c; applySelectMode(); }
     syncToolButtons(); saveTool();
   }
 
@@ -1629,6 +1700,7 @@
     $('btn-color').className = custom ? 'on' : '';
     if (custom) $('cur-dot').style.background = color;
     $('hl-dot').style.background = hlColor;
+    syncShapeBtn();
   }
   on($('tools'), 'click', function (e) {
     var b = e.target; while (b && b.tagName !== 'BUTTON') b = b.parentNode;
@@ -8638,7 +8710,8 @@
     penColor = savedTool.pen || (tool === 'pen' ? color : penColor);
     hlColor = savedTool.hl || (tool === 'hl' ? color : hlColor);
   }
-  if (!SIZES[tool] && tool !== 'select' && tool !== 'lasso') tool = 'pen';
+  if (savedTool && SHAPE_ICON[savedTool.shape]) shapeKind = savedTool.shape;
+  if (!SIZES[tool] && tool !== 'select' && tool !== 'lasso' && tool !== 'shape') tool = 'pen';
   syncToolButtons(); applySelectMode();
 
   on(window, 'resize', function () { if (cur) layout(); });
