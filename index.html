@@ -1164,7 +1164,6 @@
     $('empty').className = 'empty' + (ids.length || fids.length ? ' hidden' : '');
     $('empty').innerHTML = curFolder ? 'このフォルダにはメモがありません。<br>「☑ 選択」で選んだメモを「📁 移動」で入れられます。' : 'メモはまだありません。<br>右上の「＋ 新規」から書き始めましょう。';
     renderFolderBar();
-    each(fids, function (fid) { g.appendChild(folderCard(fid)); });
     each(ids, function (id) {
       var it = index[id];
       var card = document.createElement('div'); card.className = 'card' + (selected[id] ? ' sel' : '');
@@ -1183,6 +1182,7 @@
       });
       g.appendChild(card);
     });
+    each(fids, function (fid) { g.appendChild(folderCard(fid)); });   // フォルダは、単独のメモのあと（最後）に
   }
 
   function refreshIndex() {
