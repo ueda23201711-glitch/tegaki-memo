@@ -2365,7 +2365,7 @@
   function applySelectMode() {
     $('page').className = 'page' + (tool === 'select' ? ' select-mode' : '');
     if (tool !== 'select' && selectedId && !penOnly) selectItem(null);
-    if (tool !== 'lasso' && lso) lsoClear();
+    if (tool !== 'lasso' && tool !== 'select' && lso) lsoClear();
   }
   function setTool(t) { tool = t; syncToolButtons(); applySelectMode(); }
   function syncPencilButton() {
@@ -2552,9 +2552,41 @@
     if (!d.moved && d.url) { openLink(d.url); return; }   // リンクをタップした（動かしていない）
     if (d.moved) { undoStack.push(d.before); if (undoStack.length > 40) undoStack.shift(); redoStack = []; changed(); }
   }
+  // 「選択」で図形（丸・四角・矢印など）をタップしたら、その図形を選んで、そのまま動かせるように
+  function shapeAt(pt) {
+    var tol = 14 / (scale || 1);
+    for (var i = pg.strokes.length - 1; i >= visFrom(); i--) {
+      var st = pg.strokes[i], p = st.p; if (!st.k || !p || p.length < 4) continue;
+      var w = (st.w || 4) / 2 + tol;
+      if (st.f && ptInPoly(p, pt[0], pt[1])) return i;
+      for (var j = 2; j < p.length; j += 2) {
+        var ax = p[j - 2], ay = p[j - 1], bx = p[j], by = p[j + 1], dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
+        var t = L ? Math.max(0, Math.min(1, ((pt[0] - ax) * dx + (pt[1] - ay) * dy) / L)) : 0;
+        var qx = ax + t * dx - pt[0], qy = ay + t * dy - pt[1];
+        if (qx * qx + qy * qy <= w * w) return i;
+      }
+    }
+    return -1;
+  }
+  function selShapeDown(x, y, ptr, e) {
+    if (tool !== 'select' || !cur) return false;
+    var pt = toPage(x, y);
+    var inBox = lso && pt[0] >= lso.b[0] - 10 && pt[0] <= lso.b[2] + 10 && pt[1] >= lso.b[1] - 10 && pt[1] <= lso.b[3] + 10;
+    if (!inBox) {
+      var i = shapeAt(pt);
+      if (i < 0) { if (lso) lsoClear(); return false; }
+      lso = { pg: pg, si: [i], ii: [], b: lsoBounds([i], []) }; lsoRepaint();
+    }
+    if (e && e.preventDefault) e.preventDefault();
+    drawing = { lasso: 1, id: ptr, mv: 1, lx: pt[0], ly: pt[1], before: snapshot(), moved: false, sel: 1 };
+    return true;
+  }
+  function selShapeMove(x, y, ptr) { if (drawing && drawing.sel && drawing.id === ptr) { lsoMove(x, y); return true; } return false; }
+  function selShapeUp(ptr) { if (drawing && drawing.sel && (ptr === undefined || drawing.id === ptr)) { lsoUp(); lsoRepaint(); return true; } return false; }
   function itemsDown(x, y, target, ptr, e) {
     var it = itemFromTarget(target);
-    if (!it) { if (selectedId) selectItem(null); return; }
+    if (!it) { if (selectedId) selectItem(null); selShapeDown(x, y, ptr, e); return; }
+    if (lso && tool === 'select') lsoClear();
     if (e) e.preventDefault();
     var isHandle = target.getAttribute && target.getAttribute('data-handle');
     if (selectedId !== it.id) selectItem(it.id);
@@ -2566,8 +2598,11 @@
   if (window.PointerEvent) {
     on($('items'), 'pointerdown', function (e) {
       itemsDown(e.clientX, e.clientY, e.target, e.pointerId, e);
-      if (dragging) { try { $('items').setPointerCapture(e.pointerId); } catch (er) {} }
+      if (dragging || (drawing && drawing.sel)) { try { $('items').setPointerCapture(e.pointerId); } catch (er) {} }
     });
+    on(window, 'pointermove', function (e) { if (selShapeMove(e.clientX, e.clientY, e.pointerId)) e.preventDefault(); });
+    on(window, 'pointerup', function (e) { selShapeUp(e.pointerId); });
+    on(window, 'pointercancel', function (e) { selShapeUp(e.pointerId); });
     on(window, 'pointermove', function (e) { if (sameDrag(e.pointerId)) { e.preventDefault(); dragMove(e.clientX, e.clientY); } });
     on(window, 'pointerup', function (e) { if (sameDrag(e.pointerId)) dragEnd(); });
     on(window, 'pointercancel', function (e) { if (sameDrag(e.pointerId)) dragEnd(); });
@@ -2575,8 +2610,12 @@
     on($('items'), 'touchstart', function (e) { var t = e.changedTouches[0]; itemsDown(t.clientX, t.clientY, e.target, t.identifier, e); });
     on(document, 'touchmove', function (e) { if (!dragging) return; e.preventDefault(); var t = findTouch(e.changedTouches, dragging.ptr); if (t) dragMove(t.clientX, t.clientY); });
     on(document, 'touchend', function (e) { if (dragging && findTouch(e.changedTouches, dragging.ptr)) dragEnd(); });
-    on(document, 'touchcancel', function () { dragEnd(); });
+    on(document, 'touchcancel', function () { dragEnd(); selShapeUp(); });
+    on(document, 'touchmove', function (e) { if (!drawing || !drawing.sel) return; var t = findTouch(e.changedTouches, drawing.id); if (t) { e.preventDefault(); selShapeMove(t.clientX, t.clientY, drawing.id); } });
+    on(document, 'touchend', function (e) { if (drawing && drawing.sel && findTouch(e.changedTouches, drawing.id)) selShapeUp(); });
     on($('items'), 'mousedown', function (e) { itemsDown(e.clientX, e.clientY, e.target, undefined, e); });
+    on(window, 'mousemove', function (e) { selShapeMove(e.clientX, e.clientY, undefined); });
+    on(window, 'mouseup', function () { if (drawing && drawing.sel && drawing.id === undefined) selShapeUp(); });
     on(window, 'mousemove', function (e) { if (dragging && dragging.ptr === undefined) dragMove(e.clientX, e.clientY); });
     on(window, 'mouseup', function () { if (dragging && dragging.ptr === undefined) dragEnd(); });
   }
