@@ -696,7 +696,7 @@
         <div id="rd-tin-box" class="hidden"><button id="rd-tin" type="button">📝 題名も本文の最初の文にする（読み上げ・訳の対象に）</button></div>
         <div id="rd-cv-box" class="hidden"></div>
         <div id="rd-fix-box" class="hidden"><button id="rd-fix" type="button"></button></div>
-        <div id="rd-src-box" class="hidden"><a id="rd-src" href="#" target="_blank" rel="noopener"></a> <button id="rd-src-ed" type="button" class="hidden" style="font-size:13px; padding:3px 9px; margin-left:4px;"></button></div>
+        <div id="rd-src-box" class="hidden"><a id="rd-src" href="#" target="_blank" rel="noopener"></a> <button id="rd-src-ed" type="button" class="hidden" style="font-size:13px; padding:3px 9px; margin-left:4px;"></button> <label id="rd-brave-l" style="font-size:12px; color:#6b5a4a; margin-left:4px; white-space:nowrap;" title="iPhone・Android で、Brave が入っていれば Brave で開きます（入っていなければ、ふだんのブラウザ）"><input id="rd-brave" type="checkbox" style="vertical-align:middle"> 🦁 Brave で開く</label></div>
         <p class="note rd-hint" id="rd-hint-p">単語をタップすると意味と発音、<span class="idm-sample">下線</span>は熟語・定型表現、<span class="saved-sample">黄色</span>はメモ単語帳に保存済みの単語です。🔊 でその文を読みます（「🔁 続けて」がオンなら、そこから最後まで）。</p>
         <div id="rd-text"></div>
       </div>
@@ -7292,6 +7292,40 @@
     });
     return { text: t, n: n };
   }
+  /* ---- 元のページ・元の動画を Brave で開く（iPhone・Android。入っていなければ、ふだんのブラウザ）----
+     ウェブのページからは「Brave が入っているか」を調べられないので、
+     iPhone：brave:// で開いてみて、1.5 秒たっても画面が切り替わらなければ、ふつうに開く
+     Android：intent:// で Brave を指定（入っていなければ、自動でふだんのブラウザ）
+     パソコン：Brave をウェブから直接呼ぶ方法がないので、ふつうに開く（Brave を「既定のブラウザ」にしておけば Brave で開く） */
+  function braveOn() { return lsGet('eibun_brave') === '1'; }
+  var IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  var IS_ANDROID = /Android/.test(navigator.userAgent);
+  function openInBrave(u) {
+    if (IS_ANDROID) {
+      var m = /^(https?):\/\/(.*)$/.exec(u); if (!m) { window.open(u, '_blank'); return; }
+      location.href = 'intent://' + m[2] + '#Intent;scheme=' + m[1] + ';package=com.brave.browser;S.browser_fallback_url=' + encodeURIComponent(u) + ';end';
+      return;
+    }
+    if (IS_IOS) {
+      var left = false, mark = function () { if (document.hidden || document.webkitHidden) left = true; };
+      on(document, 'visibilitychange', mark); on(window, 'pagehide', function () { left = true; }); on(window, 'blur', function () { left = true; });
+      location.href = 'brave://open-url?url=' + encodeURIComponent(u);
+      setTimeout(function () { if (!left) window.open(u, '_blank'); }, 1500);   // Brave が入っていなかった
+      return;
+    }
+    window.open(u, '_blank');
+  }
+  on($('rd-src'), 'click', function (e) {
+    var u = $('rd-src').href;
+    if (!braveOn() || !/^https?:/.test(u) || !(IS_IOS || IS_ANDROID)) return;   // ふつうに開く
+    if (e && e.preventDefault) e.preventDefault();
+    openInBrave(u);
+  });
+  try { $('rd-brave').checked = braveOn(); } catch (e) {}
+  on($('rd-brave'), 'change', function () {
+    lsSet('eibun_brave', $('rd-brave').checked ? '1' : '0');
+    if ($('rd-brave').checked && !(IS_IOS || IS_ANDROID)) alert('パソコンでは、ウェブのページから Brave を直接呼び出せません。\nBrave を「既定のブラウザ」にしておくか、このアプリを Brave で開いて使うと、Brave で開きます。\n（iPhone・Android では、Brave が入っていれば Brave で開きます）');
+  });
   function showDocTitle() {
     var el = $('rd-title'); if (!el) return;
     el.textContent = rdCur ? String(rdCur.d.title || '').replace(/^(🌐|🎬) /, '') : '';
