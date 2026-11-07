@@ -398,6 +398,7 @@
   #shape-list button { width: 31%; margin: 0 1% 8px 0; padding: 12px 4px; font-size: 16px; background: #e6ebee; }
   #fill-list button { width: 31%; margin: 0 1% 8px 0; padding: 9px 4px; font-size: 14px; background: #e6ebee; }
   #fill-list button.on { background: #2f4858; color: #fff; }
+  #shape-go { padding: 10px 18px; font-size: 15px; font-weight: 700; background: #2f4858; color: #fff; }
   #shape-list button.on { background: #2f4858; color: #fff; }
   #shape-pop .hint { font-size: 12px; color: #5b6a72; margin: 4px 0 0; line-height: 1.5; }
   #color-pop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(20,28,32,.45); z-index: 70; }
@@ -952,7 +953,7 @@
 <!-- 図形を選ぶ -->
 <div id="shape-pop" class="hidden">
   <div class="dlg">
-    <h3>図形を選んで、ページの上を引っぱると描けます</h3>
+    <h3>図形と塗りつぶしを選んで「✏ この図形で描く」を押し、ページの上を引っぱると描けます</h3>
     <div id="shape-list">
       <button data-shape="ellipse" type="button">◯ 丸</button>
       <button data-shape="rect" type="button">□ 四角</button>
@@ -967,8 +968,8 @@
       <button data-fill="0.25" type="button">うすく</button>
       <button data-fill="1" type="button">べた</button>
     </div>
-    <p class="hint">色と太さは、いまのペンの色・細/中/太が使われます。描いたあとは「➰ 囲む」で動かしたり、消しゴムで消したりできます。</p>
-    <div class="row" style="margin-top:8px"><button id="shape-cancel" type="button">やめる</button></div>
+    <p class="hint">色と太さは、いまのペンの色・細/中/太が使われます。描いたあとは「✋ 選択」で図形をタップすると、動かしたり消したりできます。</p>
+    <div class="row" style="margin-top:8px"><button id="shape-go" class="primary" type="button">✏ この図形で描く</button> <button id="shape-cancel" type="button">やめる</button></div>
   </div>
 </div>
 
@@ -1425,6 +1426,7 @@
   }
   on($('btn-shape'), 'click', function () { syncShapeBtn(); $('shape-pop').className = ''; });
   on($('shape-cancel'), 'click', function () { $('shape-pop').className = 'hidden'; });
+  on($('shape-go'), 'click', function () { $('shape-pop').className = 'hidden'; setTool('shape'); saveTool(); });
   on($('shape-pop'), 'click', function (e) { if (e.target === $('shape-pop')) $('shape-pop').className = 'hidden'; });
   on($('fill-list'), 'click', function (e) {
     var b = e.target; while (b && b.tagName !== 'BUTTON') b = b.parentNode;
@@ -1434,8 +1436,7 @@
   on($('shape-list'), 'click', function (e) {
     var b = e.target; while (b && b.tagName !== 'BUTTON') b = b.parentNode;
     if (!b) return;
-    shapeKind = b.getAttribute('data-shape'); $('shape-pop').className = 'hidden';
-    setTool('shape'); saveTool();
+    shapeKind = b.getAttribute('data-shape'); syncShapeBtn(); saveTool();   // 選ぶだけ（「✏ この図形で描く」で描き始める）
   });
 
   /* ---- 入力 ---- */
