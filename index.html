@@ -199,6 +199,15 @@
   .fl-s .rd-bmk { float: none; margin: 0 4px 0 0; padding: 0; }
   .rd-sent.hard .rd-hard { background: #fbe3e1; color: #c0392b; font-weight: 700; }
   .fl-s.ab { background: #e3eefc; }
+  #rd-findbar { width: 100%; margin-top: 6px; padding: 6px 8px; background: #fff7d6; border-radius: 8px; box-sizing: border-box; }
+  #rd-findbar.hidden { display: none; }
+  #rd-find-q { width: 46%; font-size: 16px; padding: 5px 8px; }
+  #rd-find-n { display: inline-block; min-width: 54px; text-align: center; font-size: 13px; color: #5b4a10; }
+  #rd-findbar button { padding: 5px 10px; }
+  #rd-find-other { font-size: 13px; color: #5b4a10; margin-top: 4px; }
+  #rd-find-other a { color: #2463c9; margin-right: 10px; text-decoration: underline; cursor: pointer; }
+  .rd-sent.srch { background: #fff3b0; }
+  .rd-sent.srch.srat { box-shadow: 0 0 0 3px #e0a800; }
   .rd-sent.now { box-shadow: 0 0 0 3px #e8b44c; background: #fffbea; }
   #rd-flow { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 60; background: #fbf8f1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   #fl-ctrl { position: -webkit-sticky; position: sticky; top: 0; z-index: 2; background: rgba(251,248,241,.97); border-bottom: 1px solid #e3dccb; padding: 8px 12px; }
@@ -658,6 +667,7 @@
         <button id="rd-ab" type="button" title="1回目に押した文（A）から2回目に押した文（B）までをくり返す">🅰🅱 A-B リピート</button>
         <button id="rd-hardonly" class="hidden" type="button" title="❓ の印を付けた文だけを、続けて再生・読み上げする">❓ 印の文だけ：オフ</button>
         <button id="rd-hardclr" class="hidden" type="button" title="この英文（本ならこの章）の ❓ の印をすべて外す">❓✕ 印を全部外す</button>
+        <button id="rd-find" type="button" title="この英文（本ならこの章）の中で、単語や文字をさがす">🔍 検索</button>
         <button id="rd-repl" type="button" title="英文の中の文字を、まとめて置き換える（聞き取りのまちがいを直すときなど）">🔁 置き換え</button>
         <button id="lv-save" class="hidden" type="button" title="ドライブの動画をこの端末に取り込んで、次からすぐ見られるようにする">⬇ この端末に取り込む</button>
         <button id="rd-cont" type="button" title="🔊 で読んだあと、次の文も続けて読む">🔁 続けて：オフ</button>
@@ -673,6 +683,12 @@
         <button id="rd-retr" type="button" title="日本語訳を作り直す">↻ 訳</button>
         <button id="rd-my" type="button">📚 メモ単語帳</button>
         <span id="rd-status" class="note"></span>
+        <div id="rd-findbar" class="hidden">
+          <input id="rd-find-q" type="search" placeholder="さがす単語（英語・日本語）" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <span id="rd-find-n">0 / 0</span>
+          <button id="rd-find-prev" type="button" title="前">▲</button><button id="rd-find-next" type="button" title="次">▼</button><button id="rd-find-x" type="button" title="閉じる">✕</button>
+          <div id="rd-find-other"></div>
+        </div>
       </div>
       <div class="rd-wrap">
         <div id="rd-title-box" title="押すと題名を直せます"><span id="rd-title-mark"></span><span id="rd-title"></span><span class="ed">✎ 題名を直す</span></div>
@@ -3917,7 +3933,7 @@
   function markSentence(k) {
     rdIdx = k; if (k >= 0) rdLastIdx = k; progSoon();
     if (hardOnly) hardLabel();
-    each($('rd-text').childNodes, function (el, i) { if (el.id !== 'rd-flow') el.className = 'rd-sent' + (abIn(i) ? ' ab' : '') + (isHard(i) ? ' hard' : '') + (i === k ? ' now' : ''); });
+    each($('rd-text').childNodes, function (el, i) { if (el.id !== 'rd-flow') el.className = 'rd-sent' + (abIn(i) ? ' ab' : '') + (isHard(i) ? ' hard' : '') + (i === k ? ' now' : '') + findCls(i); });
     if (flOpen) {
       each(flEls, function (el, i) { el.className = 'fl-s' + (abIn(i) ? ' ab' : '') + (i === k ? ' now' : k >= 0 && i < k ? ' done' : ''); });
       var fe = flEls[k], box = $('rd-flow');
@@ -7378,13 +7394,72 @@
       if (rdCur && rdCur.id === id && all > 30) $('rd-status').textContent = '日本語訳を作成中… ' + n + ' / ' + all + ' 文';
     });
   }
+  /* ---- 🔍 検索：この英文（本ならこの章）の中で、単語や文字をさがす。本のほかの章にあれば、その章へも飛べる ---- */
+  var fnd = { q: '', hits: [], map: {}, at: -1, id: '' };
+  function findCls(i) { return fnd.map[i] ? ' srch' + (fnd.hits[fnd.at] === i ? ' srat' : '') : ''; }
+  function findNorm(t) { return String(t || '').toLowerCase().replace(/[’‘]/g, "'"); }
+  function findCount(text, q) { var t = findNorm(text), n = 0, k = 0; if (!q) return 0; while ((k = t.indexOf(q, k)) >= 0) { n++; k += q.length; } return n; }
+  function findPaint() {
+    each($('rd-text').childNodes, function (el, i) { if (el.id === 'rd-flow' || !el.className) return; el.className = el.className.replace(/ srch| srat/g, '') + findCls(i); });
+    $('rd-find-n').textContent = fnd.hits.length ? (fnd.at + 1) + ' / ' + fnd.hits.length : (fnd.q ? '0 件' : '0 / 0');
+  }
+  function findRun(keepAt) {
+    var q = findNorm($('rd-find-q').value).replace(/^\s+|\s+$/g, '');
+    fnd.q = q; fnd.hits = []; fnd.map = {}; fnd.id = rdCur ? rdCur.id : '';
+    if (q && rdCur) {
+      each($('rd-text').childNodes, function (el, i) { if (el.id === 'rd-flow') return; if (findNorm(el.textContent).indexOf(q) >= 0 || (rdSents[i] && findNorm(rdSents[i].text).indexOf(q) >= 0)) { fnd.hits.push(i); fnd.map[i] = 1; } });
+    }
+    if (!keepAt) {
+      // 今見ているところより下の、いちばん近いものから
+      var from = 0; try { from = topSent(); } catch (e) {}
+      fnd.at = -1; for (var k = 0; k < fnd.hits.length; k++) if (fnd.hits[k] >= from) { fnd.at = k; break; }
+      if (fnd.at < 0 && fnd.hits.length) fnd.at = 0;
+    } else if (fnd.at >= fnd.hits.length) fnd.at = fnd.hits.length - 1;
+    findPaint(); findOther();
+    if (fnd.at >= 0) rdScrollTo(fnd.hits[fnd.at]);
+  }
+  function findOther() {
+    var box = $('rd-find-other'); box.innerHTML = '';
+    if (!fnd.q || !rdCur || !rdCur.d.book) return;
+    var chs = bookChapters(rdCur.d.book), any = false;
+    each(chs, function (cid) {
+      if (cid === rdCur.id) return;
+      var dd = rdDocs[cid], n = 0;
+      if (dd.cues) each(dd.cues, function (c) { n += findCount(c[1], fnd.q); }); else n = findCount(dd.text, fnd.q);
+      if (!n) return;
+      if (!any) { box.appendChild(document.createTextNode('ほかの章：')); any = true; }
+      var a = document.createElement('a'); a.textContent = '第' + (dd.ch || '?') + '章（' + n + '）';
+      on(a, 'click', function () { var q = $('rd-find-q').value; openChapter(cid, -1); setTimeout(function () { $('rd-findbar').className = ''; $('rd-find-q').value = q; findRun(false); }, 200); });
+      box.appendChild(a);
+    });
+  }
+  function findStep(d) {
+    if (!fnd.hits.length) return;
+    fnd.at = (fnd.at + d + fnd.hits.length) % fnd.hits.length;
+    findPaint(); rdScrollTo(fnd.hits[fnd.at]);
+  }
+  function findClose() { $('rd-findbar').className = 'hidden'; $('rd-find-q').value = ''; fnd = { q: '', hits: [], map: {}, at: -1, id: '' }; findPaint(); $('rd-find-other').innerHTML = ''; }
+  on($('rd-find'), 'click', function () {
+    if (!rdCur) return;
+    if ($('rd-findbar').className !== 'hidden') { findClose(); return; }
+    $('rd-findbar').className = '';
+    try { $('rd-find-q').focus(); } catch (e) {}
+  });
+  var findT = null;
+  on($('rd-find-q'), 'input', function () { if (findT) clearTimeout(findT); findT = setTimeout(function () { findRun(false); }, 250); });
+  on($('rd-find-q'), 'keydown', function (e) { if (e.keyCode === 13) { e.preventDefault(); if (fnd.q !== findNorm($('rd-find-q').value).replace(/^\s+|\s+$/g, '')) findRun(false); else findStep(e.shiftKey ? -1 : 1); try { $('rd-find-q').blur(); } catch (er) {} } else if (e.keyCode === 27) findClose(); e.stopPropagation(); });
+  on($('rd-find-prev'), 'click', function () { findStep(-1); });
+  on($('rd-find-next'), 'click', function () { findStep(1); });
+  on($('rd-find-x'), 'click', findClose);
+
   function renderRd() {
     if (!rdCur) return;
+    if (fnd.id && rdCur.id !== fnd.id) { fnd.hits = []; fnd.map = {}; fnd.at = -1; fnd.id = rdCur.id; if (fnd.q) setTimeout(function () { findRun(false); }, 0); }
     setTimeout(bmMarkUpdate, 0);   // しおりの 🔖（描き終わってから）
     var d = rdCur.d, box = $('rd-text'); box.innerHTML = '';
     var allIdioms = [];
     each(rdSents, function (s, si) {
-      var blk = document.createElement('div'); blk.className = 'rd-sent' + (isHard(si) ? ' hard' : '') + (si === rdIdx ? ' now' : '');
+      var blk = document.createElement('div'); blk.className = 'rd-sent' + (isHard(si) ? ' hard' : '') + (si === rdIdx ? ' now' : '') + findCls(si);
       var hb = document.createElement('button'); hb.type = 'button'; hb.className = 'rd-hard'; hb.textContent = '❓'; hb.title = 'わからなかった文の印（もう一度押すと外す）';
       hb.title = 'わからなかった文の印（もう一度押すと外す）。Shift を押しながらクリック、または長押しで、前に押した ❓ からここまでをまとめて';
       (function (blk0) {
