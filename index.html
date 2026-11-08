@@ -851,6 +851,10 @@
       <div class="noscan-only">ペアリングコード（8文字）を入力：</div>
       <input type="text" class="code-in" id="inp-code-settings" maxlength="9" autocapitalize="characters" autocorrect="off" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX">
       <div class="msg" id="settings-msg"></div>
+      <h2 style="margin-top:14px">📦 控えから戻す</h2>
+      <p class="note">メモは、変わったものだけドライブに控えを取っています（英文リーダーの「⚙ 翻訳の設定」の Apps Script を使います）。消えてしまったメモを、控えから選んで戻せます。</p>
+      <div class="row"><button id="mbk-go" type="button">📦 一覧にないメモの控えを見る</button></div>
+      <div id="mbk-box"></div>
       <button data-code="settings" type="button">コードで切り替える</button>
       <details>
         <summary>合言葉（32文字）を直接入力する</summary>
@@ -1173,6 +1177,111 @@
   }
   function dirtyCount() { var n = 0; for (var k in dirty) n++; return n; }
 
+  /* ---- 控え（差分）：変わったメモだけ、1 つずつドライブの控えフォルダへ（画像も 1 回だけ）。消えたメモは「⚙ 設定」→「📦 控えから戻す」で戻せる ---- */
+  var mbkSent = lsJSON('memo_bkmemo', {}) || {}, mbkQ = [], mbkBusy = false, mbkT = null;
+  function memoBkReady() { return !!(KEY && typeof gasUrl !== 'undefined' && gasUrl); }
+  function memoBkHash(n) { return btoa(md5raw(unescape(encodeURIComponent(JSON.stringify(n))))); }
+  function memoBkSoon(ids) {
+    each(ids || [], function (id) { if (dirty[id] !== 'del' && mbkQ.indexOf(id) < 0) mbkQ.push(id); });
+    if (mbkT) clearTimeout(mbkT); mbkT = setTimeout(memoBkRun, 5000);
+  }
+  function memoBkRun() {
+    mbkT = null; if (mbkBusy || !memoBkReady() || !mbkQ.length) return;
+    mbkBusy = true;
+    var next = function () {
+      var id = mbkQ.shift(); if (!id) { mbkBusy = false; lsSet('memo_bkmemo', JSON.stringify(mbkSent)); return; }
+      var send = function (n) {
+        if (!n || !/^[A-Za-z0-9_-]{4,80}$/.test(id)) { setTimeout(next, 50); return; }
+        memoBkImgQ(noteImgIds(n));
+        var h = memoBkHash(n); if (mbkSent[id] === h) { setTimeout(next, 50); return; }
+        var desc = JSON.stringify({ t: String(n.title || (index[id] && index[id].title) || '').slice(0, 120), f: n.folder || (index[id] && index[id].folder) || '' });
+        gasPostJ({ act: 'docput', app: bkApp() + 'M', id: id, data: JSON.stringify({ v: 1, id: id, n: n, ix: index[id] || null }), desc: desc }, function (r) {
+          if (r && r.ok) mbkSent[id] = h;
+          if (mbkQ.length % 10 === 0) lsSet('memo_bkmemo', JSON.stringify(mbkSent));
+          setTimeout(next, 300);
+        });
+      };
+      var loc = (cur && cur.id === id) ? cur : lsJSON(noteKey(id), null);
+      if (loc) send(loc); else api('GET', '/notes/' + id, undefined, function (err, n) { send(err ? null : n); });
+    };
+    next();
+  }
+  var ibkSent = lsJSON('memo_bkimg', {}) || {};
+  function memoBkImg(id, data) {
+    if (!memoBkReady() || ibkSent[id] || !data || !/^[A-Za-z0-9_-]{4,80}$/.test(id)) return;
+    gasPostJ({ act: 'docput', app: bkApp() + 'I', id: id, data: data, desc: '' }, function (r) { if (r && r.ok) { ibkSent[id] = 1; lsSet('memo_bkimg', JSON.stringify(ibkSent)); } });
+  }
+  // はじめて：いまあるメモをぜんぶ控える（2 回目からは変わったものだけ）。画像もまだのものを
+  function memoBkAll() {
+    if (!memoBkReady()) return;
+    var ids = []; for (var id in index) ids.push(id);
+    memoBkSoon(ids);
+  }
+  // 画像の控え：まだ控えていないものを、ゆっくり 1 枚ずつ
+  var ibkQ = [], ibkBusy = false;
+  function memoBkImgQ(list) {
+    each(list || [], function (x) { if (x && !ibkSent[x] && ibkQ.indexOf(x) < 0) ibkQ.push(x); });
+    if (ibkBusy || !ibkQ.length) return;
+    ibkBusy = true;
+    var step = function () {
+      var x = ibkQ.shift(); if (!x) { ibkBusy = false; return; }
+      if (ibkSent[x]) { step(); return; }
+      getImage(x, function (data) { if (data) memoBkImg(x, data); setTimeout(step, 1500); });
+    };
+    setTimeout(step, 3000);
+  }
+  function noteImgIds(n) {
+    var out = [], pg = function (p) { if (!p) return; if (p.bg) out.push(p.bg); each(p.items || [], function (it) { if (it && it.k === 'img' && it.src) out.push(it.src); }); };
+    pg(n); each(n.pages || [], pg);
+    return out;
+  }
+  setTimeout(memoBkAll, 30000);
+  // 控えから戻す（いまの一覧にないメモだけ。画像もいっしょに）
+  function memoBkRestoreUi() {
+    var box = $('mbk-box'); box.innerHTML = '<p class="note">読んでいます…</p>';
+    if (!memoBkReady()) { box.innerHTML = '<p class="note">英文リーダーの「⚙ 翻訳の設定」（Apps Script）が必要です。</p>'; return; }
+    gasPostJ({ act: 'doclist', app: bkApp() + 'M' }, function (r) {
+      if (!r || !r.ok || !r.docs) { box.innerHTML = '<p class="note">読めませんでした（Apps Script のコードを最新に貼り替えてください）。</p>'; return; }
+      var miss = r.docs.filter(function (x) { return !index[x.id]; }).sort(function (a, b) { return (b.t || 0) - (a.t || 0); });
+      if (!miss.length) { box.innerHTML = '<p class="note">いまの一覧にないメモの控えはありません。</p>'; return; }
+      box.innerHTML = ''; var sel = {};
+      each(miss, function (x) {
+        var info = {}; try { info = JSON.parse(x.d || '{}') || {}; } catch (e) {}
+        var dt = x.t ? new Date(x.t) : null, row = document.createElement('label'); row.style.cssText = 'display:block; padding:4px 0;';
+        var ck = document.createElement('input'); ck.type = 'checkbox'; on(ck, 'change', function () { if (ck.checked) sel[x.id] = 1; else delete sel[x.id]; });
+        row.appendChild(ck); row.appendChild(document.createTextNode(' ' + (info.t || '（題名なし）') + (dt ? '（' + (dt.getMonth() + 1) + '/' + dt.getDate() + ' の控え）' : '')));
+        box.appendChild(row);
+      });
+      var go = document.createElement('button'); go.type = 'button'; go.textContent = '↩ 選んだメモを戻す';
+      on(go, 'click', function () {
+        var ids = []; for (var k in sel) ids.push(k); if (!ids.length) return;
+        go.disabled = true; go.textContent = '戻しています…';
+        gasPostJ({ act: 'docget', app: bkApp() + 'M', ids: ids }, function (r2) {
+          var got = (r2 && r2.ok && r2.docs) || {}, n = 0, imgs = [];
+          for (var id in got) {
+            var o = null; try { o = JSON.parse(got[id]); } catch (e) {} if (!o || !o.n || index[id]) continue;
+            lsSet(noteKey(id), JSON.stringify(o.n));
+            index[id] = o.ix || { title: o.n.title || '', updated: o.n.updated || Date.now() };
+            dirty[id] = 1; n++;
+            each(noteImgIds(o.n), function (x) { if (imgs.indexOf(x) < 0) imgs.push(x); });
+          }
+          saveIndexLocal(); saveDirtyLocal(); scheduleFlush(300);
+          try { renderList(); } catch (e) {}
+          box.innerHTML = '<p class="note">' + n + ' 件のメモを戻しました' + (imgs.length ? '（画像を戻しています…）' : '') + '。</p>';
+          if (!imgs.length) return;
+          gasPostJ({ act: 'docget', app: bkApp() + 'I', ids: imgs }, function (r3) {
+            var gi = (r3 && r3.ok && r3.docs) || {}, m = 0;
+            for (var iid in gi) { if (!gi[iid]) continue; storeImage(iid, gi[iid]); imgPending[iid] = 1; m++; }
+            savePending(); uploadImages();
+            box.innerHTML = '<p class="note">' + n + ' 件のメモと、画像 ' + m + ' 枚を戻しました。</p>';
+          });
+        });
+      });
+      box.appendChild(go);
+    });
+  }
+  on($('mbk-go'), 'click', memoBkRestoreUi);
+
   /* 未送信分をまとめて送る */
   var flushTimer = null, flushing = false, retryTimer = null;
   function scheduleFlush(ms) {
@@ -1205,6 +1314,7 @@
         retryTimer = setTimeout(flush, 15000);
         return;
       }
+      memoBkSoon(ids);   // 控え：送れたメモ（変わったものだけ）をドライブにも
       // 送信中にさらに書き足されたものは dirty のまま残す
       each(ids, function (id) {
         var v = index[id] ? index[id].updated : 0;
@@ -2110,6 +2220,7 @@
       uploading = false;
       if (err) { setTimeout(uploadImages, 15000); return; }
       delete imgPending[id]; savePending();
+      memoBkImg(id, data);   // 控え：画像もドライブに（1 回だけ）
       if (data.length > LS_IMG_MAX) lsDel(imgKey(id));
       uploadImages();
     });
@@ -8618,7 +8729,7 @@
 
   // 翻訳の設定
   // Apps Script のコードの版。コードを変えたら必ず上げる（コードの1行目と、アプリの表示に出る）
-  var GAS_VER_LATEST = '2026-11-09d';
+  var GAS_VER_LATEST = '2026-11-09e';
   var GAS_CODE = [
     "// バージョン: " + GAS_VER_LATEST + "（英文リーダー・手書きメモ 共通。アプリの「⚙ 翻訳の設定」に出る最新の版と同じか確かめてください）",
     "var GAS_VER = \"" + GAS_VER_LATEST + "\";",
@@ -8828,6 +8939,15 @@
     "      var df = bkSave(\"doc-\" + ap + \"-\" + di + \".json\", String(b.data || \"\"));",
     "      try { df.setDescription(String(b.desc || \"\").slice(0, 1000)); } catch (e) {}",
     "      out = { ok: true };",
+    "    } else if (b.act === \"vput\") {   // 単語帳の控え（差分）：変わった単語の行だけ受け取り、単語ごとの控え（一度入った単語は消さない）に重ねる",
+    "      var va = String(b.app || \"\"); if (!/^[A-Za-z0-9_-]{8,40}$/.test(va)) throw new Error(\"app\");",
+    "      var vn = \"vocab-\" + va + \".json\", vm = {}; try { vm = JSON.parse(bkRead(vn) || \"{}\") || {}; } catch (e) { vm = {}; }",
+    "      (b.lines || []).slice(0, 5000).forEach(function (x) { if (x && x[0]) vm[String(x[0]).slice(0, 200)] = { l: String(x[1] || \"\").slice(0, 4000), t: Number(x[2]) || Date.now() }; });",
+    "      bkSave(vn, JSON.stringify(vm));",
+    "      out = { ok: true, n: Object.keys(vm).length };",
+    "    } else if (b.act === \"vget\") {",
+    "      var vb = String(b.app || \"\"); if (!/^[A-Za-z0-9_-]{8,40}$/.test(vb)) throw new Error(\"app\");",
+    "      out = { ok: true, data: bkRead(\"vocab-\" + vb + \".json\") || \"{}\" };",
     "    } else if (b.act === \"doclist\") {   // 控え（差分）：自分（このアプリ・この合言葉）の英文の控えの一覧",
     "      var ap2 = String(b.app || \"\"); if (!/^[A-Za-z0-9_-]{8,40}$/.test(ap2)) throw new Error(\"app\");",
     "      var pre = \"doc-\" + ap2 + \"-\";",
