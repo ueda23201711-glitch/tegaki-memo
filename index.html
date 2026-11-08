@@ -154,6 +154,8 @@
   .rd-selbtn { font-size: 13px; padding: 4px 10px; margin-left: 10px; font-weight: 400; vertical-align: middle; }
   .rd-fav { float: right; margin-left: 6px; padding: 2px 6px; font-size: 15px; letter-spacing: 1px; color: #b7bfc6; background: transparent; border: none; box-shadow: none; }
   .rd-fav.on { color: #e8a317; }
+  #rd-favbtn { float: none; margin-left: 0; padding: 6px 10px; border: 1px solid #d8dde1; background: #fff; border-radius: 8px; color: #9aa3aa; }
+  #rd-favbtn.on { color: #e8a317; }
   #rd-selbar { position: -webkit-sticky; position: sticky; top: 0; z-index: 5; background: #e6f1f6; border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; }
   #rd-selbar span { font-weight: 700; margin-right: 6px; }
   #rd-selbar button { padding: 6px 10px; font-size: 13px; margin: 2px 4px 2px 0; }
@@ -673,6 +675,7 @@
         <button id="rd-ab" type="button" title="1回目に押した文（A）から2回目に押した文（B）までをくり返す">🅰🅱 A-B リピート</button>
         <button id="rd-hardonly" class="hidden" type="button" title="❓ の印を付けた文だけを、続けて再生・読み上げする">❓ 印の文だけ：オフ</button>
         <button id="rd-hardclr" class="hidden" type="button" title="この英文（本ならこの章）の ❓ の印をすべて外す">❓✕ 印を全部外す</button>
+        <button id="rd-favbtn" type="button" class="rd-fav" title="好み（押すたびに ★1→★2→★3→なし）。本のときは本全体の ★">☆☆☆</button>
         <button id="rd-find" type="button" title="この英文（本ならこの章）の中で、単語や文字をさがす">🔍 検索</button>
         <button id="rd-repl" type="button" title="英文の中の文字を、まとめて置き換える（聞き取りのまちがいを直すときなど）">🔁 置き換え</button>
         <button id="lv-save" class="hidden" type="button" title="ドライブの動画をこの端末に取り込んで、次からすぐ見られるようにする">⬇ この端末に取り込む</button>
@@ -7646,8 +7649,20 @@
   on($('rd-find-next'), 'click', function () { findStep(1); });
   on($('rd-find-x'), 'click', findClose);
 
+  // 読んでいる・見ている途中でも ★ をつけられるように（ボタンの中の ★。本のときは本全体の ★）
+  function favBtnShow() {
+    var b = $('rd-favbtn'); if (!b || !rdCur) return;
+    var n = favOf(rdCur.id); b.textContent = (rdCur.d.book ? '本 ' : '') + favStr(n); b.className = 'rd-fav' + (n ? ' on' : '');
+  }
+  on($('rd-favbtn'), 'click', function () {
+    if (!rdCur) return;
+    var d = rdCur.d, n = (favOf(rdCur.id) + 1) % 4;
+    if (d.book) setBookFav(d.book, n); else setFav(rdCur.id, n);
+    favBtnShow();
+  });
   function renderRd() {
     if (!rdCur) return;
+    favBtnShow();
     if (fnd.id && rdCur.id !== fnd.id) { fnd.hits = []; fnd.map = {}; fnd.at = -1; fnd.id = rdCur.id; if (fnd.q) setTimeout(function () { findRun(false); }, 0); }
     setTimeout(bmMarkUpdate, 0);   // しおりの 🔖（描き終わってから）
     var d = rdCur.d, box = $('rd-text'); box.innerHTML = '';
