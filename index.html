@@ -158,6 +158,8 @@
   .rd-pv { margin: -2px 0 8px; padding: 8px; background: #f3f6f8; border-radius: 0 0 10px 10px; }
   .rd-pvimg { width: 48%; max-width: 240px; margin: 0 2% 6px 0; border-radius: 6px; vertical-align: top; background: #dde3e7; }
   .rd-pvnote { font-size: 13px; color: #5b6a72; line-height: 1.5; margin: 2px 0; }
+  .rd-seltag { display: block; font-size: 13px; color: #6b7780; margin-top: 2px; }
+  .rd-seltag .rd-fav { border: 0; background: none; padding: 0; float: none; margin: 0; }
   #rd-favbtn { float: none; margin-left: 0; padding: 6px 10px; border: 1px solid #d8dde1; background: #fff; border-radius: 8px; color: #9aa3aa; }
   #rd-favbtn.on { color: #e8a317; }
   #rd-selbar { position: -webkit-sticky; position: sticky; top: 0; z-index: 5; background: #e6f1f6; border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; }
@@ -7344,6 +7346,13 @@
     openRdDoc(first, true);
   });
   var rdOpenBook = {};
+  // 選んでいるときも ★ とフォルダを見せる（押すと行を選ぶ。★ はここでは変えない）
+  function selTag(n, fd) {
+    var t = document.createElement('span'); t.className = 'rd-seltag';
+    var f = document.createElement('span'); f.className = 'rd-fav' + (n ? ' on' : ''); f.textContent = favStr(n); t.appendChild(f);
+    if (fd) t.appendChild(document.createTextNode('　📁 ' + fd));
+    return t;
+  }
   function bookRow(bk) {
     var chs = bookChapters(bk), d0 = rdDocs[chs[0]], row = document.createElement('div'); row.className = 'rd-hrow rd-book';
     var b = document.createElement('b'); b.textContent = (rdOpenBook[bk] ? '▼ ' : '▶ ') + '📚 ' + (d0.bookTitle || '') + '（' + chs.length + ' 章）';
@@ -7353,7 +7362,7 @@
     if (rdSel) {
       var all = true; each(chs, function (c) { if (!rdSel[c]) all = false; });
       var ck = document.createElement('span'); ck.className = 'rd-chk'; ck.textContent = all ? '✓' : ''; if (all) row.className += ' sel';
-      row.appendChild(ck); row.appendChild(b); row.appendChild(sp);
+      row.appendChild(ck); row.appendChild(b); row.appendChild(sp); row.appendChild(selTag(bookFav(bk), d0.fd));
       on(row, 'click', function () { each(chs, function (c) { if (all) delete rdSel[c]; else rdSel[c] = 1; }); renderRdHistory(); });
       return row;
     }
@@ -7640,7 +7649,7 @@
         var ck = document.createElement('span'); ck.className = 'rd-chk'; ck.textContent = rdSel[id] ? '✓' : '';
         if (rdSel[id]) row.className += ' sel';
         row.setAttribute('data-id', id);
-        row.appendChild(ck); row.appendChild(b); row.appendChild(sp); row.appendChild(bd);
+        row.appendChild(ck); row.appendChild(b); row.appendChild(sp); row.appendChild(bd); row.appendChild(selTag(d.fav || 0, d.fd));
         on(row, 'click', function () { if (rdSel[id]) delete rdSel[id]; else rdSel[id] = 1; renderRdHistory(); });
         box.appendChild(row);
         return;
