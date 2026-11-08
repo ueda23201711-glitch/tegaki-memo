@@ -5566,7 +5566,7 @@
   function lvOpen(d) {
     lvSetup();
     $('yt-wrap').className = ''; ytShowCtl(true); $('yt-safari').className = 'hidden'; $('yt-box').style.display = '';
-    ytSize(); ytLoop = false; ytLoopIdx = -1; ytLoopLabel();
+    ytSizeSoon(); ytLoop = false; ytLoopIdx = -1; ytLoopLabel();
     if (ytPlayer !== lvA) { if (ytPlayer) { try { ytPlayer.pauseVideo(); } catch (e) {} } ytPlayer = lvA; }
     ytReady = true; lvShow(true);
     $('rd-play').textContent = '▶ 再生';
@@ -5951,7 +5951,7 @@
       ytLoop = false; ytLoopIdx = -1; ytLoopLabel(); $('yt-loop').className = 'hidden';
       return;
     }
-    ytSize();
+    ytSizeSoon();
     capBoxEnsure(); $('lv-src').className = ''; lvCapUpdate();   // 重ねる字幕の選択
     ytLoop = false; ytLoopIdx = -1; ytLoopLabel();
     $('rd-play').textContent = '▶ 再生';
@@ -8508,7 +8508,18 @@
     if (ytLoop) { markSentence(k); $('rd-status').textContent = '🔂 ' + (k + 1) + ' 文目をくり返します。ほかの文の 🔊 を押すと、その文に変わります。'; if (rdSpeaking) playFrom(k); }
     else if (rdSpeaking) { var c = rdIdx; playFrom(c >= 0 ? c : 0); }
   });
-  on(window, 'resize', function () { if (ytOn()) ytSize(); });
+  // 向きを変えたあと・字幕プレイヤーから戻ったとき：iPhone は画面の大きさを少し遅れて知らせるので、少し待ってからも測り直す
+  //   （横向きのときの小さい大きさのまま、縦向きに戻っても小さく見えていたのを直す）
+  var ytSizeT = [];
+  function ytSizeSoon() {
+    ytSize(); each(ytSizeT || [], function (t) { clearTimeout(t); });
+    ytSizeT = [setTimeout(function () { if (ytOn()) ytSize(); }, 300), setTimeout(function () { if (ytOn()) ytSize(); }, 1000), setTimeout(function () { if (ytOn()) ytSize(); }, 2500)];
+  }
+  on(window, 'resize', ytSizeSoon);
+  on(window, 'orientationchange', ytSizeSoon);
+  on(window, 'pageshow', ytSizeSoon);
+  on(window, 'focus', ytSizeSoon);
+  on(document, 'visibilitychange', function () { if (!document.hidden) ytSizeSoon(); });
   on($('rd-flowbtn'), 'click', openFlow);
   on($('rd-make'), 'click', makeAll);
   on($('rd-cont'), 'click', function () { rdCont = !rdCont; lsSet('memo_rd_cont', rdCont ? '1' : '0'); contLabel(); });
