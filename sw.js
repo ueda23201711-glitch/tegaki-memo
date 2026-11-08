@@ -3,7 +3,7 @@
 importScripts("./drive-sw.js");
 // この端末に取り込んだ動画を、少しずつ <video> に渡す（./__local__）。メモリの少ない iPhone で落ちないように
 importScripts("./local-sw.js");
-const CACHE = "tegaki-memo-v196";
+const CACHE = "tegaki-memo-v197";
 const ASSETS = [
   "./",
   "./index.html",
@@ -44,7 +44,7 @@ self.addEventListener("fetch", (event) => {
     // ページ本体：ネット優先（更新がすぐ届く）。つながらないときはキャッシュ。字幕プレイヤー（player.html）は別に置く
     const page = /\/player\.html$/.test(new URL(req.url).pathname) ? "./player.html" : "./index.html";
     event.respondWith(
-      fetch(req)
+      fetch(req, { cache: "no-cache" })   // GitHub Pages の10分キャッシュで古い版が出ないように
         .then((res) => { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(page, copy)); return res; })
         .catch(() => caches.match(page).then((c) => c || caches.match("./index.html")))
     );
