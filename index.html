@@ -5132,7 +5132,7 @@
     var pctOf = function (n) { return Math.round(n * 100 / file.size); };
     var finish = function (fid) {
       clearInterval(tick); lsDel(SK);
-      var dd = rdDocs[id]; if (!dd) { gasCall({ f: 'del', id: fid }, function () {}); return; }
+      var dd = rdDocs[id]; if (!dd) { if (rdDelSet[id]) gasCall({ f: 'del', id: fid }, function () {}); return; }   // 自分で削除したときだけ消す
       dd.lv.drive = fid; rdSaveLocal();
       if (KEY) { var b = {}; b['reader/' + id + '/lv/drive'] = fid; api('PATCH', '', b, function () {}); }
       delete lvUp[id];
@@ -5250,7 +5250,7 @@
             if (saved) { saved.off = off; lsSet(SK, JSON.stringify(saved)); }
             var pct = Math.round(off * 100 / file.size), el = (now() - t0) / Math.max(1, off - off0) * (file.size - off) / 1000;
             if (!r2.done) { showStep('🎞 動画をドライブに送っています… ' + pct + '%（残り約 ' + (el > 90 ? Math.round(el / 60) + ' 分' : Math.round(el) + ' 秒') + '）'); step(); return; }
-            var dd = rdDocs[id]; if (!dd) { gasCall({ f: 'del', id: r2.id }, function () {}); return; }
+            var dd = rdDocs[id]; if (!dd) { if (rdDelSet[id]) gasCall({ f: 'del', id: r2.id }, function () {}); return; }
             lsDel(SK);
             dd.lv.drive = r2.id; rdSaveLocal();
             if (KEY) { var b = {}; b['reader/' + id + '/lv/drive'] = r2.id; api('PATCH', '', b, function () {}); }
@@ -6706,8 +6706,10 @@
   function rdSerials() { var a = rdIds(), m = {}; for (var i = 0; i < a.length; i++) m[a[i]] = a.length - i; return m; }
   // 選んで削除：rdSel = {id: 1}（選んでいないときは null）
   var rdSel = null;
+  var rdDelSet = {};   // この画面で、自分で削除した英文（動画を送り終えたときに、ドライブの動画も消してよいかの判断に使う）
   function delDocs(ids) {
     var b = {}, keep = [];
+    each(ids, function (id) { rdDelSet[id] = 1; });
     each(ids, function (id) { if (rdDocs[id] && !rdDocs[id].lv) keep.push(id); });
     undoPush(keep, '削除');
     each(ids, function (id) {
@@ -7411,7 +7413,7 @@
         e.stopPropagation();
         if (!window.confirm('この英文を履歴から削除しますか？' + (d.lv ? '（動画もドライブとこの端末から削除します）' : ''))) return;
         if (!d.lv) undoPush([id], '削除');
-        lvDrop(id);
+        lvDrop(id); rdDelSet[id] = 1;
         delete rdDocs[id]; rdSaveLocal(); renderRdHistory();
         var bd = {}; bd['reader/' + id] = null; api('PATCH', '', bd, function () {});
       });
@@ -7472,9 +7474,20 @@
   }
   // この端末にだけ残っていた動画の英文を、クラウドに戻す（前の「50件まで」で消えてしまったもの）。
   //   ドライブに動画がまだあるものだけ（ふつうに削除したものは、ドライブの動画も消えているので戻さない）
+  // クラウドで見たことのある英文（見たことがないのに手元にだけあるのは、まだクラウドに届いていない新しい英文）
+  var srvSeen = lsJSON('memo_srvseen', null);
+  if (!srvSeen) { srvSeen = {}; for (var sk in rdDocs) srvSeen[sk] = 1; lsSet('memo_srvseen', JSON.stringify(srvSeen)); }   // はじめて：いま手元にあるものは、クラウドで見たことがあるものとする
+  function srvSeenAdd(data) { var ch = false; for (var k in data || {}) if (!srvSeen[k]) { srvSeen[k] = 1; ch = true; } if (ch) lsSet('memo_srvseen', JSON.stringify(srvSeen)); }
+  // クラウドの一覧を受け取ったとき、空なのに手元にたくさんあるのは、おかしい（通信の不具合など）→ 手元を消さない
+  function srvLooksEmpty(data) { var n = 0; for (var k in data || {}) n++; var m = 0; for (var j in rdDocs) if (srvSeen[j]) m++; return n === 0 && m >= 3; }
   function rdRescue(old, done) {
-    var cand = {}, ids = [];
-    for (var k in old || {}) { var o = old[k]; if (o && !rdDocs[k] && o.lv && o.lv.drive && (o.text || o.cues)) { cand[k] = o; ids.push(o.lv.drive); } }
+    var cand = {}, ids = [], fresh = {}, nf = 0;
+    for (var k in old || {}) {
+      var o = old[k]; if (!o || rdDocs[k] || rdDelSet[k]) continue;
+      if (!srvSeen[k]) { fresh[k] = o; nf++; continue; }   // まだクラウドに届いていなかった英文：消さずに送る
+      if (o.lv && o.lv.drive && (o.text || o.cues)) { cand[k] = o; ids.push(o.lv.drive); }
+    }
+    if (nf) { var upf = {}; for (var kf in fresh) { rdDocs[kf] = fresh[kf]; upf['reader/' + kf] = fresh[kf]; } rdSaveLocal(); if (KEY) api('PATCH', '', upf, function () {}); if (!rdCur) renderRdHistory(); }
     if (!ids.length || !gasUrl || !KEY) { done(); return; }
     gasPostJ({ act: 'quota', ids: ids }, function (r) {
       if (!r || !r.ok || !r.files) { done(); return; }
@@ -7489,7 +7502,9 @@
     vLoad();
     api('GET', '/reader', undefined, function (err, data) {
       if (err) return;
+      if (srvLooksEmpty(data)) return;   // クラウドが空に見える：念のため手元の一覧はそのまま
       var keep = rdCur && !(data && data[rdCur.id]) ? rdCur : null, old = rdDocs;
+      srvSeenAdd(data);
       rdDocs = data || {};
       if (keep) rdDocs[keep.id] = keep.d;
       rdSaveLocal();
@@ -7545,7 +7560,8 @@
       if (!ids) { rdSyncBusy = false; return; }
       var add = []; for (var id in ids) if (!rdDocs[id]) add.push(id);
       // ほかの端末で消した動画つきの英文は、この端末からも動画ごと消す（容量が大きいため）
-      var gone = false; for (var lk in rdDocs) { var ld = rdDocs[lk]; if (ld && ld.lv && !ids[lk] && !(rdCur && rdCur.id === lk) && now() - (ld.at || 0) > 120000) { lvDelLocal(lk); delete rdDocs[lk]; gone = true; } }
+      srvSeenAdd(ids);
+      var gone = false; for (var lk in rdDocs) { var ld = rdDocs[lk]; if (ld && ld.lv && !ids[lk] && srvSeen[lk] && !(rdCur && rdCur.id === lk) && now() - (ld.at || 0) > 120000) { lvDelLocal(lk); delete rdDocs[lk]; gone = true; } }
       if (gone) { rdSaveLocal(); if (!rdCur) renderRdHistory(); }
       if (!add.length) { rdSyncBusy = false; return; }
       var left = add.length, got = 0;
@@ -7568,7 +7584,9 @@
     syncMsg('読み込んでいます…');
     api('GET', '/reader', undefined, function (err, data) {
       if (err) { syncMsg('読み込めませんでした（' + errText(err) + '）。'); return; }
+      if (srvLooksEmpty(data)) { syncMsg('クラウドの英文が空でした。念のため、この端末の一覧はそのままにしています。'); return; }
       var before = rdIds().length, keep = rdCur && !(data && data[rdCur.id]) ? rdCur : null, old = rdDocs;
+      srvSeenAdd(data);
       rdDocs = data || {};
       if (keep) rdDocs[keep.id] = keep.d;
       rdSaveLocal(); rdSyncAt = now(); rdRescue(old, function () { lvGc(); });
