@@ -637,7 +637,8 @@
         </div>
       </div>
       <p class="note">保存した単語・熟語は <a href="/kiku-memo/" target="_blank">📚 メモ単語帳</a> で学習できます（iPad 2/3 は <a href="/kiku-memo/ipad.html" target="_blank">こちら</a>）。</p>
-      <h3 id="rd-hist-h" class="rd-h">これまでの英文 <button id="rd-sync" type="button" class="rd-selbtn" title="ほかの端末で追加・変更した英文を読み込む">🔄 最新にする</button> <button id="rd-quota" type="button" class="rd-selbtn" title="Google ドライブと Firebase の使用量、動画の一覧（消して空ける）">☁ ドライブの容量</button> <button id="rd-sort" type="button" class="rd-selbtn" title="よく見る・読む英文を上に（もう一度押すと、追加した順に戻る）">👁 よく見る順</button> <button id="rd-fsort" type="button" class="rd-selbtn" title="★の多い英文を上に（もう一度押すと、追加した順に戻る）">⭐ 好み順</button> <button id="rd-sel" type="button" class="rd-selbtn">☑ 選んで削除</button> <button id="rd-pvall" type="button" class="rd-selbtn" title="見えている英文・動画の中身（画像・最初の文）をまとめて開く／閉じる">🖼 まとめて開く</button></h3>
+      <h3 id="rd-hist-h" class="rd-h">これまでの英文 <button id="rd-sync" type="button" class="rd-selbtn" title="ほかの端末で追加・変更した英文を読み込む">🔄 最新にする</button> <button id="rd-quota" type="button" class="rd-selbtn" title="Google ドライブと Firebase の使用量、動画の一覧（消して空ける）">☁ ドライブの容量</button> <button id="rd-sort" type="button" class="rd-selbtn" title="よく見る・読む英文を上に（もう一度押すと、追加した順に戻る）">👁 よく見る順</button> <button id="rd-fsort" type="button" class="rd-selbtn" title="★の多い英文を上に（もう一度押すと、追加した順に戻る）">⭐ 好み順</button> <button id="rd-sel" type="button" class="rd-selbtn">☑ 選んで削除</button> <button id="rd-pvall" type="button" class="rd-selbtn" title="見えている英文・動画の中身（画像・最初の文）をまとめて開く／閉じる">🖼 まとめて開く</button> <button id="rd-hidv" type="button" class="rd-selbtn hidden" title="一覧で非表示にした英文・動画・本の一覧">🙈 非表示の一覧</button></h3>
+      <p id="rd-hidnote" class="hidden">🙈 一覧で非表示にしたものです。「👁 表示に戻す」で、ふつうの一覧に戻ります。</p>
       <p class="note" id="rd-sync-msg"></p>
       <div id="rd-selbar" class="hidden"><span id="rd-selcount">0 件を選択</span>
         <button id="rd-selall" type="button">すべて選ぶ</button>
@@ -6545,7 +6546,8 @@
     var lite = {}; for (var k in rdDocs) { var d = rdDocs[k]; if (d && d.book) { var c = {}; for (var f in d) if (f !== 'tr') c[f] = d[f]; lite[k] = c; } else lite[k] = d; }
     lsSet('memo_reader', JSON.stringify(lite));
   }
-  function rdIds() { var a = []; for (var k in rdDocs) if (rdDocs[k] && rdDocs[k].text) a.push(k); a.sort(function (x, y) { return ((rdDocs[y].at || 0) - (rdDocs[x].at || 0)) || (x < y ? 1 : x > y ? -1 : 0); }); return a; }
+  // 字幕（英文）がない動画も一覧に出す（前は英文のないものを出していなかった）
+  function rdIds() { var a = []; for (var k in rdDocs) { var dk = rdDocs[k]; if (dk && (dk.text || dk.lv || dk.yt)) { if (typeof dk.text !== 'string') dk.text = ''; a.push(k); } } a.sort(function (x, y) { return ((rdDocs[y].at || 0) - (rdDocs[x].at || 0)) || (x < y ? 1 : x > y ? -1 : 0); }); return a; }
   // 通し番号（追加した順に 1, 2, 3…。字幕プレイヤーでも同じ番号）と、よく見る順（この端末で一覧から開いた回数。字幕プレイヤーと共通）
   var USE_KEY = 'memo_reader_use', SORT_KEY = 'memo_reader_sort';
   function useMap() { var m = null; try { m = JSON.parse(lsGet(USE_KEY) || 'null'); } catch (e) {} return m && typeof m === 'object' ? m : {}; }
@@ -7038,7 +7040,7 @@
       on(go, 'click', function (e) { e.stopPropagation(); openChapter(chs[bmAt], rdDocs[chs[bmAt]].bm); });
       acts.appendChild(go);
     }
-    acts.appendChild(ren); acts.appendChild(del);
+    acts.appendChild(hidBtn(chs)); acts.appendChild(ren); acts.appendChild(del);
     line.appendChild(info); line.appendChild(acts);
     b.className = 'rd-t2'; row.appendChild(b); row.appendChild(line);
     on(row, 'click', function () { if (rdOpenBook[bk]) delete rdOpenBook[bk]; else rdOpenBook[bk] = 1; renderRdHistory(); });
@@ -7117,6 +7119,7 @@
     for (var i = 0; i < rs.length; i++) { if (pvOpen[rs[i].getAttribute('data-id')]) any = true; else all = false; }
     b.textContent = all ? '🖼 まとめて閉じる' : '🖼 まとめて開く';
   }
+  on($('rd-hidv'), 'click', function () { rdHidView = !rdHidView; renderRdHistory(); });
   on($('rd-pvall'), 'click', function () {
     var rs = $('rd-hist').querySelectorAll('.rd-hrow[data-id]'), all = rs.length > 0, i;
     for (i = 0; i < rs.length; i++) if (!pvOpen[rs[i].getAttribute('data-id')]) all = false;
@@ -7209,11 +7212,34 @@
     });
   }
   var rdLimit = 60;   // 一覧に一度に出す数
+  // 一覧で非表示（英文のデータ reader/ID/hide。ほかの端末でも同じ）。本は本の章すべてにつける
+  var rdHidView = false;
+  function isHid(id) { var d = rdDocs[id]; if (!d) return false; if (d.book) { var h = false; each(bookChapters(d.book), function (c) { if (rdDocs[c] && rdDocs[c].hide) h = true; }); return h; } return !!d.hide; }
+  function setHid(ids, onx) {
+    var up = {};
+    each(ids, function (id) { var d = rdDocs[id]; if (!d) return; if (onx) d.hide = 1; else delete d.hide; up['reader/' + id + '/hide'] = onx ? 1 : null; });
+    rdSaveLocal(); if (KEY) api('PATCH', '', up, function () {});
+    renderRdHistory();
+  }
+  function hidBtn(ids) {
+    var h = document.createElement('button'); h.type = 'button'; h.className = 'rd-ren';
+    h.textContent = rdHidView ? '👁 表示に戻す' : '🙈'; h.title = rdHidView ? 'ふつうの一覧に出す' : '一覧で非表示にする（「🙈 非表示の一覧」から戻せます）';
+    on(h, 'click', function (e) { e.stopPropagation(); setHid(ids, !rdHidView); });
+    return h;
+  }
   function renderRdHistory() {
     if (!rdCur) { try { resumeShow(); } catch (e0) {} }
     cvLoad(); if (lvCanPlay && !lvOld) lvScan(); lvBulkUi();
     var box = $('rd-hist'); box.innerHTML = '';
     var ids = rdIds();
+    // 🙈 一覧で非表示にしたもの：ふつうの一覧では出さず、「非表示の一覧」でだけ出す
+    var hidKeys = {}, hidN = 0;
+    each(ids, function (id) { if (isHid(id)) { var kk = rdDocs[id].book ? 'B:' + rdDocs[id].book : id; if (!hidKeys[kk]) { hidKeys[kk] = 1; hidN++; } } });
+    if (rdHidView && !hidN) rdHidView = false;
+    ids = ids.filter(function (id) { return rdHidView ? isHid(id) : !isHid(id); });
+    $('rd-hidv').className = hidN || rdHidView ? 'rd-selbtn' : 'rd-selbtn hidden';
+    $('rd-hidv').textContent = rdHidView ? '← ふつうの一覧に戻る' : '🙈 非表示の一覧（' + hidN + '）';
+    $('rd-hidnote').className = rdHidView ? 'note' : 'hidden';
     // 絞り込み（本は、どれかの章が合えば本ごと出す。題名で探したときは、合った章を開いて見せる）
     var rf = rfGet(), rfAct = rfOn(rf), rfOk = {}, rfTotal = 0, rfHit = 0, rfSeenB = {}, lastV = null;
     try { lastV = lastGet(); } catch (e1) {}
@@ -7290,7 +7316,7 @@
       var pvb = document.createElement('button'); pvb.type = 'button'; pvb.className = 'rd-pvb'; pvb.textContent = '🖼'; pvb.title = '中身を少し見る（動画は場面の画像、英文は最初の文）。開いたままを覚えます。Shift を押しながら押すと、前に押したところからまとめて開く／閉じる';
       on(pvb, 'click', function (e) { e.stopPropagation(); pvClick(id, e); });
       row.setAttribute('data-id', id);
-      var acts = document.createElement('div'); acts.className = 'rd-acts'; acts.appendChild(pvb); acts.appendChild(fv); acts.appendChild(ren); acts.appendChild(del);
+      var acts = document.createElement('div'); acts.className = 'rd-acts'; acts.appendChild(pvb); acts.appendChild(fv); if (!d.book) acts.appendChild(hidBtn([id])); acts.appendChild(ren); acts.appendChild(del);
       line.appendChild(info); line.appendChild(acts);
       b.className = 'rd-t2'; row.appendChild(b); row.appendChild(line);
       on(row, 'click', function () { useBump(id); openRdDoc(id); if (rdDocs[id] && rdDocs[id].vbm > 0 && rdDocs[id].lv) { $('rd-status').textContent = '🔖 動画のしおり（' + vbmFmt(rdDocs[id].vbm) + '）に合わせています…'; rdSeekWhenReady(id, rdDocs[id].vbm, false); } });
