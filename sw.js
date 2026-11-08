@@ -1,7 +1,9 @@
 // 手書きメモ用 Service Worker（iOS 9 では使われない。新しい端末でのオフライン起動用）
 // ドライブ動画の中継（字幕プレイヤー player.html 用。./__drive__?... を受け持つ）。先に読み込むので、こちらが先に応答する
 importScripts("./drive-sw.js");
-const CACHE = "tegaki-memo-v190";
+// この端末に取り込んだ動画を、少しずつ <video> に渡す（./__local__）。メモリの少ない iPhone で落ちないように
+importScripts("./local-sw.js");
+const CACHE = "tegaki-memo-v191";
 const ASSETS = [
   "./",
   "./index.html",
@@ -36,7 +38,7 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET") return;
   // Firebase など別サイトへの通信には関与しない（メモのデータは常に最新を取りに行く）
   if (new URL(req.url).origin !== self.location.origin) return;
-  if (/\/__drive__$/.test(new URL(req.url).pathname)) return;   // 中継（drive-sw.js）が受け持つ
+  if (/\/__(drive|local)__$/.test(new URL(req.url).pathname)) return;   // 中継（drive-sw.js）が受け持つ
 
   if (req.mode === "navigate") {
     // ページ本体：ネット優先（更新がすぐ届く）。つながらないときはキャッシュ。字幕プレイヤー（player.html）は別に置く

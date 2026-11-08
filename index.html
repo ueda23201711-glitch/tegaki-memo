@@ -4445,9 +4445,9 @@
       pkHere(k);
     };
     if (lvMem[id]) { go(lvMem[id]); return; }
-    lvGet(id, function (blob) {
-      if (!blob) { pkStatus(id, '🎧 この動画はまだ端末に入っていません。先に「⬇ この端末に取り込む」をしてください（ドライブから直接の再生は、画面を消すと止まることがあります）。'); return; }
-      try { go(URL.createObjectURL(blob)); } catch (e) { pkStatus(id, '🎧 再生できませんでした。'); }
+    lvLocalUrl(id, function (url) {
+      if (!url) { pkStatus(id, '🎧 この動画はまだ端末に入っていません。先に「⬇ この端末に取り込む」をしてください（ドライブから直接の再生は、画面を消すと止まることがあります）。'); return; }
+      go(url);
     });
   }
   on($('rd-pocket'), 'click', function () {
@@ -4921,16 +4921,28 @@
   if (lvCanPlay && !lvOld && $('lv-in')) $('lv-in').className = '';
   // この端末の動画（IndexedDB。300MB でも入る）
   var lvDb = null;
+  var LV_DB = 'memo-video';
   function lvIdb(cb) {
     if (lvDb) { cb(lvDb); return; }
     try {
-      var rq = indexedDB.open('memo-video', 1);
+      var rq = indexedDB.open(LV_DB, 1);
       rq.onupgradeneeded = function () { try { rq.result.createObjectStore('v'); } catch (e) {} };
       rq.onsuccess = function () { lvDb = rq.result; cb(lvDb); };
       rq.onerror = function () { cb(null); };
     } catch (e) { cb(null); }
   }
   function lvPut(id, blob, cb) { if (lvOld) { cb(false); return; } lvIdb(function (db) { if (!db) { cb(false); return; } try { var tx = db.transaction('v', 'readwrite'); tx.objectStore('v').put(blob, id); tx.oncomplete = function () { if (String(id).indexOf('#') < 0) lvHave[id] = 1; cb(true); }; tx.onerror = tx.onabort = function () { cb(false); }; } catch (e) { cb(false); } }); }
+  // この端末に取り込んだ動画の再生用 URL。サービスワーカーが動いていれば ./__local__（必要な範囲だけ少しずつ渡す。
+  //   メモリの少ない iPhone 8 などで、大きな動画を 1 つにまとめて落ちないように）。だめなら、まとめた Blob の URL
+  var lvLocalBad = {};   // __local__ で再生できなかった動画（次からは Blob で）
+  function lvLocalUrl(id, cb) {
+    lvGet1(id, function (v) {
+      if (!v) { cb(null); return; }
+      var sw = !lvOld && !lvLocalBad[id] && navigator.serviceWorker && navigator.serviceWorker.controller;
+      if (sw) { cb('./__local__?db=' + encodeURIComponent(LV_DB) + '&id=' + encodeURIComponent(id) + '&t=' + now(), true); return; }
+      lvGet(id, function (b) { var u = null; if (b) { try { u = URL.createObjectURL(b); } catch (e) {} } cb(u, false); });
+    });
+  }
   function lvGet1(id, cb) { if (lvOld) { cb(null); return; } lvIdb(function (db) { if (!db) { cb(null); return; } try { var rq = db.transaction('v', 'readonly').objectStore('v').get(id); rq.onsuccess = function () { cb(rq.result || null); }; rq.onerror = function () { cb(null); }; } catch (e) { cb(null); } }); }
   // 動画は分けたまま保存してあることがある（{ lvParts: 分の数 }）。そのときは分を集めて1つの動画にして返す
   //   （iPhone 8 などメモリの少ない端末で、大きな動画を1つにまとめるときに落ちないように。端末に保存された分は、メモリに全部は読み込まれない）
@@ -5288,6 +5300,11 @@
       if (ytPlayer !== lvA || !v.getAttribute('src') || !rdCur || !rdCur.d.lv) return;
       var d = rdCur.d, id = rdCur.id;
       $('lv-sub').className = 'hidden';
+      if (/__local__/.test(v.getAttribute('src') || '') && !lvLocalBad[id]) {   // 少しずつ渡す方法でだめだった：まとめた動画で再生し直す
+        lvLocalBad[id] = 1; var at0 = v.currentTime || 0;
+        lvLocalUrl(id, function (url) { if (!url || !rdCur || rdCur.id !== id) return; lvUrl = url; v.src = url; try { v.load(); } catch (er) {} if (at0) setTimeout(function () { try { v.currentTime = at0; } catch (er) {} }, 400); });
+        return;
+      }
       if (lvMode === 'drive') lvLinkErr.push(v.error ? v.error.code : 0);
       if (lvMode === 'drive' && lvApiOnly && gasUrl && lvLinks.length) { d.lv.link = lvLinks[0]; v.src = lvLinks.shift(); try { v.load(); } catch (er) {} return; }   // 中継がだめ：ドライブ API を直接
       if (lvMode === 'drive' && lvApiOnly && gasUrl) { lvApiOnly = false; lvStream(d, true); return; }   // API だけではだめ：共有の設定をして、ほかのリンクも試す
@@ -5399,7 +5416,7 @@
     var v = $('lv-video'), id = rdCur.id;
     $('lv-get').className = 'hidden'; v.style.display = 'block'; $('lv-sub').className = 'hidden';
     if (lvMem[id]) { v.src = lvMem[id]; lvSrc('📱 この端末に保存してある動画を再生しています'); lvSaveBtn(false); return; }
-    lvGet(id, function (blob) { if (!blob || !rdCur || rdCur.id !== id) return; if (lvUrl) { try { URL.revokeObjectURL(lvUrl); } catch (e) {} } lvUrl = URL.createObjectURL(blob); v.src = lvUrl; lvSrc('📱 この端末に保存してある動画を再生しています'); lvSaveBtn(false); });
+    lvLocalUrl(id, function (url) { if (!url || !rdCur || rdCur.id !== id) return; if (lvUrl) { try { URL.revokeObjectURL(lvUrl); } catch (e) {} } lvUrl = url; v.src = lvUrl; lvSrc('📱 この端末に保存してある動画を再生しています'); lvSaveBtn(false); });
   }
   // 動画に入っている字幕（ブラウザーが読めるもの）を選んで表示する
   function lvSubList() {
@@ -5432,9 +5449,9 @@
       if (d.lv.drive && gasUrl && lsGet('memo_lvsrc_' + id) === 'drive' && !lvOld) lvStream(d);
       else if (lvMem[id]) { $('lv-video').src = lvMem[id]; ytRate(); lvSrc('📱 この端末に保存してある動画を再生しています'); }
       else if (lvOld) lvStream(d);
-      else lvGet(id, function (blob) {
+      else lvLocalUrl(id, function (url) {
         if (!rdCur || rdCur.id !== id) return;
-        if (blob) { lvUrl = URL.createObjectURL(blob); $('lv-video').src = lvUrl; ytRate(); lvHave[id] = 1; lvSrc('📱 この端末に保存してある動画を再生しています'); return; }
+        if (url) { lvUrl = url; $('lv-video').src = lvUrl; ytRate(); lvHave[id] = 1; lvSrc('📱 この端末に保存してある動画を再生しています'); return; }
         if (d.lv.drive && (driveKey || lvRelayLink(d))) { lvStream(d); return; }   // ドライブ API／中継で、取り込まずに再生
         lvAsk(d);
       });
