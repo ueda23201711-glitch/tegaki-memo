@@ -774,13 +774,34 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
       if (curId !== id) return;
       have[id] = blob ? 1 : 0;
       var wantDrive = lsGet('ep_src_' + id) === 'drive' && d.lv.drive && (driveKey || gasUrl);
-      if (blob && !wantDrive) { playLocal(blob); return; }
+      if (blob && !wantDrive) { playLocal(blob, id); return; }
       fromDrive(id);
     });
   }
-  function playLocal(blob) {
-    if (blobUrl) { try { URL.revokeObjectURL(blobUrl); } catch (e) {} }
-    blobUrl = URL.createObjectURL(blob); srcMode = 'local'; v.src = blobUrl; msg(''); updBtns();
+  // この端末の動画を再生する。英文リーダーで取り込んだ動画は、分けたまま保存してある（{ lvParts: 分の数 }＋ id#0, id#1, …）。
+  //   サービスワーカー（./__local__）が使えれば必要な範囲だけ少しずつ渡す（iPhone 8 などで落ちないように）。だめなら分を 1 つにまとめて
+  var localBad = {};
+  function playLocal(val, id) {
+    id = id || curId;
+    var go = function (url, isBlob) {
+      if (curId !== id) { if (isBlob) { try { URL.revokeObjectURL(url); } catch (e) {} } return; }
+      if (blobUrl) { try { URL.revokeObjectURL(blobUrl); } catch (e) {} }
+      blobUrl = isBlob ? url : ''; srcMode = 'local'; v.src = url; msg(''); updBtns();
+    };
+    if (!val) { fromDrive(id); return; }
+    if (!val.lvParts) { go(URL.createObjectURL(val), true); return; }
+    if (C.sw && !localBad[id] && navigator.serviceWorker && navigator.serviceWorker.controller) {
+      go('./__local__?db=' + encodeURIComponent(C.idb) + '&id=' + encodeURIComponent(id) + '&t=' + now(), false); return;
+    }
+    var n = val.lvParts, got = [], left = n, bad = false;
+    for (var k = 0; k < n; k++) (function (k2) {
+      idbGet(id + '#' + k2, function (u) {
+        if (!u) bad = true; got[k2] = u;
+        if (--left > 0) return;
+        if (bad) { have[id] = 0; fromDrive(id); return; }
+        go(URL.createObjectURL(new Blob(got, { type: val.type || 'video/mp4' })), true);
+      });
+    })(k);
   }
   // 読み込み元の切り替え：📱 この端末 ⇔ ☁ ドライブ（今の位置から続ける。動画ごとに覚える）
   function switchSrc() {
@@ -796,7 +817,7 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     // ドライブ → この端末（まだなければ取り込む）
     idbGet(id, function (blob) {
       if (curId !== id) return;
-      if (blob) { lsSet('ep_src_' + id, 'local'); P.pause(); pendingSeek = at; seekQuiet = true; resumePlay = was; playLocal(blob); toast('📱 この端末の動画で再生します'); return; }
+      if (blob) { lsSet('ep_src_' + id, 'local'); P.pause(); pendingSeek = at; seekQuiet = true; resumePlay = was; playLocal(blob, id); toast('📱 この端末の動画で再生します'); return; }
       var mb = d.lv.size ? '（約 ' + Math.max(1, Math.round(d.lv.size / 1048576)) + 'MB）' : '';
       if (!window.confirm('この動画' + mb + 'を、この端末に取り込みますか？\n取り込むと、次からは電波がなくてもすぐ見られます。')) return;
       lsSet('ep_src_' + id, 'local'); pendingSeek = at; seekQuiet = true; resumePlay = false;
@@ -904,6 +925,11 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
   on(v, 'error', function () {
     if (!cur || !v.getAttribute('src')) return;
     var ec = v.error ? v.error.code : 0;
+    if (srcMode === 'local' && /__local__/.test(v.getAttribute('src') || '') && !localBad[curId]) {   // 少しずつ渡す方法でだめだった：まとめた動画で
+      var lid = curId, at0 = v.currentTime || 0; localBad[lid] = 1;
+      idbGet(lid, function (val) { if (curId !== lid) return; if (at0 > 1) { pendingSeek = at0; seekQuiet = true; } playLocal(val, lid); });
+      return;
+    }
     if (srcMode === 'drive' && apiOnly && apiOnly === curId && !links.length) { var aid = apiOnly; apiOnly = ''; linkErr.push(ec); fromDrive(aid, true); return; }   // API だけではだめ：共有の設定をして、ほかのリンクも試す
     if (srcMode === 'drive' && driveKey && !apiTried && cur.lv.drive) { apiTried = true; links = []; var al = 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(cur.lv.drive) + '?alt=media&key=' + encodeURIComponent(driveKey); cur.lv.link = al; v.src = al; try { v.load(); } catch (e) {} return; }
     if (srcMode === 'drive') { linkErr.push(ec); if (links.length) { if (!/^__drive__/.test(links[0])) cur.lv.link = links[0]; v.src = links.shift(); try { v.load(); } catch (e) {} return; } }
