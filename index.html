@@ -7136,12 +7136,20 @@
       pvImg('https://i.ytimg.com/vi/' + encodeURIComponent(d.yt) + '/mqdefault.jpg', box);
       each(['1', '2', '3'], function (k) { pvImg('https://i.ytimg.com/vi/' + encodeURIComponent(d.yt) + '/' + k + '.jpg', box); });
     } else if (d.lv) {
-      if (pvShots[id]) { each(pvShots[id], function (u) { pvImg(u, box); }); }
-      else if (!lvOld && (lvHave[id] || lvMem[id])) pvLocal(id, box);
-      else if (d.lv.drive) {
-        var bad = false;
-        pvImg('https://drive.google.com/thumbnail?id=' + encodeURIComponent(d.lv.drive) + '&sz=w480', box, function () { if (bad) return; bad = true; pvNote(box, 'この端末に取り込むと、動画の場面の画像が見られます。'); });
-      } else pvNote(box, 'この端末に動画がありません。');
+      var slot = document.createElement('div'); box.appendChild(slot);   // 画像はここ（最初の文より上）
+      var rest = function () {
+        if (!lvOld && (lvHave[id] || lvMem[id])) pvLocal(id, slot);
+        else if (d.lv.drive) {
+          var bad = false;
+          pvImg('https://drive.google.com/thumbnail?id=' + encodeURIComponent(d.lv.drive) + '&sz=w480', slot, function () { if (bad) return; bad = true; pvNote(slot, 'この端末に取り込むと、動画の場面の画像が見られます。'); });
+        } else pvNote(slot, 'この端末に動画がありません。');
+      };
+      if (pvShots[id]) { each(pvShots[id], function (u) { pvImg(u, slot); }); }
+      else if (lvOld) rest();
+      else lvGet1(id + '#pv', function (saved) {   // 前に作って保存した画像があれば、すぐ出す
+        if (saved && saved.length) { pvShots[id] = saved; each(saved, function (u) { pvImg(u, slot); }); return; }
+        if (!lvHave[id] && !lvMem[id]) lvGet1(id, function (v) { if (v) lvHave[id] = 1; rest(); }); else rest();   // 端末にあるかを確かめてから
+      });
     }
     // 最初の数文（動画は字幕の最初）
     var t = d.cues ? cueTexts(d.cues.slice(0, 6)).join(' ') : String(d.text || '');
@@ -7159,8 +7167,16 @@
     if (pvBusy || !pvQ.length) return;
     var j = pvQ.shift(), id = j[0], box = j[1], wait = j[2];
     if (!box.parentNode) { pvNext(); return; }   // もう閉じた
-    if (pvShots[id]) { if (wait.parentNode) wait.parentNode.removeChild(wait); var f0 = box.firstChild; each(pvShots[id], function (u) { var im = document.createElement('img'); im.className = 'rd-pvimg'; im.src = u; box.insertBefore(im, f0); }); pvNext(); return; }
+    var put = function (shots) { if (wait.parentNode) wait.parentNode.removeChild(wait); var f0 = box.firstChild; each(shots, function (u) { var im = document.createElement('img'); im.className = 'rd-pvimg'; im.src = u; box.insertBefore(im, f0); }); };
+    if (pvShots[id]) { put(pvShots[id]); pvNext(); return; }
     pvBusy = true;
+    // 前に作った画像が端末に保存してあれば、それを出す（作り直さない）
+    lvGet1(id + '#pv', function (saved) {
+      if (saved && saved.length) { pvShots[id] = saved; put(saved); pvBusy = false; pvNext(); return; }
+      pvMake(id, box, wait);
+    });
+  }
+  function pvMake(id, box, wait) {
     lvLocalUrl(id, function (url) {
       if (!url) { wait.textContent = 'この端末の動画を読めませんでした。'; pvBusy = false; pvNext(); return; }
       var v = document.createElement('video'); v.muted = true; v.setAttribute('muted', ''); v.setAttribute('playsinline', ''); v.preload = 'auto';
@@ -7171,14 +7187,14 @@
         if (done) return; done = true;
         try { v.removeAttribute('src'); v.load(); } catch (e) {} if (v.parentNode) v.parentNode.removeChild(v);
         if (wait.parentNode) wait.parentNode.removeChild(wait);
-        if (shots.length) { pvShots[id] = shots; var first = box.firstChild; each(shots, function (u) { var im = document.createElement('img'); im.className = 'rd-pvimg'; im.src = u; box.insertBefore(im, first); }); }
+        if (shots.length) { pvShots[id] = shots; lvPut(id + '#pv', shots, function () {}); var first = box.firstChild; each(shots, function (u) { var im = document.createElement('img'); im.className = 'rd-pvimg'; im.src = u; box.insertBefore(im, first); }); }
         else pvNote(box, '場面の画像を作れませんでした。');
         pvBusy = false; setTimeout(pvNext, 50);
       };
       var grab = function () {
         try {
           var w = v.videoWidth, h = v.videoHeight; if (!w || !h) { fin(); return; }
-          var c = document.createElement('canvas'), sc = Math.min(1, 320 / w); c.width = Math.round(w * sc); c.height = Math.round(h * sc);
+          var c = document.createElement('canvas'), sc = Math.min(1, 280 / w); c.width = Math.round(w * sc); c.height = Math.round(h * sc);
           c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
           shots.push(c.toDataURL('image/jpeg', 0.7));
         } catch (e) {}
