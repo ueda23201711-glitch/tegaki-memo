@@ -7323,6 +7323,23 @@
       box.appendChild(row);
       if (pvOpen[id]) pvShow(id, row);
     });
+    // 念のため：どこにも出ていない英文があれば、下に並べて開けるようにする（番号はあるのに一覧にない、を防ぐ）
+    if (!rfAct && !rdHidView && !rdSel) {
+      var showSet = {}, lost = [];
+      each(rows, function (rid) { if (rid.indexOf('B:') === 0) each(bookChapters(rid.slice(2)), function (c) { showSet[c] = 1; }); else showSet[rid] = 1; });
+      each(rdIds(), function (rid) { if (!showSet[rid] && !isHid(rid)) lost.push(rid); });
+      if (lost.length && !hidden) {
+        var lb = document.createElement('div'); lb.className = 'note'; lb.style.cssText = 'margin:10px 0; padding:8px 10px; background:#fff4e0; border-radius:8px;';
+        lb.appendChild(document.createTextNode('一覧の行に出ていなかった英文（押すと開きます）：'));
+        each(lost, function (rid) {
+          var dl = rdDocs[rid], a = document.createElement('a'); a.style.cssText = 'display:block; margin:4px 0; color:#2463c9; text-decoration:underline; cursor:pointer;';
+          a.textContent = (sn[rid] ? sn[rid] + '. ' : '') + (dl.title || dl.bookTitle || String(dl.text || '').slice(0, 50) || '（題名なし）') + (dl.book ? '［本「' + (dl.bookTitle || dl.book) + '」の章］' : '');
+          on(a, 'click', function () { useBump(rid); openRdDoc(rid); });
+          lb.appendChild(a);
+        });
+        box.appendChild(lb);
+      }
+    }
     if (hidden) {
       var more = document.createElement('button'); more.type = 'button'; more.className = 'rd-more';
       more.textContent = '▼ もっと見る（あと ' + hidden + ' 件）';
