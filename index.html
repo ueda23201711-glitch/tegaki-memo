@@ -681,6 +681,7 @@
         <button id="rd-hardonly" class="hidden" type="button" title="❓ の印を付けた文だけを、続けて再生・読み上げする">❓ 印の文だけ：オフ</button>
         <button id="rd-hardclr" class="hidden" type="button" title="この英文（本ならこの章）の ❓ の印をすべて外す">❓✕ 印を全部外す</button>
         <button id="rd-favbtn" type="button" class="rd-fav" title="好み（押すたびに ★1→★2→★3→なし）。本のときは本全体の ★">☆☆☆</button>
+        <button id="rd-subin" type="button" class="hidden" title="この動画に英語の字幕（.srt / .vtt / 時刻つきの文字起こし）を入れる・入れ直す">🔤 字幕を入れる</button><input id="rd-subfile" type="file" accept=".srt,.vtt,.txt,text/plain" style="display:none">
         <button id="rd-find" type="button" title="この英文（本ならこの章）の中で、単語や文字をさがす">🔍 検索</button>
         <button id="rd-repl" type="button" title="英文の中の文字を、まとめて置き換える（聞き取りのまちがいを直すときなど）">🔁 置き換え</button>
         <button id="lv-save" class="hidden" type="button" title="ドライブの動画をこの端末に取り込んで、次からすぐ見られるようにする">⬇ この端末に取り込む</button>
@@ -5890,6 +5891,19 @@
     };
     if (KEY) api('GET', '/files', undefined, function (err, data) { ask(err ? {} : data); }); else ask({});
   }
+  // ドライブの動画から、一覧の英文を作り直す（字幕なし。あとで「🔤 字幕を入れる」）
+  function lvRestore(list) {
+    var up = {};
+    each(list, function (f) {
+      for (var k in rdDocs) if (rdDocs[k] && rdDocs[k].lv && rdDocs[k].lv.drive === f.id) return;   // もう戻っている
+      var name = String(f.n || '').replace(/^🎞\s*/, ''), id = newId() + Math.floor(Math.random() * 1000);
+      var d = { title: '🎞 ' + name.replace(/\.[A-Za-z0-9]+$/, '').slice(0, 80), text: '', at: f.t || now(), named: 1,
+        lv: { name: name.slice(0, 200), size: f.s || 0, type: /\.webm$/i.test(name) ? 'video/webm' : 'video/mp4', drive: f.id } };
+      rdDocs[id] = d; up['reader/' + id] = d;
+    });
+    rdSaveLocal(); if (KEY) api('PATCH', '', up, function () {});
+    renderRdHistory();
+  }
   function dqRender() {
     var r = dqData, body = $('dq-body'), lim = r.limit || 0, used = r.used || 0, h = '';
     var app = r.app || 0, oapp = r.other || 0, trash = r.trash >= 0 ? r.trash : 0, drive = r.drive >= 0 ? r.drive : used;
@@ -5921,8 +5935,25 @@
         + '<i class="w" style="width:' + Math.max(2, Math.round((f.s || 0) * 100 / big)) + '%"></i>'
         + '<button type="button" data-dqdel="' + dqEsc(f.id) + '">🗑 完全に消す</button></div>';
     });
+    // ドライブにはあるのに、この一覧にない動画（前の「50件まで」で一覧から消えたものなど）→ 一覧に戻せる
+    if (r.orph) {
+      var orph = r.orph.slice().sort(function (a, b) { return (b.t || 0) - (a.t || 0); });
+      h += '<div class="dq-sec" style="margin-top:14px">ドライブにあるのに、この一覧にない動画（' + orph.length + ' 件）</div>';
+      if (!orph.length) h += '<p class="note">ありません。</p>';
+      else h += '<p class="note">一覧から消えてしまった動画などです。「↩ 一覧に戻す」で、もう一度見られるようにします（題名は動画のファイル名になります。字幕は開いてから「🔤 字幕を入れる」、元の URL は「🔗 元のページの URL を入れる」で入れ直せます）。手書きメモの中の英文リーダー（別の合言葉）で使っている動画も、ここに出ることがあります。'
+        + ' <button type="button" id="dq-orall">↩ ぜんぶ戻す</button></p>';
+      each(orph, function (f) {
+        var dt = f.t ? new Date(f.t) : null;
+        h += '<div class="dq-f"><div class="n">' + dqEsc(String(f.n || '').replace(/^🎞\s*/, '')) + '</div>'
+          + '<div class="m">' + dqSize(f.s) + (dt ? '・' + (dt.getMonth() + 1) + '/' + dt.getDate() + ' に追加' : '') + '</div>'
+          + '<button type="button" data-dqor="' + dqEsc(f.id) + '">↩ 一覧に戻す</button></div>';
+      });
+    } else h += '<p class="note" style="margin-top:14px">「⚙ 翻訳の設定」の Apps Script のコードを新しく貼り替えると、一覧から消えた動画をここから戻せます。</p>';
     $('dq-files').innerHTML = h;
     each($('dq-files').querySelectorAll('[data-dqdel]'), function (b) { on(b, 'click', function () { dqDel(b.getAttribute('data-dqdel'), b); }); });
+    var orBy = {}; each(r.orph || [], function (f) { orBy[f.id] = f; });
+    each($('dq-files').querySelectorAll('[data-dqor]'), function (b) { on(b, 'click', function () { var f = orBy[b.getAttribute('data-dqor')]; if (!f) return; lvRestore([f]); b.disabled = true; b.textContent = '✓ 戻しました'; }); });
+    if ($('dq-orall')) on($('dq-orall'), 'click', function () { if (!window.confirm((r.orph || []).length + ' 件の動画を、一覧に戻しますか？')) return; lvRestore(r.orph || []); each($('dq-files').querySelectorAll('[data-dqor]'), function (b) { b.disabled = true; b.textContent = '✓ 戻しました'; }); });
     if ($('dq-purge')) on($('dq-purge'), 'click', function () {
       if (!window.confirm('アプリで消してゴミ箱に残っているファイル（' + dqSize(r.appTrash) + '）を完全に消しますか？\n（元に戻せません。アプリと関係のないゴミ箱のファイルには触れません）')) return;
       $('dq-purge').disabled = true; $('dq-purge').textContent = '消しています…';
@@ -7351,17 +7382,32 @@
     }
     mkBanner(); pvAllLabel();
   }
+  // この端末にだけ残っていた動画の英文を、クラウドに戻す（前の「50件まで」で消えてしまったもの）。
+  //   ドライブに動画がまだあるものだけ（ふつうに削除したものは、ドライブの動画も消えているので戻さない）
+  function rdRescue(old, done) {
+    var cand = {}, ids = [];
+    for (var k in old || {}) { var o = old[k]; if (o && !rdDocs[k] && o.lv && o.lv.drive && (o.text || o.cues)) { cand[k] = o; ids.push(o.lv.drive); } }
+    if (!ids.length || !gasUrl || !KEY) { done(); return; }
+    gasPostJ({ act: 'quota', ids: ids }, function (r) {
+      if (!r || !r.ok || !r.files) { done(); return; }
+      var have = {}, up = {}, n = 0; each(r.files, function (f) { have[f.id] = 1; });
+      for (var k2 in cand) if (have[cand[k2].lv.drive]) { rdDocs[k2] = cand[k2]; up['reader/' + k2] = cand[k2]; n++; }
+      if (n) { rdSaveLocal(); api('PATCH', '', up, function () {}); if (!rdCur) renderRdHistory(); syncMsg && syncMsg('この端末に残っていた動画の英文 ' + n + ' 件を、一覧に戻しました。'); }
+      done();
+    });
+  }
   function rdPullHistory() {
     if (!KEY) return;
     vLoad();
     api('GET', '/reader', undefined, function (err, data) {
       if (err) return;
-      var keep = rdCur && !(data && data[rdCur.id]) ? rdCur : null;
+      var keep = rdCur && !(data && data[rdCur.id]) ? rdCur : null, old = rdDocs;
       rdDocs = data || {};
       if (keep) rdDocs[keep.id] = keep.d;
       rdSaveLocal();
       if (!rdCur) renderRdHistory();
-      setTimeout(backfillSrc, 1500); setTimeout(lvGc, 2000); setTimeout(favSync, 3000);
+      setTimeout(backfillSrc, 1500); setTimeout(favSync, 3000);
+      rdRescue(old, function () { lvGc(); });
     });
     api('GET', '/settings/gas', undefined, function (err, u) {
       if (!err && typeof u === 'string' && u !== gasUrl) { gasUrl = u; lsSet('memo_gas', u); }
@@ -7434,10 +7480,10 @@
     syncMsg('読み込んでいます…');
     api('GET', '/reader', undefined, function (err, data) {
       if (err) { syncMsg('読み込めませんでした（' + errText(err) + '）。'); return; }
-      var before = rdIds().length, keep = rdCur && !(data && data[rdCur.id]) ? rdCur : null;
+      var before = rdIds().length, keep = rdCur && !(data && data[rdCur.id]) ? rdCur : null, old = rdDocs;
       rdDocs = data || {};
       if (keep) rdDocs[keep.id] = keep.d;
-      rdSaveLocal(); rdSyncAt = now(); setTimeout(lvGc, 500);
+      rdSaveLocal(); rdSyncAt = now(); rdRescue(old, function () { lvGc(); });
       if (!rdCur) renderRdHistory();
       var n = rdIds().length - before;
       syncMsg('最新にしました（' + (n > 0 ? n + ' 件増えました' : n < 0 ? -n + ' 件減りました' : '増えた英文はありません') + '）。');
@@ -7835,6 +7881,23 @@
   on($('rd-find-x'), 'click', findClose);
 
   // 読んでいる・見ている途中でも ★ をつけられるように（ボタンの中の ★。本のときは本全体の ★）
+  // 🔤 動画に字幕を入れる・入れ直す（一覧に戻した動画や、字幕を差し替えたいとき）
+  function subInShow() { var b = $('rd-subin'); if (!b || !rdCur) return; b.className = rdCur.d.lv ? '' : 'hidden'; b.textContent = rdCur.d.cues && rdCur.d.cues.length ? '🔤 字幕を入れ直す' : '🔤 字幕を入れる'; }
+  on($('rd-subin'), 'click', function () { if (!rdCur) return; if (rdCur.d.cues && rdCur.d.cues.length && !window.confirm('いまの字幕（と訳）を、新しい字幕に入れ替えますか？')) return; $('rd-subfile').value = ''; $('rd-subfile').click(); });
+  on($('rd-subfile'), 'change', function () {
+    var f = $('rd-subfile').files[0]; if (!f || !rdCur) return;
+    var id = rdCur.id;
+    readText(f, function (raw) {
+      var cues = lvEnCues(raw), d = rdDocs[id];
+      if (!d) return;
+      if (!cues.length) { alert('英語の字幕を読めませんでした（.srt / .vtt か、時刻つきの文字起こしを選んでください）。'); return; }
+      if (cues.length > 3000) cues = cues.slice(0, 3000);
+      d.cues = cues; d.text = cueTexts(cues).join('\n'); delete d.tr; delete d.trPart; d.ns = cues.length;
+      rdSaveLocal(); if (KEY) { var b = {}; b['reader/' + id] = d; api('PATCH', '', b, function () {}); }
+      openRdDoc(id);
+      setTimeout(function () { $('rd-status').textContent = '🔤 字幕を入れました（' + cues.length + ' 文）。訳は「↻ 訳」で作れます。'; }, 600);
+    });
+  });
   function favBtnShow() {
     var b = $('rd-favbtn'); if (!b || !rdCur) return;
     var n = favOf(rdCur.id); b.textContent = (rdCur.d.book ? '本 ' : '') + favStr(n); b.className = 'rd-fav' + (n ? ' on' : '');
@@ -7847,7 +7910,7 @@
   });
   function renderRd() {
     if (!rdCur) return;
-    favBtnShow();
+    favBtnShow(); subInShow();
     if (fnd.id && rdCur.id !== fnd.id) { fnd.hits = []; fnd.map = {}; fnd.at = -1; fnd.id = rdCur.id; if (fnd.q) setTimeout(function () { findRun(false); }, 0); }
     setTimeout(bmMarkUpdate, 0);   // しおりの 🔖（描き終わってから）
     var d = rdCur.d, box = $('rd-text'); box.innerHTML = '';
@@ -8661,13 +8724,13 @@
     "    var r = UrlFetchApp.fetch(\"https://www.googleapis.com/drive/v3/about?fields=storageQuota\", { muteHttpExceptions: true, headers: { Authorization: \"Bearer \" + ScriptApp.getOAuthToken() } });",
     "    if (r.getResponseCode() === 200) q = JSON.parse(r.getContentText()).storageQuota;",
     "  } catch (e) {}",
-    "  var folder = shareFolder(), files = [], app = 0, oth = 0, othN = 0, tr = 0, tn = 0;",
+    "  var folder = shareFolder(), files = [], orph = [], app = 0, oth = 0, othN = 0, tr = 0, tn = 0;",
     "  var it = folder.searchFiles(\"trashed = false\");",
-    "  while (it.hasNext()) { var f = it.next(), sz = f.getSize(), fid = f.getId(); if (mine[fid]) { app += sz; files.push({ id: fid, n: f.getName().slice(0, 120), s: sz, t: f.getDateCreated().getTime() }); } else { oth += sz; othN++; } }",
+    "  while (it.hasNext()) { var f = it.next(), sz = f.getSize(), fid = f.getId(); if (mine[fid]) { app += sz; files.push({ id: fid, n: f.getName().slice(0, 120), s: sz, t: f.getDateCreated().getTime() }); } else { oth += sz; othN++; if (String(f.getMimeType()).indexOf(\"video/\") === 0 && orph.length < 300) orph.push({ id: fid, n: f.getName().slice(0, 160), s: sz, t: f.getDateCreated().getTime() }); } }",
     "  var it2 = folder.searchFiles(\"trashed = true\");",
     "  while (it2.hasNext()) { tr += it2.next().getSize(); tn++; }",
     "  return { ok: true, limit: q && q.limit ? Number(q.limit) : DriveApp.getStorageLimit(), used: q ? Number(q.usage) : DriveApp.getStorageUsed(),",
-    "    drive: q ? Number(q.usageInDrive || 0) : -1, trash: q ? Number(q.usageInDriveTrash || 0) : -1, app: app, other: oth, otherN: othN, appTrash: tr, appTrashN: tn, files: files, v: 2 };",
+    "    drive: q ? Number(q.usageInDrive || 0) : -1, trash: q ? Number(q.usageInDriveTrash || 0) : -1, app: app, other: oth, otherN: othN, appTrash: tr, appTrashN: tn, files: files, orph: orph, v: 2 };",
     "}",
     "// 完全に消す（ゴミ箱に入れない。容量がすぐ空く）",
     "function killFile(id) {",
