@@ -5947,7 +5947,7 @@
     });
     // 📦 一覧ぜんぶの控え（1 日 1 回・20 日分）から、いまの一覧にない英文を戻す
     h += '<div class="dq-sec" style="margin-top:14px">📦 控えから戻す</div>'
-      + '<p class="note">英文の一覧（題名・字幕・訳・元の URL・★ など）は、1 日 1 回ドライブに控えを取っています（20 日分）。消えてしまった英文を、控えから戻せます。</p>'
+      + '<p class="note">英文の一覧（題名・字幕・訳・元の URL・★ など）は、変わった日に 1 日 1 回、ドライブに控えを取っています（縮めて保存。新しい 10 個）。消えてしまった英文を、控えから戻せます。</p>'
       + '<div class="row"><button type="button" id="dq-snap">📦 控えの一覧を見る</button></div><div id="dq-snaps"></div>';
     // 一覧から消えた動画を戻す：ほかのアプリの動画は見せない（名前も出さない）。ドライブで自分で選んだ動画のリンクを貼って戻す
     h += '<div class="dq-sec" style="margin-top:14px">一覧から消えた動画を戻す</div>'
@@ -5963,7 +5963,7 @@
         if (!r4.snaps.length) { box.innerHTML = '<p class="note">まだ控えがありません（明日から毎日たまります）。</p>'; return; }
         box.innerHTML = '';
         each(r4.snaps, function (sn) {
-          var m = /-(\d{4})(\d{2})(\d{2})\.json$/.exec(sn.n), row = document.createElement('div'); row.className = 'dq-f';
+          var m = /-(\d{4})(\d{2})(\d{2})\.json(\.gz)?$/.exec(sn.n), row = document.createElement('div'); row.className = 'dq-f';
           row.innerHTML = '<div class="n">' + (m ? m[1] + '/' + m[2] + '/' + m[3] + ' の控え' : dqEsc(sn.n)) + '</div><div class="m">' + dqSize(sn.s) + '</div>';
           var bt = document.createElement('button'); bt.type = 'button'; bt.textContent = '中身を見る';
           on(bt, 'click', function () {
@@ -6650,11 +6650,13 @@
     };
     next();
   }
-  // 1 日 1 回、一覧ぜんぶの控え
+  // 一覧ぜんぶの控え：1 日 1 回まで、前の控えから変わっていたときだけ（変わらない日は取らない）。新しい 10 個を残す
   function bkSnap() {
     var day = new Date().toDateString();
-    if (!gasUrl || !KEY || lsGet('memo_bksnap') === day || !rdIds().length) return;
-    gasPostJ({ act: 'snap', app: bkApp(), data: JSON.stringify({ v: 1, at: now(), docs: rdDocs }) }, function (r) { if (r && r.ok) lsSet('memo_bksnap', day); });
+    if (!gasUrl || !KEY || lvOld || lsGet('memo_bksnap') === day || !rdIds().length) return;
+    var js = JSON.stringify(rdDocs), h = btoa(md5raw(unescape(encodeURIComponent(js))));
+    if (lsGet('memo_bksnaph') === h) { lsSet('memo_bksnap', day); return; }
+    gasPostJ({ act: 'snap', app: bkApp(), data: '{"v":1,"at":' + now() + ',"docs":' + js + '}' }, function (r) { if (r && r.ok) { lsSet('memo_bksnap', day); lsSet('memo_bksnaph', h); } });
   }
   function rdSaveLocal() {
     bkSoon();
@@ -8597,7 +8599,7 @@
 
   // 翻訳の設定
   // Apps Script のコードの版。コードを変えたら必ず上げる（コードの1行目と、アプリの表示に出る）
-  var GAS_VER_LATEST = '2026-11-09b';
+  var GAS_VER_LATEST = '2026-11-09c';
   var GAS_CODE = [
     "// バージョン: " + GAS_VER_LATEST + "（英文リーダー・手書きメモ 共通。アプリの「⚙ 翻訳の設定」に出る最新の版と同じか確かめてください）",
     "var GAS_VER = \"" + GAS_VER_LATEST + "\";",
@@ -8763,8 +8765,19 @@
     "  props.setProperty(\"BK_FOLDER\", f.getId());",
     "  return f;",
     "}",
-    "function bkSave(name, text) { var fo = bkFolder(), it = fo.getFilesByName(name); if (it.hasNext()) it.next().setContent(text); else fo.createFile(name, text, MimeType.PLAIN_TEXT); }",
-    "function bkRead(name) { var it = bkFolder().getFilesByName(name); while (it.hasNext()) { var f = it.next(); if (!f.isTrashed()) return f.getBlob().getDataAsString(\"UTF-8\"); } return \"\"; }",
+    "// 控えは gzip で縮めて保存（JSON は 1/5〜1/10 くらいになる）。前の同じ名前の控えは完全に消して置き換える（ゴミ箱にためない）",
+    "function bkSave(name, text) {",
+    "  var fo = bkFolder(), gz = name + \".gz\", it = fo.getFilesByName(gz);",
+    "  while (it.hasNext()) killFile(it.next().getId());",
+    "  var it0 = fo.getFilesByName(name); while (it0.hasNext()) killFile(it0.next().getId());",
+    "  fo.createFile(Utilities.gzip(Utilities.newBlob(text, \"application/json\", name), gz));",
+    "}",
+    "function bkRead(name) {",
+    "  var fo = bkFolder(), n0 = name.replace(/\\.gz$/, \"\"), it = fo.getFilesByName(n0 + \".gz\");",
+    "  while (it.hasNext()) { var f = it.next(); if (!f.isTrashed()) return Utilities.ungzip(f.getBlob().setContentType(\"application/x-gzip\")).getDataAsString(\"UTF-8\"); }",
+    "  var it2 = fo.getFilesByName(n0); while (it2.hasNext()) { var f2 = it2.next(); if (!f2.isTrashed()) return f2.getBlob().getDataAsString(\"UTF-8\"); }",
+    "  return \"\";",
+    "}",
     "function bkList(prefix) { var out = [], it = bkFolder().getFiles(); while (it.hasNext()) { var f = it.next(), n = f.getName(); if (n.indexOf(prefix) === 0 && !f.isTrashed()) out.push({ n: n, f: f }); } out.sort(function (a, b) { return a.n < b.n ? 1 : -1; }); return out; }",
     "function inShare(id) {",
     "  var fid = shareFolder().getId(), it = DriveApp.getFileById(id).getParents();",
@@ -8790,10 +8803,10 @@
     "    } else if (b.act === \"metaget\") {   // 控え：動画の英文を読む（聞かれた動画のものだけ）",
     "      var metas = {}; (b.ids || []).slice(0, 200).forEach(function (x) { x = String(x); if (/^[A-Za-z0-9_-]{10,80}$/.test(x)) { var t = bkRead(\"meta-\" + x + \".json\"); if (t) metas[x] = t; } });",
     "      out = { ok: true, metas: metas };",
-    "    } else if (b.act === \"snap\") {   // 控え：一覧ぜんぶを 1 日 1 つ（アプリ・合言葉ごと。20 日分残す）",
+    "    } else if (b.act === \"snap\") {   // 控え：一覧ぜんぶ（変わった日だけ。アプリ・合言葉ごと。新しい 10 個を残す）",
     "      var app = String(b.app || \"\"); if (!/^[A-Za-z0-9_-]{8,40}$/.test(app)) throw new Error(\"app\");",
     "      bkSave(\"snap-\" + app + \"-\" + Utilities.formatDate(new Date(), \"Asia/Tokyo\", \"yyyyMMdd\") + \".json\", String(b.data || \"\"));",
-    "      var all = bkList(\"snap-\" + app + \"-\"); for (var q = 20; q < all.length; q++) all[q].f.setTrashed(true);",
+    "      var all = bkList(\"snap-\" + app + \"-\"); for (var q = 10; q < all.length; q++) killFile(all[q].f.getId());",
     "      out = { ok: true };",
     "    } else if (b.act === \"snaplist\") {   // 控え：自分（このアプリ・この合言葉）の一覧の控えだけ",
     "      var app2 = String(b.app || \"\"); if (!/^[A-Za-z0-9_-]{8,40}$/.test(app2)) throw new Error(\"app\");",
