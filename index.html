@@ -5935,25 +5935,29 @@
         + '<i class="w" style="width:' + Math.max(2, Math.round((f.s || 0) * 100 / big)) + '%"></i>'
         + '<button type="button" data-dqdel="' + dqEsc(f.id) + '">🗑 完全に消す</button></div>';
     });
-    // ドライブにはあるのに、この一覧にない動画（前の「50件まで」で一覧から消えたものなど）→ 一覧に戻せる
-    if (r.orph) {
-      var orph = r.orph.slice().sort(function (a, b) { return (b.t || 0) - (a.t || 0); });
-      h += '<div class="dq-sec" style="margin-top:14px">ドライブにあるのに、この一覧にない動画（' + orph.length + ' 件）</div>';
-      if (!orph.length) h += '<p class="note">ありません。</p>';
-      else h += '<p class="note">一覧から消えてしまった動画などです。「↩ 一覧に戻す」で、もう一度見られるようにします（題名は動画のファイル名になります。字幕は開いてから「🔤 字幕を入れる」、元の URL は「🔗 元のページの URL を入れる」で入れ直せます）。手書きメモの中の英文リーダー（別の合言葉）で使っている動画も、ここに出ることがあります。'
-        + ' <button type="button" id="dq-orall">↩ ぜんぶ戻す</button></p>';
-      each(orph, function (f) {
-        var dt = f.t ? new Date(f.t) : null;
-        h += '<div class="dq-f"><div class="n">' + dqEsc(String(f.n || '').replace(/^🎞\s*/, '')) + '</div>'
-          + '<div class="m">' + dqSize(f.s) + (dt ? '・' + (dt.getMonth() + 1) + '/' + dt.getDate() + ' に追加' : '') + '</div>'
-          + '<button type="button" data-dqor="' + dqEsc(f.id) + '">↩ 一覧に戻す</button></div>';
-      });
-    } else h += '<p class="note" style="margin-top:14px">「⚙ 翻訳の設定」の Apps Script のコードを新しく貼り替えると、一覧から消えた動画をここから戻せます。</p>';
+    // 一覧から消えた動画を戻す：ほかのアプリの動画は見せない（名前も出さない）。ドライブで自分で選んだ動画のリンクを貼って戻す
+    h += '<div class="dq-sec" style="margin-top:14px">一覧から消えた動画を戻す</div>'
+      + '<p class="note">Google ドライブのアプリで、戻したい動画を長押し（パソコンは右クリック）→「リンクをコピー」して、ここに貼り付けてください（いくつでも、1 行に 1 つ）。動画は、このアプリが使っているフォルダのものだけ戻せます。題名は動画のファイル名になります。字幕は開いてから「🔤 字幕を入れる」、元の URL は「🔗 元のページの URL を入れる」で入れ直せます。</p>'
+      + '<textarea id="dq-rlinks" style="width:100%; box-sizing:border-box; min-height:70px; font-size:15px;" placeholder="https://drive.google.com/file/d/…/view"></textarea>'
+      + '<div class="row"><button type="button" id="dq-rgo">↩ 一覧に戻す</button> <span class="note" id="dq-rmsg"></span></div>';
     $('dq-files').innerHTML = h;
     each($('dq-files').querySelectorAll('[data-dqdel]'), function (b) { on(b, 'click', function () { dqDel(b.getAttribute('data-dqdel'), b); }); });
-    var orBy = {}; each(r.orph || [], function (f) { orBy[f.id] = f; });
-    each($('dq-files').querySelectorAll('[data-dqor]'), function (b) { on(b, 'click', function () { var f = orBy[b.getAttribute('data-dqor')]; if (!f) return; lvRestore([f]); b.disabled = true; b.textContent = '✓ 戻しました'; }); });
-    if ($('dq-orall')) on($('dq-orall'), 'click', function () { if (!window.confirm((r.orph || []).length + ' 件の動画を、一覧に戻しますか？')) return; lvRestore(r.orph || []); each($('dq-files').querySelectorAll('[data-dqor]'), function (b) { b.disabled = true; b.textContent = '✓ 戻しました'; }); });
+    if ($('dq-rgo')) on($('dq-rgo'), 'click', function () {
+      var ids = [], seen = {};
+      String($('dq-rlinks').value || '').replace(/(?:\/d\/|[?&]id=)([A-Za-z0-9_-]{20,})/g, function (m0, fid) { if (!seen[fid]) { seen[fid] = 1; ids.push(fid); } return m0; });
+      if (!ids.length) { $('dq-rmsg').textContent = 'ドライブの動画のリンクを貼り付けてください。'; return; }
+      $('dq-rmsg').textContent = '調べています…';
+      // このアプリのフォルダにある動画か、Apps Script で確かめて（名前・大きさも受け取る）から戻す
+      gasPostJ({ act: 'quota', ids: ids }, function (r2) {
+        if (!r2 || !r2.ok || !r2.files) { $('dq-rmsg').textContent = '調べられませんでした。'; return; }
+        var ok = [], have = {}; each(r2.files, function (f) { if (seen[f.id]) { ok.push(f); have[f.id] = 1; } });
+        var already = 0; each(ok, function (f) { if (dqDocsOf(f.id).length) already++; });
+        lvRestore(ok);
+        var bad = ids.length - ok.length;
+        $('dq-rmsg').textContent = (ok.length - already) + ' 本を一覧に戻しました' + (already ? '（' + already + ' 本はもう一覧にありました）' : '') + (bad ? '。' + bad + ' 本はこのアプリのフォルダの動画ではないか、見つかりませんでした' : '') + '。';
+        if (ok.length > already) $('dq-rlinks').value = '';
+      });
+    });
     if ($('dq-purge')) on($('dq-purge'), 'click', function () {
       if (!window.confirm('アプリで消してゴミ箱に残っているファイル（' + dqSize(r.appTrash) + '）を完全に消しますか？\n（元に戻せません。アプリと関係のないゴミ箱のファイルには触れません）')) return;
       $('dq-purge').disabled = true; $('dq-purge').textContent = '消しています…';
@@ -8724,13 +8728,13 @@
     "    var r = UrlFetchApp.fetch(\"https://www.googleapis.com/drive/v3/about?fields=storageQuota\", { muteHttpExceptions: true, headers: { Authorization: \"Bearer \" + ScriptApp.getOAuthToken() } });",
     "    if (r.getResponseCode() === 200) q = JSON.parse(r.getContentText()).storageQuota;",
     "  } catch (e) {}",
-    "  var folder = shareFolder(), files = [], orph = [], app = 0, oth = 0, othN = 0, tr = 0, tn = 0;",
+    "  var folder = shareFolder(), files = [], app = 0, oth = 0, othN = 0, tr = 0, tn = 0;",
     "  var it = folder.searchFiles(\"trashed = false\");",
-    "  while (it.hasNext()) { var f = it.next(), sz = f.getSize(), fid = f.getId(); if (mine[fid]) { app += sz; files.push({ id: fid, n: f.getName().slice(0, 120), s: sz, t: f.getDateCreated().getTime() }); } else { oth += sz; othN++; if (String(f.getMimeType()).indexOf(\"video/\") === 0 && orph.length < 300) orph.push({ id: fid, n: f.getName().slice(0, 160), s: sz, t: f.getDateCreated().getTime() }); } }",
+    "  while (it.hasNext()) { var f = it.next(), sz = f.getSize(), fid = f.getId(); if (mine[fid]) { app += sz; files.push({ id: fid, n: f.getName().slice(0, 120), s: sz, t: f.getDateCreated().getTime() }); } else { oth += sz; othN++; } }",
     "  var it2 = folder.searchFiles(\"trashed = true\");",
     "  while (it2.hasNext()) { tr += it2.next().getSize(); tn++; }",
     "  return { ok: true, limit: q && q.limit ? Number(q.limit) : DriveApp.getStorageLimit(), used: q ? Number(q.usage) : DriveApp.getStorageUsed(),",
-    "    drive: q ? Number(q.usageInDrive || 0) : -1, trash: q ? Number(q.usageInDriveTrash || 0) : -1, app: app, other: oth, otherN: othN, appTrash: tr, appTrashN: tn, files: files, orph: orph, v: 2 };",
+    "    drive: q ? Number(q.usageInDrive || 0) : -1, trash: q ? Number(q.usageInDriveTrash || 0) : -1, app: app, other: oth, otherN: othN, appTrash: tr, appTrashN: tn, files: files, v: 2 };",
     "}",
     "// 完全に消す（ゴミ箱に入れない。容量がすぐ空く）",
     "function killFile(id) {",
