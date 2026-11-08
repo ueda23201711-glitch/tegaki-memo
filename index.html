@@ -7713,9 +7713,7 @@
   function rdStore(id) {
     var d = rdDocs[id]; if (!d || !KEY) return;
     var b = {}; b['reader/' + id] = d; api('PATCH', '', b, function () {});
-    // 古い履歴は50件まで
-    var ids = [], all = rdIds(); each(all, function (x) { if (!rdDocs[x].book) ids.push(x); });
-    if (ids.length > 50) { var b2 = {}; for (var i = 50; i < ids.length; i++) { b2['reader/' + ids[i]] = null; delete rdDocs[ids[i]]; } rdSaveLocal(); api('PATCH', '', b2, function () {}); }
+    // （前は「古い履歴は50件まで」として、古いものを黙って消していた。動画が一覧から消えてしまうのでやめた）
   }
   /* ---- A-B リピート ---- */
   var abA = -1, abB = -1;
