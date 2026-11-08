@@ -1,0 +1,11 @@
+--- index.html
++++ index.html
+@@ -460,7 +460,7 @@
+       </div>
+       <p class="note">保存した単語・熟語は <a href="/kiku-my/" target="_blank">📚 My単語帳</a> で学習できます（iPad 2/3 は <a href="/kiku-my/ipad.html" target="_blank">こちら</a>）。</p>
+       <p class="note" id="rd-msg"></p>
+-      <h3 id="rd-hist-h" class="rd-h">これまでの英文 <button id="rd-sync" type="button" class="rd-selbtn" title="ほかの端末で追加・変更した英文を読み込む">🔄 最新にする</button> <button id="rd-quota" type="button" class="rd-selbtn" title="Google ドライブと Firebase の使用量、動画の一覧（消して空ける）">☁ ドライブの容量</button> <button id="rd-sort" type="button" class="rd-selbtn" title="よく見る・読む英文を上に（もう一度押すと、追加した順に戻る）">👁 よく見る順</button> <button id="rd-fsort" type="button" class="rd-selbtn" title="★の多い英文を上に（もう一度押すと、追加した順に戻る）">⭐ 好み順</button> <button id="rd-sel" type="button" class="rd-selbtn">☑ 選んで削除</button></h3>
++      <h3 id="rd-hist-h" class="rd-h">これまでの英文 <button id="rd-sync" type="button" class="rd-selbtn" title="ほかの端末で追加・変更した英文を読み込む">🔄 最新にする</button> <button id="rd-quota" type="button" class="rd-selbtn" title="Google ドライブと Firebase の使用量、動画の一覧（消して空ける）">☁ ドライブの容量</button> <button id="rd-sort" type="button" class="rd-selbtn" title="よく見る・読む英文を上に（もう一度押すと、追加した順に戻る）">👁 よく見る順</button> <button id="rd-fsort" type="button" class="rd-selbtn" title="★の多い英文を上に（もう一度押すと、追加した順に戻る）">⭐ 好み順</button> <button id="rd-sel" type="button" class="rd-selbtn">☑ 選んで削除</button> <button id="rd-pvall" type="button" class="rd-selbtn" title="見えている英文・動画の中身（画像・最初の文）をまとめて開く／閉じる">🖼 まとめて開く</button></h3>
+       <p class="note" id="rd-sync-msg"></p>
+       <div id="rd-selbar" class="hidden"><span id="rd-selcount">0 件を選択</span>
+         <button id="rd-selall" type="button">すべて選ぶ</button>

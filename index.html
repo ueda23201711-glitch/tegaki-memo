@@ -7088,14 +7088,41 @@
   /* ---- 👁 一覧で中身を少し見る：YouTube はサムネイルと場面の画像、端末の動画は場面を切り出した画像、
      ドライブだけの動画はドライブのサムネイル、英文・本は最初の数文。押すと行の下に開き、もう一度押すと閉じる ---- */
   var pvShots = {};   // id → 端末の動画から切り出した画像（この画面を開いている間）
-  function pvToggle(id, row) {
-    var nx = row.nextSibling;
-    if (nx && nx.className === 'rd-pv') { nx.parentNode.removeChild(nx); return; }
+  // 開いたままにしている英文（この端末で覚える）
+  var pvOpen = (function () { try { return JSON.parse(lsGet('eibun_pvopen') || '{}') || {}; } catch (e) { return {}; } })(), pvLast = '';
+  function pvSave() { var o = {}; for (var k in pvOpen) if (pvOpen[k] && rdDocs[k]) o[k] = 1; pvOpen = o; lsSet('eibun_pvopen', JSON.stringify(o)); }
+  function pvRowOf(id) { var rs = $('rd-hist').querySelectorAll('.rd-hrow'); for (var i = 0; i < rs.length; i++) if (rs[i].getAttribute('data-id') === id) return rs[i]; return null; }
+  function pvShow(id, row) {
+    var nx = row.nextSibling; if (nx && nx.className === 'rd-pv') return;
     var box = document.createElement('div'); box.className = 'rd-pv';
     on(box, 'click', function (e) { e.stopPropagation(); });
     row.parentNode.insertBefore(box, row.nextSibling);
     pvFill(id, box);
   }
+  function pvHide(row) { var nx = row.nextSibling; if (nx && nx.className === 'rd-pv') nx.parentNode.removeChild(nx); }
+  function pvSet(id, onx) { var row = pvRowOf(id); if (onx) { pvOpen[id] = 1; if (row) pvShow(id, row); } else { delete pvOpen[id]; if (row) pvHide(row); } }
+  // 押す：開く⇔閉じる。Shift：前に押したところから、ここまでをまとめて同じにする
+  function pvClick(id, e) {
+    var want = !pvOpen[id];
+    if (e && e.shiftKey && pvLast && pvLast !== id) {
+      var rs = $('rd-hist').querySelectorAll('.rd-hrow[data-id]'), ids = [], a = -1, b = -1;
+      for (var i = 0; i < rs.length; i++) { var x = rs[i].getAttribute('data-id'); ids.push(x); if (x === pvLast) a = i; if (x === id) b = i; }
+      if (a >= 0 && b >= 0) { var lo = Math.min(a, b), hi = Math.max(a, b); for (var j = lo; j <= hi; j++) pvSet(ids[j], want); pvLast = id; pvSave(); pvAllLabel(); return; }
+    }
+    pvSet(id, want); pvLast = id; pvSave(); pvAllLabel();
+  }
+  function pvAllLabel() {
+    var b = $('rd-pvall'); if (!b) return;
+    var rs = $('rd-hist').querySelectorAll('.rd-hrow[data-id]'), any = false, all = rs.length > 0;
+    for (var i = 0; i < rs.length; i++) { if (pvOpen[rs[i].getAttribute('data-id')]) any = true; else all = false; }
+    b.textContent = all ? '🖼 まとめて閉じる' : '🖼 まとめて開く';
+  }
+  on($('rd-pvall'), 'click', function () {
+    var rs = $('rd-hist').querySelectorAll('.rd-hrow[data-id]'), all = rs.length > 0, i;
+    for (i = 0; i < rs.length; i++) if (!pvOpen[rs[i].getAttribute('data-id')]) all = false;
+    for (i = 0; i < rs.length; i++) pvSet(rs[i].getAttribute('data-id'), !all);
+    pvSave(); pvAllLabel();
+  });
   function pvImg(src, box, onErr) {
     var im = document.createElement('img'); im.className = 'rd-pvimg'; im.alt = '';
     im.onerror = function () { if (im.parentNode) im.parentNode.removeChild(im); if (onErr) onErr(); };
@@ -7122,10 +7149,20 @@
     if (t) pvNote(box, (d.cues ? '字幕：' : '') + t + (t.length >= 220 ? '…' : ''));
   }
   // 端末の動画から、1/5・1/2・4/5 あたりの場面を切り出して画像にする（見えない video を使う）
+  var pvQ = [], pvBusy = false;
   function pvLocal(id, box) {
     var wait = document.createElement('div'); wait.className = 'rd-pvnote'; wait.textContent = '場面の画像を作っています…'; box.insertBefore(wait, box.firstChild);
+    pvQ.push([id, box, wait]); pvNext();
+  }
+  // 1 本ずつ順番に作る（まとめて開いたときに、メモリの少ない iPhone で重くならないように）
+  function pvNext() {
+    if (pvBusy || !pvQ.length) return;
+    var j = pvQ.shift(), id = j[0], box = j[1], wait = j[2];
+    if (!box.parentNode) { pvNext(); return; }   // もう閉じた
+    if (pvShots[id]) { if (wait.parentNode) wait.parentNode.removeChild(wait); var f0 = box.firstChild; each(pvShots[id], function (u) { var im = document.createElement('img'); im.className = 'rd-pvimg'; im.src = u; box.insertBefore(im, f0); }); pvNext(); return; }
+    pvBusy = true;
     lvLocalUrl(id, function (url) {
-      if (!url) { wait.textContent = 'この端末の動画を読めませんでした。'; return; }
+      if (!url) { wait.textContent = 'この端末の動画を読めませんでした。'; pvBusy = false; pvNext(); return; }
       var v = document.createElement('video'); v.muted = true; v.setAttribute('muted', ''); v.setAttribute('playsinline', ''); v.preload = 'auto';
       v.style.cssText = 'position:absolute; left:-9999px; width:320px; height:180px;';
       document.body.appendChild(v);
@@ -7136,6 +7173,7 @@
         if (wait.parentNode) wait.parentNode.removeChild(wait);
         if (shots.length) { pvShots[id] = shots; var first = box.firstChild; each(shots, function (u) { var im = document.createElement('img'); im.className = 'rd-pvimg'; im.src = u; box.insertBefore(im, first); }); }
         else pvNote(box, '場面の画像を作れませんでした。');
+        pvBusy = false; setTimeout(pvNext, 50);
       };
       var grab = function () {
         try {
@@ -7220,6 +7258,7 @@
       if (rdSel) {
         var ck = document.createElement('span'); ck.className = 'rd-chk'; ck.textContent = rdSel[id] ? '✓' : '';
         if (rdSel[id]) row.className += ' sel';
+        row.setAttribute('data-id', id);
         row.appendChild(ck); row.appendChild(b); row.appendChild(sp); row.appendChild(bd);
         on(row, 'click', function () { if (rdSel[id]) delete rdSel[id]; else rdSel[id] = 1; renderRdHistory(); });
         box.appendChild(row);
@@ -7230,14 +7269,16 @@
       // 1 行目は題名だけ（幅いっぱい・2 行まで）。2 行目の左に日時と状態、右に ★・✎・削除
       var line = document.createElement('div'); line.className = 'rd-line';
       var info = document.createElement('div'); info.className = 'rd-info'; info.appendChild(sp); info.appendChild(bd);
-      var pvb = document.createElement('button'); pvb.type = 'button'; pvb.className = 'rd-pvb'; pvb.textContent = '👁'; pvb.title = '中身を少し見る（動画は場面の画像、英文は最初の文）';
-      on(pvb, 'click', function (e) { e.stopPropagation(); pvToggle(id, row); });
+      var pvb = document.createElement('button'); pvb.type = 'button'; pvb.className = 'rd-pvb'; pvb.textContent = '🖼'; pvb.title = '中身を少し見る（動画は場面の画像、英文は最初の文）。開いたままを覚えます。Shift を押しながら押すと、前に押したところからまとめて開く／閉じる';
+      on(pvb, 'click', function (e) { e.stopPropagation(); pvClick(id, e); });
+      row.setAttribute('data-id', id);
       var acts = document.createElement('div'); acts.className = 'rd-acts'; acts.appendChild(pvb); acts.appendChild(fv); acts.appendChild(ren); acts.appendChild(del);
       line.appendChild(info); line.appendChild(acts);
       b.className = 'rd-t2'; row.appendChild(b); row.appendChild(line);
       on(row, 'click', function () { useBump(id); openRdDoc(id); if (rdDocs[id] && rdDocs[id].vbm > 0 && rdDocs[id].lv) { $('rd-status').textContent = '🔖 動画のしおり（' + vbmFmt(rdDocs[id].vbm) + '）に合わせています…'; rdSeekWhenReady(id, rdDocs[id].vbm, false); } });
       box.appendChild(row);
-    });    mkBanner();
+      if (pvOpen[id]) pvShow(id, row);
+    });    mkBanner(); pvAllLabel();
   }
   function rdPullHistory() {
     if (!KEY) return;
