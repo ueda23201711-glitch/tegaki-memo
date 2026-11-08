@@ -642,11 +642,15 @@
       <p class="note" id="rd-sync-msg"></p>
       <div id="rd-selbar" class="hidden"><span id="rd-selcount">0 件を選択</span>
         <button id="rd-selall" type="button">すべて選ぶ</button>
+        <button id="rd-selfd" type="button">📁 選んだものをフォルダへ</button>
         <button id="rd-seldel" type="button" class="danger">選んだものを削除</button>
         <button id="rd-selmerge" type="button" class="hidden">📚 選んだ本を1冊にまとめる</button>
         <button id="rd-selend" type="button">やめる</button></div>
       <div id="rd-filter" style="display:none; margin:0 0 8px;">
         <input id="rf-q" type="search" placeholder="🔍 題名で探す（一部だけでも）" autocomplete="off" style="width:100%; box-sizing:border-box; font-size:16px; padding:8px 10px; border:1px solid #c9d2d8; border-radius:8px; margin:0 0 6px;">
+        <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:0 0 6px;">
+          <select id="rf-fd" style="font-size:15px; padding:5px 6px; max-width:100%;"><option value="">📁 フォルダ：すべて</option></select>
+        </div>
         <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
           <select id="rf-type" style="font-size:15px; padding:5px 6px;"><option value="">種類：すべて</option><option value="book">📚 本</option><option value="yt">🎬 YouTube</option><option value="lv">🎞 取り込んだ動画</option><option value="web">🌐 記事</option><option value="txt">✎ 貼り付けた英文</option></select>
           <select id="rf-fav" style="font-size:15px; padding:5px 6px;"><option value="0">★：すべて</option><option value="1">★ 以上</option><option value="2">★★ 以上</option><option value="3">★★★</option></select>
@@ -680,6 +684,7 @@
         <button id="rd-ab" type="button" title="1回目に押した文（A）から2回目に押した文（B）までをくり返す">🅰🅱 A-B リピート</button>
         <button id="rd-hardonly" class="hidden" type="button" title="❓ の印を付けた文だけを、続けて再生・読み上げする">❓ 印の文だけ：オフ</button>
         <button id="rd-hardclr" class="hidden" type="button" title="この英文（本ならこの章）の ❓ の印をすべて外す">❓✕ 印を全部外す</button>
+        <button id="rd-fdbtn" type="button" title="この英文（本なら本ごと）を入れるフォルダ">📁</button>
         <button id="rd-favbtn" type="button" class="rd-fav" title="好み（押すたびに ★1→★2→★3→なし）。本のときは本全体の ★">☆☆☆</button>
         <button id="rd-subin" type="button" class="hidden" title="この動画に英語の字幕（.srt / .vtt / 時刻つきの文字起こし）を入れる・入れ直す">🔤 字幕を入れる</button><input id="rd-subfile" type="file" accept=".srt,.vtt,.txt,text/plain" style="display:none">
         <button id="rd-find" type="button" title="この英文（本ならこの章）の中で、単語や文字をさがす">🔍 検索</button>
@@ -6153,7 +6158,7 @@
      Firebase には使用量を聞く仕組みがないので、この合言葉のデータを項目ごとに読み込んで大きさを測る（目安）。
      読み込みは無料分（月 10GB）を少し使うので、ボタンを押したときだけ調べる。結果は端末に覚えておく ---- */
   var FB_FREE = 1073741824, FB_LAST = 'fbq-last';
-  var fbNames = { reader: '英文', readerbm: '英文のしおり', notes: '手書きメモ', img: 'メモの画像', index: 'メモの一覧', folders: 'フォルダ', memovocab: 'メモ単語帳', settings: '設定', files: '📎 ファイル共有の一覧', clips: 'クリップ', tx: '受け渡し' };
+  var fbNames = { reader: '英文', readerbm: '英文のしおり', notes: '手書きメモ', img: 'メモの画像', index: 'メモの一覧', folders: 'フォルダ', rdfolders: '英文のフォルダ', memovocab: 'メモ単語帳', settings: '設定', files: '📎 ファイル共有の一覧', clips: 'クリップ', tx: '受け渡し' };
   var fbCols = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#7a5cd6', '#3fa7b5', '#9a7b4f'];
   function fbBytes(t) { try { return new Blob([t]).size; } catch (e) { return String(t).length; } }
   function fbConsole() {
@@ -6791,6 +6796,93 @@
     if (KEY) { var b = {}; b['reader/' + id + '/fav'] = n || null; api('PATCH', '', b, function () {}); }
     favSync();
   }
+  /* ---- 📁 フォルダ：英文ごとに入れるフォルダ（1 つ）。英文のデータ（reader/ID/fd）に保存するので、ほかの端末・字幕プレイヤーでも同じ。
+     本は本ごと（すべての章に同じフォルダ）。フォルダの一覧（中身がまだ空のフォルダも）は memos/合言葉/rdfolders。
+     アプリの中の分け方だけで、ドライブの動画ファイルや、この端末に取り込んだ動画には触れない ---- */
+  var FD_NONE = '\u0001';   // 絞り込み：フォルダに入っていないもの
+  var rdFdList = (function () { try { var a = JSON.parse(lsGet('memo_rdfd') || '[]'); return a && a.length !== undefined ? a : []; } catch (e) { return []; } })();
+  function fdNorm(n) { return String(n || '').replace(/[\u0000-\u001f]/g, '').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '').slice(0, 40); }
+  // 今あるフォルダ（一覧に覚えているもの＋英文に付いているもの）を名前順に
+  function fdAll() {
+    var m = {}, a = [];
+    each(rdFdList, function (n) { n = fdNorm(n); if (n) m[n] = 1; });
+    for (var id in rdDocs) { var d = rdDocs[id]; if (d && d.fd) m[fdNorm(d.fd)] = 1; }
+    for (var k in m) if (k) a.push(k);
+    a.sort(function (x, y) { return x.localeCompare ? x.localeCompare(y, 'ja') : (x < y ? -1 : x > y ? 1 : 0); });
+    return a;
+  }
+  function fdSaveList(list, push) {
+    rdFdList = list; lsSet('memo_rdfd', JSON.stringify(list));
+    if (push && KEY) api('PUT', '/rdfolders', { list: list, at: now() }, function () {});
+  }
+  function fdAdd(n) { n = fdNorm(n); if (!n) return ''; var a = fdAll(); if (a.indexOf(n) < 0) { a.push(n); fdSaveList(a, true); } return n; }
+  function fdPull() {
+    if (!KEY) return;
+    api('GET', '/rdfolders', undefined, function (err, data) {
+      if (err || !data || !data.list) { if (!err && rdFdList.length) fdSaveList(fdAll(), true); return; }
+      var m = {}, a = []; each(data.list, function (n) { n = fdNorm(n); if (n && !m[n]) { m[n] = 1; a.push(n); } });
+      var miss = false; each(rdFdList, function (n) { n = fdNorm(n); if (n && !m[n]) { m[n] = 1; a.push(n); miss = true; } });
+      fdSaveList(a, miss); renderRdHistory();
+    });
+  }
+  // 英文（本は本ごと）をフォルダに入れる。n が空ならフォルダから出す
+  function fdSet(ids, n) {
+    n = fdNorm(n); var up = {}, seen = {};
+    each(ids, function (id) {
+      var d = rdDocs[id]; if (!d) return;
+      var list = d.book ? bookChapters(d.book) : [id];
+      each(list, function (c) { var x = rdDocs[c]; if (!x || seen[c]) return; seen[c] = 1; if (n) x.fd = n; else delete x.fd; up['reader/' + c + '/fd'] = n || null; });
+    });
+    if (n) fdAdd(n);
+    rdSaveLocal();
+    if (KEY) api('PATCH', '', up, function () {});
+  }
+  function fdCount(n) { var c = 0, sb = {}; each(rdIds(), function (id) { var d = rdDocs[id]; if ((d.fd || '') !== n) return; if (d.book) { if (sb[d.book]) return; sb[d.book] = 1; } c++; }); return c; }
+  // どのフォルダに入れるか聞く（番号か、新しい名前）。null＝やめた、''＝フォルダから出す
+  function fdAsk(cur) {
+    var a = fdAll(), lines = [];
+    each(a, function (n, i) { lines.push((i + 1) + '. ' + n + (n === cur ? '（今ここ）' : '')); });
+    var t = window.prompt('入れるフォルダの番号を書いてください。新しいフォルダにするときは名前を書いてください。\n' + (lines.length ? lines.join('\n') + '\n' : '') + '0. フォルダから出す', '');
+    if (t === null) return null;
+    t = fdNorm(t); if (!t) return null;
+    if (/^[0-9０-９]+$/.test(t)) { var k = Number(t.replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })); if (k === 0) return ''; if (a[k - 1]) return a[k - 1]; window.alert('その番号のフォルダはありません。'); return null; }
+    return t;
+  }
+  function fdOpts() {
+    var sel = $('rf-fd'); if (!sel) return;
+    var f = rfGet(), a = fdAll(), h = [['', '📁 フォルダ：すべて']];
+    each(a, function (n) { h.push([n, '📁 ' + n + '（' + fdCount(n) + '）']); });
+    if (a.length) h.push([FD_NONE, '📁 フォルダなし（' + fdCount('') + '）']);
+    h.push(['__new', '＋ 新しいフォルダを作る…']);
+    if (f.fd && f.fd !== FD_NONE) { h.push(['__ren', '✎ 「' + f.fd + '」の名前を変える…']); h.push(['__del', '🗑 「' + f.fd + '」をなくす（中身は残す）…']); }
+    sel.innerHTML = '';
+    each(h, function (o) { var e = document.createElement('option'); e.value = o[0]; e.textContent = o[1]; sel.appendChild(e); });
+    sel.value = f.fd && (f.fd === FD_NONE || a.indexOf(f.fd) >= 0) ? f.fd : '';
+  }
+  function fdSelChange() {
+    var sel = $('rf-fd'), v = sel.value, f = rfGet();
+    if (v === '__new') {
+      var n = fdNorm(window.prompt('新しいフォルダの名前', '') || '');
+      if (n) { fdAdd(n); f.fd = n; rfSet(f); syncMsg('📁 「' + n + '」を作りました。一覧の「☑ 選ぶ」で英文を選んで「📁 選んだものをフォルダへ」で入れられます。'); }
+    } else if (v === '__ren') {
+      var old = f.fd, nn = fdNorm(window.prompt('「' + old + '」の新しい名前', old) || '');
+      if (nn && nn !== old) {
+        var ids = []; for (var id in rdDocs) if (rdDocs[id] && rdDocs[id].fd === old) ids.push(id);
+        fdSet(ids, nn);
+        var l2 = []; each(fdAll(), function (x) { if (x !== old) l2.push(x); }); fdSaveList(l2, true);
+        f.fd = nn; rfSet(f);
+      }
+    } else if (v === '__del') {
+      var od = f.fd, cnt = fdCount(od);
+      if (window.confirm('フォルダ「' + od + '」をなくしますか？\n中の英文・動画（' + cnt + ' 件）は消えません。「フォルダなし」に戻ります。')) {
+        var ids2 = []; for (var id2 in rdDocs) if (rdDocs[id2] && rdDocs[id2].fd === od) ids2.push(id2);
+        fdSet(ids2, '');
+        var l3 = []; each(rdFdList, function (x) { if (fdNorm(x) !== od) l3.push(x); }); fdSaveList(l3, true);
+        f.fd = ''; rfSet(f);
+      }
+    } else { f.fd = v; rfSet(f); }
+    renderRdHistory();
+  }
   // 単語帳の「本ごとの一覧」で ★ の順に並べられるよう、本・英文の名前ごとの ★ を小さくまとめて送る（memos/合言葉/favs）
   var favSyncT = null, favSent = '';
   function favSync() {
@@ -6878,6 +6970,14 @@
     list.reverse();
     return { list: list, other: other };
   }
+  on($('rd-selfd'), 'click', function () {
+    var ids = []; for (var id in rdSel || {}) if (rdDocs[id]) ids.push(id);
+    if (!ids.length) { window.alert('先に英文を選んでください。'); return; }
+    var n = fdAsk(''); if (n === null) return;
+    fdSet(ids, n);
+    rdSel = null; renderRdHistory();
+    syncMsg(n ? '📁 ' + ids.length + ' 件を「' + n + '」に入れました。' : '📁 ' + ids.length + ' 件をフォルダから出しました。');
+  });
   on($('rd-selmerge'), 'click', function () {
     var sb = selBooks(), list = sb.list;
     if (list.length < 2) return;
@@ -7279,15 +7379,16 @@
     return row;
   }
   /* ---- 一覧の絞り込み：題名の一部・種類・★・状態（選んだものは、この端末に覚えておく） ---- */
-  var RF_KEY = 'eibun_rfilter';
+  var RF_KEY = 'memo_rfilter';
   function rfGet() { var v = null; try { v = JSON.parse(lsGet(RF_KEY) || 'null'); } catch (e) {} return v || { q: '', type: '', fav: 0, st: '' }; }
   function rfSet(v) { lsSet(RF_KEY, JSON.stringify(v)); }
-  function rfOn(f) { return !!(f.q || f.type || Number(f.fav) || f.st); }
+  function rfOn(f) { return !!(f.q || f.type || Number(f.fav) || f.st || f.fd); }
   function rfType(d) { return d.book ? 'book' : d.yt ? 'yt' : d.lv ? 'lv' : (/^🌐 /.test(d.title || '') || (d.src && !d.cues)) ? 'web' : 'txt'; }
   function rfNorm(t) { return String(t || '').toLowerCase().replace(/\s+/g, ' '); }
   // 1つの英文（本は章）が条件に合うか
   function rfPass(id, f, lastId) {
     var d = rdDocs[id]; if (!d) return false;
+    if (f.fd) { if (f.fd === FD_NONE ? !!d.fd : (d.fd || '') !== f.fd) return false; }
     if (f.type && rfType(d) !== f.type) return false;
     if (Number(f.fav) && favOf(id) < Number(f.fav)) return false;
     if (f.st === 'hard') {
@@ -7309,16 +7410,18 @@
     $('rd-filter').style.display = total >= 1 ? '' : 'none';
     if (document.activeElement !== $('rf-q')) $('rf-q').value = f.q || '';
     $('rf-type').value = f.type || ''; $('rf-fav').value = String(Number(f.fav) || 0); $('rf-st').value = f.st || '';
+    fdOpts();
     var on1 = rfOn(f);
     $('rf-n').textContent = on1 ? hit + ' / ' + total + ' 件' : '';
     $('rf-clr').className = on1 ? '' : 'hidden';
   }
   var rfTimer = null;
   function rfChange() { var f = rfGet(); f.q = String($('rf-q').value || '').replace(/^\s+|\s+$/g, ''); f.type = $('rf-type').value; f.fav = Number($('rf-fav').value) || 0; f.st = $('rf-st').value; rfSet(f); renderRdHistory(); }
+  on($('rf-fd'), 'change', fdSelChange);
   on($('rf-q'), 'input', function () { if (rfTimer) clearTimeout(rfTimer); rfTimer = setTimeout(rfChange, 150); });
   on($('rf-q'), 'search', rfChange);
   on($('rf-type'), 'change', rfChange); on($('rf-fav'), 'change', rfChange); on($('rf-st'), 'change', rfChange);
-  on($('rf-clr'), 'click', function () { rfSet({ q: '', type: '', fav: 0, st: '' }); $('rf-q').value = ''; renderRdHistory(); });
+  on($('rf-clr'), 'click', function () { rfSet({ q: '', type: '', fav: 0, st: '', fd: '' }); $('rf-q').value = ''; renderRdHistory(); });
   /* ---- 👁 一覧で中身を少し見る：YouTube はサムネイルと場面の画像、端末の動画は場面を切り出した画像、
      ドライブだけの動画はドライブのサムネイル、英文・本は最初の数文。押すと行の下に開き、もう一度押すと閉じる ---- */
   var pvShots = {};   // id → 端末の動画から切り出した画像（この画面を開いている間）
@@ -7473,7 +7576,9 @@
     $('rd-hidv').textContent = rdHidView ? '← ふつうの一覧に戻る' : '🙈 非表示の一覧（' + hidN + '）';
     $('rd-hidnote').className = rdHidView ? 'note' : 'hidden';
     // 絞り込み（本は、どれかの章が合えば本ごと出す。題名で探したときは、合った章を開いて見せる）
-    var rf = rfGet(), rfAct = rfOn(rf), rfOk = {}, rfTotal = 0, rfHit = 0, rfSeenB = {}, lastV = null;
+    var rf = rfGet();
+    if (rf.fd && rf.fd !== FD_NONE && fdAll().indexOf(rf.fd) < 0) { rf.fd = ''; rfSet(rf); }   // なくなったフォルダ
+    var rfAct = rfOn(rf), rfOk = {}, rfTotal = 0, rfHit = 0, rfSeenB = {}, lastV = null;
     try { lastV = lastGet(); } catch (e1) {}
     if (rfAct) {
       each(ids, function (id) {
@@ -7493,11 +7598,11 @@
     $('rd-sort').textContent = pop ? '🕒 追加した順に戻す' : '👁 よく見る順';
     $('rd-fsort').textContent = mode === 'fav' ? '🕒 追加した順に戻す' : '⭐ 好み順';
     $('rd-hist-h').style.display = rfTotal || (KEY && gasUrl) ? '' : 'none';   // 一覧が空でも「☁ ドライブの容量」（控えから戻す）は押せるように
-    if (rfAct && !ids.length) { var em = document.createElement('p'); em.className = 'note'; em.textContent = '条件に合う英文はありません。'; box.appendChild(em); }
+    if (rfAct && !ids.length) { var em = document.createElement('p'); em.className = 'note'; em.textContent = rf.fd && rf.fd !== FD_NONE && !fdCount(rf.fd) ? '📁 「' + rf.fd + '」はまだ空です。「📁 フォルダ：すべて」に戻して「☑ 選ぶ」で英文を選び、「📁 選んだものをフォルダへ」で入れてください。' : '条件に合う英文はありません。'; box.appendChild(em); }
     if (rdSel && !ids.length) rdSel = null;
     $('rd-selbar').className = rdSel ? '' : 'hidden';
     $('rd-sel').className = rdSel ? 'rd-selbtn hidden' : 'rd-selbtn';
-    if (rdSel) { var nSel = 0; for (var sx in rdSel) if (rdDocs[sx]) nSel++; else delete rdSel[sx]; $('rd-selcount').textContent = nSel + ' 件を選択'; $('rd-seldel').disabled = !nSel;
+    if (rdSel) { var nSel = 0; for (var sx in rdSel) if (rdDocs[sx]) nSel++; else delete rdSel[sx]; $('rd-selcount').textContent = nSel + ' 件を選択'; $('rd-seldel').disabled = !nSel; $('rd-selfd').disabled = !nSel;
       var sbk = selBooks(); $('rd-selmerge').className = allBooks().length >= 2 ? '' : 'hidden'; $('rd-selmerge').disabled = sbk.list.length < 2 || sbk.other; }
     bkAppendOpts();
     // 本の章は本ごとに1行にまとめ、押すと章が並ぶ
@@ -7610,7 +7715,7 @@
   }
   function rdPullHistory() {
     if (!KEY) return;
-    vLoad();
+    vLoad(); fdPull();
     api('GET', '/reader', undefined, function (err, data) {
       if (err) return;
       if (srvLooksEmpty(data)) return;   // クラウドが空に見える：念のため手元の一覧はそのまま
@@ -8119,6 +8224,13 @@
     var b = $('rd-favbtn'); if (!b || !rdCur) return;
     var n = favOf(rdCur.id); b.textContent = (rdCur.d.book ? '本 ' : '') + favStr(n); b.className = 'rd-fav' + (n ? ' on' : '');
   }
+  function fdBtnShow() { var b = $('rd-fdbtn'); if (!b || !rdCur) return; b.textContent = '📁 ' + (rdCur.d.fd || 'フォルダへ'); }
+  on($('rd-fdbtn'), 'click', function () {
+    if (!rdCur) return;
+    var n = fdAsk(rdCur.d.fd || ''); if (n === null) return;
+    fdSet([rdCur.id], n); fdBtnShow();
+    $('rd-status').textContent = n ? '📁 「' + n + '」に入れました。' : '📁 フォルダから出しました。';
+  });
   on($('rd-favbtn'), 'click', function () {
     if (!rdCur) return;
     var d = rdCur.d, n = (favOf(rdCur.id) + 1) % 4;
@@ -8127,7 +8239,7 @@
   });
   function renderRd() {
     if (!rdCur) return;
-    favBtnShow(); subInShow();
+    favBtnShow(); fdBtnShow(); subInShow();
     if (fnd.id && rdCur.id !== fnd.id) { fnd.hits = []; fnd.map = {}; fnd.at = -1; fnd.id = rdCur.id; if (fnd.q) setTimeout(function () { findRun(false); }, 0); }
     setTimeout(bmMarkUpdate, 0);   // しおりの 🔖（描き終わってから）
     var d = rdCur.d, box = $('rd-text'); box.innerHTML = '';

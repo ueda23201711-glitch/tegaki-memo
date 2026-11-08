@@ -147,7 +147,7 @@
       <p class="note">再生中の操作：画面をタップでボタンの表示／非表示。左右のはしをダブルタップで前の文・次の文、まん中をダブルタップで再生／一時停止。キーボードでは スペース＝再生／一時停止、←→＝前の文・次の文、↑↓＝字幕の大きさ、R＝この文をくり返す。</p>
     </div>
     <p id="hmsg" class="note"></p>
-    <div id="sortbar" class="hidden"><button id="b-sort" class="hbtn" type="button" title="よく見る動画を上に（もう一度押すと、追加した順に戻る）">👁 よく見る順</button> <button id="b-fsort" class="hbtn" type="button" title="★の多い動画を上に（もう一度押すと、追加した順に戻る）">⭐ 好み順</button></div>
+    <div id="sortbar" class="hidden"><button id="b-sort" class="hbtn" type="button" title="よく見る動画を上に（もう一度押すと、追加した順に戻る）">👁 よく見る順</button> <button id="b-fsort" class="hbtn" type="button" title="★の多い動画を上に（もう一度押すと、追加した順に戻る）">⭐ 好み順</button> <select id="b-fd" class="hidden" title="英文リーダーで分けたフォルダ" style="font-size:15px; padding:5px 6px; max-width:100%;"></select></div>
     <div id="list"></div>
   </div>
 </div>
@@ -453,8 +453,21 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     api('/settings/gas', function (err, u) { if (!err && typeof u === 'string' && u) { gasUrl = u; lsSet(C.gas, u); } });
     api('/settings/drivekey', function (err, u) { if (!err && typeof u === 'string') { driveKey = u; lsSet(C.dkey, u); } keyLoaded = true; var w = keyWait; keyWait = []; each(w, function (f) { f(); }); });
   }
+  // 📁 フォルダ（英文リーダーで分けたもの）で絞る。選んだフォルダはこの端末に覚えておく
+  var FD_KEY = C.cache + '_fd', FD_NONE = '\u0001';
+  function fdNames() { var m = {}, a = []; for (var k in docs) { var f = docs[k].fd; if (f && !m[f]) { m[f] = 1; a.push(f); } } a.sort(function (x, y) { return x.localeCompare ? x.localeCompare(y, 'ja') : (x < y ? -1 : 1); }); return a; }
+  function fdCur() { var f = lsGet(FD_KEY) || '', a = fdNames(); return f === FD_NONE ? (a.length ? f : '') : (a.indexOf(f) >= 0 ? f : ''); }
+  function fdUi() {
+    var sel = $('b-fd'), a = fdNames(), f = fdCur();
+    sel.className = a.length ? '' : 'hidden'; sel.innerHTML = '';
+    var cnt = function (n) { var c = 0; for (var k in docs) if ((docs[k].fd || '') === n) c++; return c; };
+    var add = function (v, t) { var o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); };
+    add('', '📁 フォルダ：すべて'); each(a, function (n) { add(n, '📁 ' + n + '（' + cnt(n) + '）'); }); if (a.length) add(FD_NONE, '📁 フォルダなし（' + cnt('') + '）');
+    sel.value = f;
+  }
+  on($('b-fd'), 'change', function () { lsSet(FD_KEY, $('b-fd').value); render(); });
   function ids() {
-    var a = []; for (var k in docs) a.push(k);
+    var a = [], fc = fdCur(); for (var k in docs) { if (fc && (fc === FD_NONE ? !!docs[k].fd : docs[k].fd !== fc)) continue; a.push(k); }
     var mode = lsGet(SORT_KEY) || '', um = mode ? useMap() : null;
     a.sort(function (x, y) {
       if (mode === 'fav') { var f = (docs[y].fav || 0) - (docs[x].fav || 0); if (f) return f; }
@@ -468,7 +481,8 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     idbKeys(function (h) {
       have = h;
       var box = $('list'), list = ids(), pop = lsGet(SORT_KEY) === 'pop', um = useMap(); box.innerHTML = '';
-      sortLabel(); $('sortbar').className = list.length > 1 ? '' : 'hidden';
+      sortLabel(); fdUi(); $('sortbar').className = list.length > 1 || fdNames().length ? '' : 'hidden';
+      if (!list.length && fdCur()) { $('hmsg').textContent = 'このフォルダには動画がありません。'; return; }
       if (!list.length) {
         $('hmsg').textContent = $('hmsg').textContent || '動画つきの英文がまだありません。英文リーダーで YouTube のアドレスを入れるか、「🎞 手元の動画と字幕で読む」で動画と字幕（.srt）を入れてください。';
         return;
@@ -484,6 +498,7 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
         var p = Number(lsGet('ep_at_' + id) || 0); if (d.vbm > 0) s.push('🔖 ' + fmt(d.vbm)); else if (p > 5) s.push('続き ' + fmt(p));
         if (!d.yt && srcUrl(d)) s.push('🔗 ' + hostOf(srcUrl(d)));
         if (pop && um[id]) s.push('👁 ' + um[id][0] + '回');
+        if (d.fd && !fdCur()) s.push('📁 ' + d.fd);
         var hn = 0; if (d.hard) for (var hk in d.hard) if (d.hard[hk]) hn++; if (hn) s.push('❓' + hn);
         tx.appendChild(el('div', 's', s.join('・')));
         var fv = el('span', 'fav' + (d.fav ? ' on' : ''), favStr(d.fav)); fv.title = '好み（押すたびに ★1→★2→★3→なし）';
