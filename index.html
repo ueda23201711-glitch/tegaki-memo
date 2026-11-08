@@ -753,6 +753,7 @@
   <div class="dlg">
     <h3>翻訳の設定（Google Apps Script）</h3>
     <p class="note">ご自分の Google アカウントで Google 翻訳を使います。手順は案内のとおりに。下のコードを Apps Script に貼り付けて「ウェブアプリ」として公開し、表示されたアドレスを入れてください。</p>
+    <p class="note" id="gas-ver" style="margin:4px 0; font-weight:600;"></p>
     <textarea id="gas-code" readonly></textarea>
     <div class="row"><button id="gas-copy" type="button">コードをコピー</button></div>
     <input id="gas-url" type="url" placeholder="https://script.google.com/macros/s/…/exec" autocapitalize="off" autocorrect="off">
@@ -4766,6 +4767,13 @@
     if (cvMemo[k]) return cvMemo[k];
     return (cvMemo[k] = btoa(md5raw(unescape(encodeURIComponent(k)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''));
   }
+  // いま使っている Apps Script の版（ドライブの一覧を読むときに受け取る）
+  var gasVerNow = '';
+  function gasVerShow() {
+    var el = $('gas-ver'); if (!el) return;
+    el.textContent = 'Apps Script のコードのバージョン：最新は ' + GAS_VER_LATEST + (gasVerNow ? ' ／ いま使っているのは ' + gasVerNow + (gasVerNow === GAS_VER_LATEST ? '（最新です）' : '（古いので、下のコードに貼り替えて「新バージョン」でデプロイしてください）') : '');
+    el.style.color = gasVerNow && gasVerNow !== GAS_VER_LATEST ? '#b3261e' : '#2b6b3a';
+  }
   var cvNames = null, cvAt = 0, cvBusy = false, cvRes = lsJSON('eibun_cv', {}) || {};
   // ドライブの一覧を読む（10分に1回まで。force で読み直し）
   function cvLoad(force) {
@@ -4775,6 +4783,7 @@
       cvBusy = false;
       if (!data || !data.ok || typeof data.names !== 'string') return;   // Apps Script が古いコードのまま
       cvNames = {}; each(data.names.split(' '), function (n) { if (n) cvNames[n] = 1; });
+      gasVerNow = data.ver || '（バージョンの書いていない古い版）'; gasVerShow();
       cvAt = now(); cvScanAll();
     });
   }
@@ -8515,7 +8524,11 @@
   on($('rd-retr'), 'click', function () { if (!rdCur) return; delete rdCur.d.tr; openRdDoc(rdCur.id); });
 
   // 翻訳の設定
+  // Apps Script のコードの版。コードを変えたら必ず上げる（コードの1行目と、アプリの表示に出る）
+  var GAS_VER_LATEST = '2026-11-09a';
   var GAS_CODE = [
+    "// バージョン: " + GAS_VER_LATEST + "（英文リーダー・手書きメモ 共通。アプリの「⚙ 翻訳の設定」に出る最新の版と同じか確かめてください）",
+    "var GAS_VER = \"" + GAS_VER_LATEST + "\";",
     "// 英文リーダー用：英語を日本語に訳す ＋ AIの声（Gemini）＋ 作った声をドライブに保存して使い回す",
     "// AIの声を使うときは「プロジェクトの設定」→「スクリプト プロパティ」に GEMINI_KEY（Google AI Studio の鍵）を保存",
     "function doGet(e) {",
@@ -8525,7 +8538,7 @@
     "    if (p.f) { try { sweepShared(); } catch (e0) {} }   // 片付けは動画・ファイルのときだけ（翻訳は待たせない）",
     "    var sl = p.sl || \"en\", tl = p.tl || \"ja\";",
     "    if (p.vlist) {",
-    "      out = { ok: true, names: voiceNames() };",
+    "      out = { ok: true, names: voiceNames(), ver: GAS_VER };",
     "    } else if (p.page) {",
     "      out = fetchPage(String(p.page));",
     "    } else if (p.sj) {   // iPhone の声：ショートカットに文の一覧を渡す（1 行に 1 まとまり）",
@@ -9005,6 +9018,7 @@
     "}"
   ].join('\n');
   on($('btn-rd-set'), 'click', function () {
+    gasVerShow(); if (gasUrl) cvLoad(true);
     $('gas-url').value = gasUrl; $('gas-code').value = GAS_CODE; $('bm-code').value = BM_CODE; $('share-url').value = SHARE_URL; $('gas-msg').textContent = '';
     $('gas-dlg').className = '';
   });
