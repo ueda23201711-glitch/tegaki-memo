@@ -7192,6 +7192,7 @@
       v.src = url; try { v.load(); } catch (e) {}
     });
   }
+  var rdLimit = 60;   // 一覧に一度に出す数
   function renderRdHistory() {
     if (!rdCur) { try { resumeShow(); } catch (e0) {} }
     cvLoad(); if (lvCanPlay && !lvOld) lvScan(); lvBulkUi();
@@ -7234,9 +7235,10 @@
       seenB[d.book] = 1; rows.push('B:' + d.book);
       if (rdOpenBook[d.book] || (rfAct && rf.q)) each(bookChapters(d.book), function (c) { if (!rfAct || rfOk[c]) rows.push(c); });
     });
-    var shown = 0;
+    // 多いときは rdLimit 件まで出して、下の「もっと見る」で増やす（前は 40 件で黙って切れていた）
+    var shown = 0, hidden = 0;
     each(rows, function (id) {
-      if (shown >= 40 && !(rdDocs[id] && rdDocs[id].book)) return;
+      if (shown >= rdLimit && !(rdDocs[id] && rdDocs[id].book)) { hidden++; return; }
       shown++;
       if (id.indexOf('B:') === 0) { box.appendChild(bookRow(id.slice(2))); return; }
       var d = rdDocs[id];
@@ -7278,7 +7280,17 @@
       on(row, 'click', function () { useBump(id); openRdDoc(id); if (rdDocs[id] && rdDocs[id].vbm > 0 && rdDocs[id].lv) { $('rd-status').textContent = '🔖 動画のしおり（' + vbmFmt(rdDocs[id].vbm) + '）に合わせています…'; rdSeekWhenReady(id, rdDocs[id].vbm, false); } });
       box.appendChild(row);
       if (pvOpen[id]) pvShow(id, row);
-    });    mkBanner(); pvAllLabel();
+    });
+    if (hidden) {
+      var more = document.createElement('button'); more.type = 'button'; more.className = 'rd-more';
+      more.textContent = '▼ もっと見る（あと ' + hidden + ' 件）';
+      on(more, 'click', function () { rdLimit += 60; renderRdHistory(); });
+      var all = document.createElement('button'); all.type = 'button'; all.className = 'rd-more';
+      all.textContent = 'ぜんぶ出す'; on(all, 'click', function () { rdLimit = 100000; renderRdHistory(); });
+      var mb = document.createElement('div'); mb.style.cssText = 'text-align:center; margin:10px 0;'; mb.appendChild(more); mb.appendChild(document.createTextNode(' ')); mb.appendChild(all);
+      box.appendChild(mb);
+    }
+    mkBanner(); pvAllLabel();
   }
   function rdPullHistory() {
     if (!KEY) return;
