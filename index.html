@@ -4931,8 +4931,28 @@
     } catch (e) { cb(null); }
   }
   function lvPut(id, blob, cb) { if (lvOld) { cb(false); return; } lvIdb(function (db) { if (!db) { cb(false); return; } try { var tx = db.transaction('v', 'readwrite'); tx.objectStore('v').put(blob, id); tx.oncomplete = function () { if (String(id).indexOf('#') < 0) lvHave[id] = 1; cb(true); }; tx.onerror = tx.onabort = function () { cb(false); }; } catch (e) { cb(false); } }); }
-  function lvGet(id, cb) { if (lvOld) { cb(null); return; } lvIdb(function (db) { if (!db) { cb(null); return; } try { var rq = db.transaction('v', 'readonly').objectStore('v').get(id); rq.onsuccess = function () { cb(rq.result || null); }; rq.onerror = function () { cb(null); }; } catch (e) { cb(null); } }); }
-  function lvDelLocal(id) { delete lvHave[id]; lvIdb(function (db) { if (!db) return; try { db.transaction('v', 'readwrite').objectStore('v')['delete'](id); } catch (e) {} }); }
+  function lvGet1(id, cb) { if (lvOld) { cb(null); return; } lvIdb(function (db) { if (!db) { cb(null); return; } try { var rq = db.transaction('v', 'readonly').objectStore('v').get(id); rq.onsuccess = function () { cb(rq.result || null); }; rq.onerror = function () { cb(null); }; } catch (e) { cb(null); } }); }
+  // 動画は分けたまま保存してあることがある（{ lvParts: 分の数 }）。そのときは分を集めて1つの動画にして返す
+  //   （iPhone 8 などメモリの少ない端末で、大きな動画を1つにまとめるときに落ちないように。端末に保存された分は、メモリに全部は読み込まれない）
+  function lvGet(id, cb) {
+    lvGet1(id, function (v) {
+      if (!v || !v.lvParts || String(id).indexOf('#') >= 0) { cb(v); return; }
+      var n = v.lvParts, got = [], left = n, bad = false;
+      for (var k = 0; k < n; k++) (function (k2) { lvGet1(id + '#' + k2, function (u) { if (!u) bad = true; got[k2] = u; if (--left === 0) cb(bad ? null : new Blob(got, { type: v.type || 'video/mp4' })); }); })(k);
+    });
+  }
+  // 1つの分を、ブロブにして端末に保存する（メモリに持ち続けない）。保存できたら cb(true)
+  function lvPutPart(id, k, u, type, cb) { lvPut(id + '#' + k, new Blob([u], { type: type || 'application/octet-stream' }), cb); }
+  function lvDelLocal(id) {
+    delete lvHave[id];
+    lvIdb(function (db) {
+      if (!db) return;
+      try { db.transaction('v', 'readwrite').objectStore('v')['delete'](id); } catch (e) {}
+      if (String(id).indexOf('#') >= 0) return;
+      // 分けて保存してある分も消す
+      try { var st = db.transaction('v', 'readonly').objectStore('v'); if (!st.getAllKeys) return; var rq = st.getAllKeys(); rq.onsuccess = function () { each(rq.result || [], function (k) { if (String(k).indexOf(id + '#') === 0) { try { db.transaction('v', 'readwrite').objectStore('v')['delete'](k); } catch (e2) {} } }); }; } catch (e) {}
+    });
+  }
   // この端末に保存してある動画（一覧の表示用）
   var lvHave = {};
   function lvScan() {
@@ -5564,24 +5584,30 @@
     };
     var finish = function () {
       if (fail) return; fail = true;   // 二度目を防ぐ
-      var blob = new Blob(parts, { type: d.lv.type || 'video/webm' });
-      if (lvOld) parts.length = 0;   // 古い iPad はメモリが少ない：分割はもう要らない
-      try { lvMem[id] = URL.createObjectURL(blob); } catch (e) {}
-      lvMsg('取り込みました。この端末に保存しています…');
-      lvPut(id, blob, function (okp) {
-        for (var k = 0; k < n; k++) lvDelLocal(id + '#' + k);   // 途中の分は消す
+      var after = function (okp) {
         $('lv-dl').disabled = false; $('lv-save').disabled = false; lvCur = '';
         var v0 = $('lv-video'), at = v0 && v0.getAttribute('src') ? v0.currentTime : 0, was = v0 && !v0.paused;
         if (rdCur && rdCur.id === id) { lvOpen(rdCur.d); lvSaveBtn(false); $('rd-status').textContent = '🎞 この端末に取り込みました。次からすぐ見られます。'; lvSrc('📱 この端末に保存してある動画を再生しています'); if (at) setTimeout(function () { try { v0.currentTime = at; if (was) lvA.playVideo(); } catch (e) {} }, 300); if (!okp) $('rd-status').textContent = lvOld ? '🎞 読み込みました。この画面を開いている間は見られます（古い iPad は保存できないので、開き直したらもう一度読み込みます）。' : 'この端末に動画を保存できませんでした（空き容量が足りないなど）。この画面を開いている間は見られます。'; }
-      });
+      };
+      if (lvOld) {   // 古い iPad：保存できないので、メモリの中で1つにして再生
+        var blob = new Blob(parts, { type: d.lv.type || 'video/webm' }); parts.length = 0;
+        try { lvMem[id] = URL.createObjectURL(blob); } catch (e) {}
+        lvMsg('取り込みました。'); after(false); return;
+      }
+      // 分けたまま端末に保存してあるので、目印だけ書く（大きな動画を1つにまとめなくてよい → メモリの少ない iPhone でも落ちない）
+      lvMsg('取り込みました。この端末に保存しています…');
+      lvPut(id, { lvParts: n, type: d.lv.type || 'video/mp4' }, after);
     };
     var take = function (k, a64) {
       if (parts[k] || fail) return;
       var bin = atob(a64), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
-      parts[k] = u; got++;
-      lvPut(id + '#' + k, u, function () {});   // 途中で止まっても、次は続きから
-      show();
-      if (got === n) finish();
+      a64 = null; bin = null;
+      if (lvOld) { parts[k] = u; got++; show(); if (got === n) finish(); return; }
+      parts[k] = 1;   // 端末に保存して、メモリには持たない（途中で止まっても、次は続きから）
+      lvPutPart(id, k, u, d.lv.type, function (ok) {
+        if (!ok) { parts[k] = 0; if (!fail) { fail = true; $('lv-dl').disabled = false; $('lv-save').disabled = false; lvMsg('この端末に保存できませんでした（空き容量が足りないなど）。'); } return; }
+        got++; show(); if (got === n) finish();
+      });
     };
     // 1つの分を頼む。2分半返事がなければ、もう一度頼む（遅れて届いた返事も使う）
     var ask = function (k, tries) {
@@ -5608,15 +5634,21 @@
     var start = function () {
       // 前に途中まで取り込んだ分を使う
       var left = n, check = function () { if (--left > 0) return; show(); if (got === n) finish(); else pump(); };
-      for (var k = 0; k < n; k++) (function (k2) { if (parts[k2]) { check(); return; } lvGet(id + '#' + k2, function (u) { if (u && !parts[k2]) { parts[k2] = u; got++; } check(); }); })(k);
+      for (var k = 1; k < n; k++) (function (k2) { if (parts[k2]) { check(); return; } lvGet1(id + '#' + k2, function (u) { if (u && !parts[k2]) { parts[k2] = lvOld ? u : 1; got++; } check(); }); })(k);
+      check();   // 0 番目の分の分
     };
     // 最初の分で全体の数を知る
     gasCall({ f: 'get', id: fid, part: '0' }, function (r, e) {
       if (!r || !r.ok || typeof r.a !== 'string') { $('lv-dl').disabled = false; lvMsg('取り込めませんでした（' + String((r && r.error) || e).slice(0, 60) + '）。もう一度押してください。'); return; }
       n = r.n || 1;
       var bin = atob(r.a), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
-      parts[0] = u; got = 1; lvPut(id + '#0', u, function () {});
-      if (n === 1) finish(); else start();
+      r = null; bin = null;
+      if (lvOld) { parts[0] = u; got = 1; if (n === 1) finish(); else start(); return; }
+      parts[0] = 1;
+      lvPutPart(id, 0, u, d.lv.type, function (ok) {
+        if (!ok) { $('lv-dl').disabled = false; lvMsg('この端末に保存できませんでした（空き容量が足りないなど）。'); return; }
+        got = 1; if (n === 1) finish(); else start();
+      });
     });
   });
   /* ---- ⬇ この端末にない動画を、まとめてドライブから取り込む（寝る前などに押しておく）----
@@ -5628,18 +5660,18 @@
     var show = function () { var el = got ? (now() - t0) / got * (n - got) / 1000 : 0; msg(Math.round(got * 100 / n) + '%（残り約 ' + (el > 90 ? Math.round(el / 60) + ' 分' : Math.max(1, Math.round(el)) + ' 秒') + '）'); };
     var finish = function () {
       if (fail) return; fail = true;
-      var blob = new Blob(parts, { type: d.lv.type || 'video/webm' }); parts = [];
       msg('保存しています…');
-      lvPut(id, blob, function (okp) {
-        if (okp) for (var k = 0; k < n; k++) lvDelLocal(id + '#' + k);
-        end(okp, okp ? '' : 'この端末に保存できませんでした（空き容量が足りないなど）');
-      });
+      // 分けたまま保存してあるので、目印だけ書く（1つにまとめないので、メモリの少ない iPhone でも落ちない）
+      lvPut(id, { lvParts: n, type: d.lv.type || 'video/mp4' }, function (okp) { end(okp, okp ? '' : 'この端末に保存できませんでした（空き容量が足りないなど）'); });
     };
     var take = function (k, a64) {
       if (parts[k] || fail) return;
       var bin = atob(a64), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
-      parts[k] = u; got++; lvPut(id + '#' + k, u, function () {}); show();
-      if (got === n) finish();
+      a64 = null; bin = null; parts[k] = 1;
+      lvPutPart(id, k, u, d.lv.type, function (ok) {
+        if (!ok) { parts[k] = 0; if (!fail) { fail = true; end(false, 'この端末に保存できませんでした（空き容量が足りないなど）'); } return; }
+        got++; show(); if (got === n) finish();
+      });
     };
     var ask = function (k, tries) {
       if (fail || parts[k] || lvBulk.stop) return;
@@ -5661,15 +5693,17 @@
     };
     var start = function () {
       var left = n, check = function () { if (--left > 0) return; show(); if (got === n) finish(); else pump(); };
-      for (var k = 0; k < n; k++) (function (k2) { if (parts[k2]) { check(); return; } lvGet(id + '#' + k2, function (u) { if (u && !parts[k2]) { parts[k2] = u; got++; } check(); }); })(k);
+      for (var k = 1; k < n; k++) (function (k2) { if (parts[k2]) { check(); return; } lvGet1(id + '#' + k2, function (u) { if (u && !parts[k2]) { parts[k2] = 1; got++; } check(); }); })(k);
+      check();
     };
-    lvGet(id + '#0', function (u0) {
-      gasCall({ f: 'get', id: fid, part: '0' }, function (r, e) {
-        if (!r || !r.ok || typeof r.a !== 'string') { end(false, String((r && r.error) || e).slice(0, 60)); return; }
-        n = r.n || 1;
-        var bin = atob(r.a), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
-        parts[0] = u; got = 1; lvPut(id + '#0', u, function () {});
-        if (n === 1) finish(); else start();
+    gasCall({ f: 'get', id: fid, part: '0' }, function (r, e) {
+      if (!r || !r.ok || typeof r.a !== 'string') { end(false, String((r && r.error) || e).slice(0, 60)); return; }
+      n = r.n || 1;
+      var bin = atob(r.a), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+      r = null; bin = null; parts[0] = 1;
+      lvPutPart(id, 0, u, d.lv.type, function (ok) {
+        if (!ok) { end(false, 'この端末に保存できませんでした（空き容量が足りないなど）'); return; }
+        got = 1; if (n === 1) finish(); else start();
       });
     });
   }
