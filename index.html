@@ -47,6 +47,7 @@
     -webkit-box-align: center; -webkit-align-items: center; align-items: center;
     padding: 0 10px; box-sizing: border-box;
     padding-top: env(safe-area-inset-top, 0px); height: calc(52px + env(safe-area-inset-top, 0px));
+    overflow: hidden;   /* ボタンがはみ出して画面ごと横にずれないように */
   }
   .bar h1 { font-size: 18px; margin: 0; -webkit-box-flex: 1; -webkit-flex: 1; flex: 1; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .bar button { background: rgba(255,255,255,.16); color: #fff; margin-left: 8px; white-space: nowrap; -webkit-flex-shrink: 0; flex-shrink: 0; }
@@ -55,8 +56,9 @@
   @media (max-width: 520px) {
     #scr-list .bar h1 { font-size: 16px; }
     #scr-list .bar button { margin-left: 5px; padding-left: 10px; padding-right: 10px; }
-    #scr-list .bar .wide { display: none; }
+    #scr-list .bar .wide, #scr-reader .bar .wide { display: none; }
     #scr-list .bar .nar { display: inline; }
+    #scr-reader .bar button { margin-left: 5px; padding-left: 10px; padding-right: 10px; }
     #sync-list { margin-left: 6px; font-size: 11px; }
   }
   .bar button:first-child { margin-left: 0; }
@@ -64,7 +66,7 @@
   .sync.err { color: #ffd2c8; opacity: 1; }
   .body {
     position: absolute; left: 0; right: 0; bottom: 0; top: 52px; top: calc(52px + env(safe-area-inset-top, 0px));
-    overflow-y: auto; -webkit-overflow-scrolling: touch;
+    overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch;   /* 斜めに動かしても横にずれないように */
   }
 
   /* ---- 一覧 ---- */
@@ -7616,7 +7618,7 @@
     $('rd-hidnote').className = rdHidView ? 'note' : 'hidden';
     // 絞り込み（本は、どれかの章が合えば本ごと出す。題名で探したときは、合った章を開いて見せる）
     var rf = rfGet();
-    if (rf.fd && rf.fd !== FD_NONE && fdAll().indexOf(rf.fd) < 0) { rf.fd = ''; rfSet(rf); }   // なくなったフォルダ
+    if (rf.fd && rf.fd !== FD_NONE && fdAll().indexOf(rf.fd) < 0) rf.fd = '';   // まだ読み込み前・なくなったフォルダ：今回だけ「すべて」で見せる（覚えている選択は消さない）
     var rfAct = rfOn(rf), rfOk = {}, rfTotal = 0, rfHit = 0, rfSeenB = {}, lastV = null;
     try { lastV = lastGet(); } catch (e1) {}
     if (rfAct) {
