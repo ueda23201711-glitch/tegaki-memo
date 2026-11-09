@@ -158,6 +158,7 @@
   .rd-pv { margin: -2px 0 8px; padding: 8px; background: #f3f6f8; border-radius: 0 0 10px 10px; }
   .rd-pvimg { width: 48%; max-width: 240px; margin: 0 2% 6px 0; border-radius: 6px; vertical-align: top; background: #dde3e7; }
   .rd-pvnote { font-size: 13px; color: #5b6a72; line-height: 1.5; margin: 2px 0; }
+  .rd-fdtag { display: inline-block; margin-left: 6px; padding: 0 7px; border-radius: 9px; background: #eef1f4; color: #4a5560; font-size: 12px; line-height: 18px; cursor: pointer; white-space: nowrap; max-width: 12em; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
   .rd-seltag { display: block; font-size: 13px; color: #6b7780; margin-top: 2px; }
   .rd-seltag .rd-fav { border: 0; background: none; padding: 0; float: none; margin: 0; }
   #rd-favbtn { float: none; margin-left: 0; padding: 6px 10px; border: 1px solid #d8dde1; background: #fff; border-radius: 8px; color: #9aa3aa; }
@@ -6840,14 +6841,41 @@
     if (KEY) api('PATCH', '', up, function () {});
   }
   function fdCount(n) { var c = 0, sb = {}; each(rdIds(), function (id) { var d = rdDocs[id]; if ((d.fd || '') !== n) return; if (d.book) { if (sb[d.book]) return; sb[d.book] = 1; } c++; }); return c; }
-  // どのフォルダに入れるか聞く（番号か、新しい名前）。null＝やめた、''＝フォルダから出す
-  function fdAsk(cur) {
-    var a = fdAll(), lines = [];
-    each(a, function (n, i) { lines.push((i + 1) + '. ' + n + (n === cur ? '（今ここ）' : '')); });
-    var t = window.prompt('入れるフォルダの番号を書いてください。新しいフォルダにするときは名前を書いてください。\n' + (lines.length ? lines.join('\n') + '\n' : '') + '0. フォルダから出す', '');
-    if (t === null) return null;
-    t = fdNorm(t); if (!t) return null;
-    if (/^[0-9０-９]+$/.test(t)) { var k = Number(t.replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })); if (k === 0) return ''; if (a[k - 1]) return a[k - 1]; window.alert('その番号のフォルダはありません。'); return null; }
+  // どのフォルダに入れるか、ボタンで選ぶ小さな画面。cb(名前)／cb('')＝フォルダから出す。やめたら cb は呼ばない
+  function fdPick(cur, title, cb) {
+    var old = $('fd-pop'); if (old) old.parentNode.removeChild(old);
+    var bg = document.createElement('div'); bg.id = 'fd-pop';
+    bg.style.cssText = 'position:fixed; left:0; top:0; right:0; bottom:0; background:rgba(0,0,0,0.35); z-index:9999; overflow:auto; -webkit-overflow-scrolling:touch;';
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#fff; max-width:420px; margin:60px auto; padding:16px; border-radius:12px; box-shadow:0 6px 24px rgba(0,0,0,0.25);';
+    var close = function () { if (bg.parentNode) bg.parentNode.removeChild(bg); };
+    var done = function (n) { close(); cb(n); };
+    var h = document.createElement('div'); h.style.cssText = 'font-weight:bold; margin-bottom:10px;'; h.textContent = title; box.appendChild(h);
+    var btn = function (txt, on1, fn, sub) {
+      var b = document.createElement('button'); b.type = 'button'; b.textContent = txt;
+      b.style.cssText = 'display:block; width:100%; text-align:left; margin:0 0 6px; padding:10px 12px; font-size:16px; border-radius:8px; border:1px solid ' + (on1 ? '#2d7be5' : '#d5dbe0') + '; background:' + (on1 ? '#e8f1fd' : (sub ? '#f6f7f8' : '#fff')) + '; color:#222;';
+      on(b, 'click', function (e) { e.stopPropagation(); fn(); }); box.appendChild(b); return b;
+    };
+    var a = fdAll();
+    if (!a.length) { var em = document.createElement('div'); em.style.cssText = 'font-size:14px; color:#666; margin-bottom:8px;'; em.textContent = 'まだフォルダがありません。下で新しいフォルダを作ってください。'; box.appendChild(em); }
+    each(a, function (n) { btn('📁 ' + n + (n === cur ? '（今ここ）' : '') + '　' + fdCount(n) + ' 件', n === cur, function () { done(n); }); });
+    // 新しいフォルダ（名前だけは文字を入れる）
+    var row = document.createElement('div'); row.style.cssText = 'display:flex; gap:6px; margin:8px 0 6px;';
+    var inp = document.createElement('input'); inp.type = 'text'; inp.placeholder = '新しいフォルダの名前'; inp.style.cssText = 'flex:1; min-width:0; font-size:16px; padding:8px; border:1px solid #d5dbe0; border-radius:8px;';
+    var mk = document.createElement('button'); mk.type = 'button'; mk.textContent = '＋ 作って入れる'; mk.style.cssText = 'font-size:15px; padding:8px 10px; border-radius:8px; white-space:nowrap;';
+    var mkGo = function () { var n = fdNorm(inp.value); if (!n) { inp.focus(); return; } done(n); };
+    on(mk, 'click', function (e) { e.stopPropagation(); mkGo(); });
+    on(inp, 'keydown', function (e) { if (e.keyCode === 13) mkGo(); if (e.keyCode === 27) close(); });
+    row.appendChild(inp); row.appendChild(mk); box.appendChild(row);
+    if (cur || a.length) btn('↩ フォルダから出す', false, function () { done(''); }, true);
+    btn('やめる', false, close, true);
+    on(bg, 'click', function (e) { if (e.target === bg) close(); });
+    bg.appendChild(box); document.body.appendChild(bg);
+  }
+  // 一覧の行に出すフォルダ名（押すと、その英文の入れ先を変えられる）
+  function fdTag(ids, fd) {
+    var t = document.createElement('span'); t.className = 'rd-fdtag'; t.textContent = '📁 ' + fd; t.title = 'フォルダ「' + fd + '」に入っています（押すと入れ先を変えられます）';
+    on(t, 'click', function (e) { e.stopPropagation(); fdPick(fd, '入れるフォルダを選んでください', function (n) { fdSet(ids, n); renderRdHistory(); }); });
     return t;
   }
   function fdOpts() {
@@ -6975,10 +7003,11 @@
   on($('rd-selfd'), 'click', function () {
     var ids = []; for (var id in rdSel || {}) if (rdDocs[id]) ids.push(id);
     if (!ids.length) { window.alert('先に英文を選んでください。'); return; }
-    var n = fdAsk(''); if (n === null) return;
-    fdSet(ids, n);
-    rdSel = null; renderRdHistory();
-    syncMsg(n ? '📁 ' + ids.length + ' 件を「' + n + '」に入れました。' : '📁 ' + ids.length + ' 件をフォルダから出しました。');
+    fdPick('', ids.length + ' 件を入れるフォルダを選んでください', function (n) {
+      fdSet(ids, n);
+      rdSel = null; renderRdHistory();
+      syncMsg(n ? '📁 ' + ids.length + ' 件を「' + n + '」に入れました。' : '📁 ' + ids.length + ' 件をフォルダから出しました。');
+    });
   });
   on($('rd-selmerge'), 'click', function () {
     var sb = selBooks(), list = sb.list;
@@ -7375,6 +7404,7 @@
     // 1 行目は題名だけ、2 行目の左に日付・しおり、右に ★・続きから・✎・削除（英文の行と同じ並び）
     var line = document.createElement('div'); line.className = 'rd-line';
     var info = document.createElement('div'); info.className = 'rd-info'; info.appendChild(sp);
+    if (d0.fd && rfGet().fd !== d0.fd) info.appendChild(fdTag(chs, d0.fd));
     var acts = document.createElement('div'); acts.className = 'rd-acts'; acts.appendChild(fv);
     if (bmAt >= 0) {
       var go = document.createElement('button'); go.type = 'button'; go.textContent = '↩ 続き'; go.className = 'rd-ren'; go.title = 'しおりの章の続きから';
@@ -7659,6 +7689,7 @@
       // 1 行目は題名だけ（幅いっぱい・2 行まで）。2 行目の左に日時と状態、右に ★・✎・削除
       var line = document.createElement('div'); line.className = 'rd-line';
       var info = document.createElement('div'); info.className = 'rd-info'; info.appendChild(sp); info.appendChild(bd);
+      if (d.fd && rfGet().fd !== d.fd) info.appendChild(fdTag([id], d.fd));
       var pvb = document.createElement('button'); pvb.type = 'button'; pvb.className = 'rd-pvb'; pvb.textContent = '🖼'; pvb.title = '中身を少し見る（動画は場面の画像、英文は最初の文）。開いたままを覚えます。Shift を押しながら押すと、前に押したところからまとめて開く／閉じる';
       on(pvb, 'click', function (e) { e.stopPropagation(); pvClick(id, e); });
       row.setAttribute('data-id', id);
@@ -8236,9 +8267,11 @@
   function fdBtnShow() { var b = $('rd-fdbtn'); if (!b || !rdCur) return; b.textContent = '📁 ' + (rdCur.d.fd || 'フォルダへ'); }
   on($('rd-fdbtn'), 'click', function () {
     if (!rdCur) return;
-    var n = fdAsk(rdCur.d.fd || ''); if (n === null) return;
-    fdSet([rdCur.id], n); fdBtnShow();
-    $('rd-status').textContent = n ? '📁 「' + n + '」に入れました。' : '📁 フォルダから出しました。';
+    var cid = rdCur.id;
+    fdPick(rdCur.d.fd || '', '入れるフォルダを選んでください', function (n) {
+      fdSet([cid], n); fdBtnShow();
+      $('rd-status').textContent = n ? '📁 「' + n + '」に入れました。' : '📁 フォルダから出しました。';
+    });
   });
   on($('rd-favbtn'), 'click', function () {
     if (!rdCur) return;
