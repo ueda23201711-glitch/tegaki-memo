@@ -3722,6 +3722,7 @@
     children: 'child', men: 'man', women: 'woman', people: 'person', feet: 'foot', teeth: 'tooth', mice: 'mouse', better: 'good', best: 'good', worse: 'bad', worst: 'bad',
     shook: 'shake', shaken: 'shake', woke: 'wake', woken: 'wake', swam: 'swim', sang: 'sing', sung: 'sing', rang: 'ring', drank: 'drink', drunk: 'drink', struck: 'strike',
     sought: 'seek', lent: 'lend', dealt: 'deal', fed: 'feed', fled: 'flee', bent: 'bend', bound: 'bind', dug: 'dig', hung: 'hang', laid: 'lay', shot: 'shoot', stuck: 'stick' };
+  function cvc1(x) { return /^[^aeiouy]*[aeiouy][b-df-hj-np-tvz]$/.test(x); }
   function lemmas(w) {
     w = w.toLowerCase().replace(/[’]/g, "'").replace(/'s$/, '').replace(/s'$/, 's');
     var out = [w], add = function (x) { if (x && x.length > 1 && out.indexOf(x) < 0) out.push(x); };
@@ -3731,12 +3732,13 @@
     if (/(ches|shes|sses|xes|zes|oes)$/.test(w)) add(w.slice(0, -2));
     if (/s$/.test(w) && !/ss$/.test(w)) add(w.slice(0, -1));
     if (/ied$/.test(w)) add(w.slice(0, -3) + 'y');
-    if (/ed$/.test(w)) { add(w.slice(0, -2)); add(w.slice(0, -1)); if ((m = w.match(/([b-df-hj-np-tv-z])\1ed$/))) add(w.slice(0, -3)); }
-    if (/ing$/.test(w)) { add(w.slice(0, -3)); add(w.slice(0, -3) + 'e'); if ((m = w.match(/([b-df-hj-np-tv-z])\1ing$/))) add(w.slice(0, -4)); if (/ying$/.test(w)) add(w.slice(0, -4) + 'ie'); }
+    // rated → rate（rat ではない）：1音節で「母音1つ＋子音1つ」で終わる語は、-ed/-ing で子音を重ねる（rat → ratted）。重ねていなければ e で終わる語を先に
+    if (/ed$/.test(w)) { if (cvc1(w.slice(0, -2))) { add(w.slice(0, -1)); add(w.slice(0, -2)); } else { add(w.slice(0, -2)); add(w.slice(0, -1)); } if ((m = w.match(/([b-df-hj-np-tv-z])\1ed$/))) add(w.slice(0, -3)); }
+    if (/ing$/.test(w)) { if (cvc1(w.slice(0, -3))) add(w.slice(0, -3) + 'e'); add(w.slice(0, -3)); add(w.slice(0, -3) + 'e'); if ((m = w.match(/([b-df-hj-np-tv-z])\1ing$/))) add(w.slice(0, -4)); if (/ying$/.test(w)) add(w.slice(0, -4) + 'ie'); }
     if (/ier$/.test(w)) add(w.slice(0, -3) + 'y');
     if (/iest$/.test(w)) add(w.slice(0, -4) + 'y');
-    if (/er$/.test(w)) { add(w.slice(0, -2)); add(w.slice(0, -1)); }
-    if (/est$/.test(w)) { add(w.slice(0, -3)); add(w.slice(0, -2)); }
+    if (/er$/.test(w)) { if (cvc1(w.slice(0, -2))) add(w.slice(0, -1)); add(w.slice(0, -2)); add(w.slice(0, -1)); }
+    if (/est$/.test(w)) { if (cvc1(w.slice(0, -3))) add(w.slice(0, -2)); add(w.slice(0, -3)); add(w.slice(0, -2)); }
     if (/ly$/.test(w)) { add(w.slice(0, -2)); if (/ily$/.test(w)) add(w.slice(0, -3) + 'y'); }
     return out;
   }
