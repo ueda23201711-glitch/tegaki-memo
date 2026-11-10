@@ -6262,7 +6262,9 @@
     if (hardOnly) hardCur = isHard(si) ? si : -1;
     markSentence(si);
     if (!ytPlayer || !ytReady) return;
-    ytPlayer.seekTo(rdCur.d.cues[si][0], true); ytPlayer.playVideo();
+    // 単語帳から開いたとき：そのセリフの終わりで止める
+    var cs = rdCur.d.cues; ytStopAt = rdOne() && !ytLoop && !hardOnly && abB < 0 && si + 1 < cs.length ? cs[si + 1][0] : -1;
+    ytPlayer.seekTo(cs[si][0], true); ytPlayer.playVideo();
   }
   function ytRate() {
     if (!ytPlayer || !ytReady) return;
@@ -6281,6 +6283,10 @@
     if (st === 0 && abB >= 0) { try { ytPlayer.seekTo(rdCur.d.cues[abA][0], true); ytPlayer.playVideo(); } catch (e) {} return; }   // 最後まで来た：A へ
     if (st !== 1) return;
     var t = 0; try { t = ytPlayer.getCurrentTime(); } catch (e) { return; }
+    if (ytStopAt >= 0) {
+      if (!rdOne() || ytLoop || hardOnly || abB >= 0) ytStopAt = -1;
+      else if (t >= ytStopAt - 0.08) { ytStopAt = -1; try { ytPlayer.pauseVideo(); } catch (e) {} return; }
+    }
     var cues = rdCur.d.cues, k = 0;
     if (abB >= 0 && !(ytLoop && ytLoopIdx >= 0) && cues[abA]) {
       var ab0 = cues[abA][0], ab1 = abB + 1 < cues.length ? cues[abB + 1][0] : null;
@@ -8146,7 +8152,13 @@
   }
   function abReset() { abA = abB = -1; abLabel(); }
   var rdListY = 0;   // 英文一覧のスクロール位置（読み終えて戻ったとき、同じ所を表示する）
+  /* 単語帳の「📖 元の英文」から開いた英文：🔊（動画なら ▶）はその文だけ（「🔁 続けて」がオンでも、次の文へ進まない）。
+     ほかの英文を一覧から開いたら、ふだんどおりに戻る */
+  var rdOneDoc = '', ytStopAt = -1;
+  function rdOne() { return !!(rdCur && rdOneDoc && rdOneDoc === rdCur.id); }
   function openRdDoc(id, isNew) {
+    if (id !== rdOneDoc) rdOneDoc = '';
+    ytStopAt = -1;
     var d = rdDocs[id]; if (!d) return;
     if (!rdCur) rdListY = $('rd-body').scrollTop;
     stopSpeak(); abReset();
@@ -8357,7 +8369,7 @@
   function playOne(si) {
     if (txtLoop()) { ytLoopIdx = si; ytLoopLabel(); playFrom(si); return; }   // 1文くり返し中：その文に変えてくり返す
     if (hardOnly && isHard(si)) { playFrom(si); return; }   // 印の文だけ：その印の文から、印の文を順に
-    if (rdCont) { playFrom(si); return; }   // 「続けて」がオンなら、その文から最後まで
+    if (rdCont && !rdOne()) { playFrom(si); return; }   // 「続けて」がオンなら、その文から最後まで（単語帳から開いたときは、その文だけ）
     stopSpeak(); markSentence(si);
     if (useGemini()) { rdSpeaking = true; playLabel(); gmPlayFrom(si, true); return; }
     speak(rdSents[si].text, function () { markSentence(-1); });
@@ -9813,8 +9825,9 @@
   }
   var jumpPend = readJump();
   // その英文を開いて、その文を光らせる
-  function rdShowAt(id, n, t, p) {
+  function rdShowAt(id, n, t, p, one) {
     openRdDoc(id);
+    if (one) { rdOneDoc = id; $('rd-status').textContent = '📖 単語帳から開きました。🔊 を押すと、その文だけを読みます（次の文へは進みません）。'; }
     if (t >= 0 && rdDocs[id] && rdDocs[id].cues) rdSeekWhenReady(id, t, p);
     if (n >= 0 && n < rdSents.length) {
       markSentence(n);
@@ -9826,9 +9839,9 @@
     openReader('');
     var miss = function () { $('rd-msg').textContent = '元の英文が見つかりませんでした（英文リーダーの「これまでの英文」から消えたのかもしれません）。'; };
     if (j.id) {
-      if (rdDocs[j.id]) { rdShowAt(j.id, j.n, j.t, j.p); return; }
+      if (rdDocs[j.id]) { rdShowAt(j.id, j.n, j.t, j.p, true); return; }
       api('GET', '/reader/' + j.id, undefined, function (err, d) {
-        if (!err && d && d.text) { rdDocs[j.id] = d; rdSaveLocal(); rdShowAt(j.id, j.n, j.t, j.p); } else miss();
+        if (!err && d && d.text) { rdDocs[j.id] = d; rdSaveLocal(); rdShowAt(j.id, j.n, j.t, j.p, true); } else miss();
       });
       return;
     }
@@ -9841,7 +9854,8 @@
       var d = rdDocs[ids[i]];
       if (String(d.text || '').replace(/\s+/g, ' ').toLowerCase().indexOf(low) < 0) continue;
       openRdDoc(ids[i]);
-      for (var k = 0; k < rdSents.length; k++) if (rdSents[k].text.replace(/\s+/g, ' ').toLowerCase().indexOf(low) >= 0) { rdShowAt(ids[i], k); return; }
+      for (var k = 0; k < rdSents.length; k++) if (rdSents[k].text.replace(/\s+/g, ' ').toLowerCase().indexOf(low) >= 0) { rdShowAt(ids[i], k, undefined, undefined, true); return; }
+      rdOneDoc = ids[i];
       return;
     }
     if (retried) { miss(); return; }
