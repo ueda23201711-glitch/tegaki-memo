@@ -493,7 +493,9 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
       each(list, function (id) {
         var d = docs[id], b = el('button', 'item' + (id === lastSeen ? ' last' : '')); b.type = 'button';
         var ic = el('div', 'ic', d.yt ? '📺' : '🎬'), tx = el('div', 'tx'), go = el('div', 'go', '▶');
-        tx.appendChild(el('div', 't', (serial[id] ? serial[id] + '. ' : '') + cleanTitle(d.title)));
+        var tt = el('div', 't', (serial[id] ? serial[id] + '. ' : '') + cleanTitle(d.title)); tx.appendChild(tt);
+        var FC = { r: '#e53935', o: '#f57c00', y: '#f2c200', g: '#43a047', b: '#1e88e5', p: '#8e24aa' };
+        if (d.flag && FC[d.flag]) { var fg = el('span', '', '\u2691\uFE0E '); fg.style.color = FC[d.flag]; tt.insertBefore(fg, tt.firstChild); }   // 英文リーダーでつけた色の印
         var s = [], last = d.cues[d.cues.length - 1][0];
         s.push(d.yt ? '▶ YouTube' : have[id] ? '📱 この端末' : d.lv.drive ? '☁ ドライブ' : '⚠ 動画なし');
         s.push(d.tr && d.tr.length ? '英＋日' : '英語のみ');
