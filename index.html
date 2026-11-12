@@ -4086,12 +4086,15 @@
   }
   /* 開いている英文に、クラウドの新しい印（❓・★・⚑・フォルダ）を反映する。
      アプリを開いてすぐ前回の英文が開くと、クラウドを読む前の古い中身のまま表示されるため（ほかの端末・字幕プレイヤーでつけた ❓ が出ない） */
+  var rdHWant = '';
   function rdCurRefresh(sd) {
     var d = rdCur.d; if (!sd || sd === d) return;
     each(['hard', 'fav', 'flag', 'fd', 'bfav'], function (k) { if (sd[k] !== undefined) d[k] = sd[k]; else delete d[k]; });
     rdDocs[rdCur.id] = d;
     var bl = document.querySelectorAll('#rd-text .rd-sent');
     for (var i = 0; i < bl.length; i++) { var c = ' ' + bl[i].className + ' ', h = isHard(i); if (h && c.indexOf(' hard ') < 0) bl[i].className += ' hard'; else if (!h && c.indexOf(' hard ') >= 0) bl[i].className = c.replace(' hard ', ' ').replace(/^\s+|\s+$/g, ''); }
+    if (rdHWant && rdHWant === rdCur.id && hardCount(d) > 0) { hardOnly = true; hardCur = -1; }
+    rdHWant = '';
     hardLabel(); try { favBtnShow(); fdBtnShow(); flagBtnShow(); } catch (e) {}
   }
   function hardLabel() {
@@ -6329,6 +6332,7 @@
       if (best) { rdRate = Number(best); lsSet('memo_rd_rate', best); $('rd-rate').value = best; if ($('fl-rate')) $('fl-rate').value = best; ytRate(); setTimeout(ytRate, 1500); }
     }
     hardOnly = !!j.h && hardCount(rdCur.d) > 0; hardCur = -1; hardLabel();
+    rdHWant = j.h && !hardOnly ? rdCur.id : '';   // 印がまだ見つからない（端末のデータが古い）：クラウドを読んだあとでオンにする
     ytLoop = !!j.l; ytLoopIdx = ytLoop ? (n >= 0 ? n : rdIdx) : -1; ytLoopLabel();
     if (j.ab && j.ab.length === 2 && j.ab[1] < rdSents.length) { abA = j.ab[0]; abB = j.ab[1]; } else { abA = abB = -1; }
     abLabel();

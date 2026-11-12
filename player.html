@@ -449,6 +449,7 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
       if (err) { $('hmsg').textContent = err === 401 || err === 403 ? '読み込めませんでした（合言葉を確かめてください）。' : '読み込めませんでした（電波を確かめて ↻ を押してください）。'; return; }
       docs = takeDocs(data || {});
       $('hmsg').textContent = '';
+      if (cur && docs[curId]) curRefresh(docs[curId]);
       render();
     });
     api('/settings/gas', function (err, u) { if (!err && typeof u === 'string' && u) { gasUrl = u; lsSet(C.gas, u); } });
@@ -1373,7 +1374,16 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     return parseJump(String(v.h));
   }
   /* 英文リーダーから来たとき：❓だけ（h）・1文くり返し（l）・速さ（r）を引き継ぐ。A-B リピート（ab）は、リーダーへ戻るときにそのまま返す */
-  var abKeep = null;
+  var abKeep = null, hWant = null;
+  /* 開いている動画に、クラウドの新しい ❓ の印などを反映する（端末に残っていたデータが古く、❓ がまだ入っていなかったとき）。
+     英文リーダーで「❓だけ」にしていたのに印が見つからずオフになっていたら、ここでオンにする */
+  function curRefresh(sd) {
+    if (!sd || sd === cur) return;
+    each(['hard', 'fav', 'flag', 'fd', 'vbm'], function (k) { if (sd[k] !== undefined) cur[k] = sd[k]; else delete cur[k]; });
+    docs[curId] = cur;
+    if (hWant && hWant === curId && !hOnly && hardCountP()) { hOnly = true; hCur = nextHardP(Math.max(0, idxAt(P.t()))); if (hCur < 0) hOnly = false; else if (!hardOf(idxAt(P.t()))) seekTo(cur.cues[hCur][0]); }
+    hWant = null; hardBtn(); hOnlyBtn();
+  }
   function jumpState(j) {
     if (!cur || curId !== j.id) return;
     abKeep = j.ab ? { id: j.id, ab: j.ab } : null;
@@ -1381,6 +1391,7 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     var k = idxAt(j.t); if (k < 0) k = 0;
     if (j.l) { rep = k; $('b-rep').className = 'ib on'; }
     if (j.h && hardCountP()) { hOnly = true; hCur = nextHardP(k); if (hCur < 0) hOnly = false; }
+    hWant = j.h && !hOnly ? j.id : null;   // 印がまだ見つからない：クラウドを読んだあとでオンにする
     hOnlyBtn();
   }
   function openJ(j) {
