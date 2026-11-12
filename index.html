@@ -6294,13 +6294,34 @@
   on($('dq-x'), 'click', function () { $('dq-dlg').className = 'hidden'; });
   on($('dq-dlg'), 'click', function (e) { if (e.target === $('dq-dlg')) $('dq-dlg').className = 'hidden'; });   // 外側（暗いところ）を押しても閉じる
   // 字幕プレイヤー（このアプリの player.html）へ。今の場面から。字幕プレイヤーの「📖 リーダー」で、ここへ戻ってこられる
+  /* 英文リーダー ⇄ 字幕プレイヤー：❓だけ（h）・1文くり返し（l）・動画の速さ（r）・A-B リピート（ab）を引き継ぐ */
+  var RD_VRATE = { '0.6': 0.5, '0.75': 0.75, '0.9': 1, '1': 1.25, '1.15': 1.5 };
+  function rdStateHash() {
+    var h = '';
+    if (hardOnly) h += '&h=1';
+    if (ytLoop) h += '&l=1';
+    h += '&r=' + (RD_VRATE[String(rdRate)] || 1);
+    if (abA >= 0 && abB >= 0) h += '&ab=' + abA + '.' + abB;
+    return h;
+  }
+  function rdStateApply(j, n) {
+    if (!j || !rdCur) return;
+    if (j.r > 0) {   // 動画の速さ：いちばん近いもの
+      var best = '', bd = 99; for (var k in RD_VRATE) { var dd = Math.abs(RD_VRATE[k] - j.r); if (dd < bd) { bd = dd; best = k; } }
+      if (best) { rdRate = Number(best); lsSet('memo_rd_rate', best); $('rd-rate').value = best; if ($('fl-rate')) $('fl-rate').value = best; ytRate(); setTimeout(ytRate, 1500); }
+    }
+    hardOnly = !!j.h && hardCount(rdCur.d) > 0; hardCur = -1; hardLabel();
+    ytLoop = !!j.l; ytLoopIdx = ytLoop ? (n >= 0 ? n : rdIdx) : -1; ytLoopLabel();
+    if (j.ab && j.ab.length === 2 && j.ab[1] < rdSents.length) { abA = j.ab[0]; abB = j.ab[1]; } else { abA = abB = -1; }
+    abLabel();
+  }
   on($('rd-ep'), 'click', function () {
     if (!rdCur || !rdCur.d.cues) return;
     var t = 0; try { t = ytPlayer && ytReady ? ytPlayer.getCurrentTime() || 0 : 0; } catch (e) {}
     if (!t && rdIdx >= 0 && rdCur.d.cues[rdIdx]) t = rdCur.d.cues[rdIdx][0];
     var was = ytState() === 1;
     try { if (ytPlayer && ytReady) ytPlayer.pauseVideo(); } catch (e) {}
-    location.href = 'player.html#d=' + rdCur.id + '&t=' + (Math.round(t * 10) / 10) + (was ? '&p=1' : '');
+    location.href = 'player.html#d=' + rdCur.id + '&t=' + (Math.round(t * 10) / 10) + (was ? '&p=1' : '') + rdStateHash();
   });
   // 字幕プレイヤーから戻ってきたとき：動画の準備ができたら、その場面に合わせる。再生中だったら音を消して続きを再生
   function rdSeekWhenReady(id, t, play) {
@@ -9881,7 +9902,8 @@
     try { window.history.replaceState(null, '', location.href.split('#')[0]); } catch (e) {}
     var t = ''; try { t = f ? decodeURIComponent(f[1]) : ''; } catch (e) {}
     var tm = /[#&]t=(\d+(?:\.\d+)?)/.exec(h);   // 字幕プレイヤーから：動画の場面（秒）・再生中だったか
-    return a ? { id: a[1], n: Number(a[2]), t: tm ? Number(tm[1]) : -1, p: /[#&]p=1/.test(h) } : { find: t };
+    var ep = /[#&]from=ep/.test(h), r = /[#&]r=(\d+(?:\.\d+)?)/.exec(h), ab = /[#&]ab=(\d+)\.(\d+)/.exec(h);
+    return a ? { id: a[1], n: Number(a[2]), t: tm ? Number(tm[1]) : -1, p: /[#&]p=1/.test(h), ep: ep, h: /[#&]h=1/.test(h), l: /[#&]l=1/.test(h), r: r ? Number(r[1]) : 0, ab: ab ? [Number(ab[1]), Number(ab[2])] : null } : { find: t };
   }
   var jumpPend = readJump();
   // その英文を開いて、その文を光らせる
@@ -9899,9 +9921,11 @@
     openReader('');
     var miss = function () { $('rd-msg').textContent = '元の英文が見つかりませんでした（英文リーダーの「これまでの英文」から消えたのかもしれません）。'; };
     if (j.id) {
-      if (rdDocs[j.id]) { rdShowAt(j.id, j.n, j.t, j.p, true); return; }
+      // 字幕プレイヤーから戻った（from=ep）ときは、ふだんどおり（その文だけにしない）。くり返しなどの状態を引き継ぐ
+      var show = function () { rdShowAt(j.id, j.n, j.t, j.p, !j.ep); if (j.ep) rdStateApply(j, j.n); };
+      if (rdDocs[j.id]) { show(); return; }
       api('GET', '/reader/' + j.id, undefined, function (err, d) {
-        if (!err && d && d.text) { rdDocs[j.id] = d; rdSaveLocal(); rdShowAt(j.id, j.n, j.t, j.p, true); } else miss();
+        if (!err && d && d.text) { rdDocs[j.id] = d; rdSaveLocal(); show(); } else miss();
       });
       return;
     }

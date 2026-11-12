@@ -1328,7 +1328,8 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     if (!cur) return;
     var t = P.t(), k = idxAt(t), was = !P.paused(); if (k < 0) k = 0;
     P.pause(); savePos();
-    var url = READER_URL + '#src=' + curId + '.' + k + '&t=' + (Math.round(t * 10) / 10) + (was ? '&p=1' : '');
+    var url = READER_URL + '#src=' + curId + '.' + k + '&t=' + (Math.round(t * 10) / 10) + (was ? '&p=1' : '') + '&from=ep'
+      + (hOnly ? '&h=1' : '') + (rep >= 0 ? '&l=1' : '') + '&r=' + (P.rate() || pref.rate || 1) + (abKeep && abKeep.id === curId ? '&ab=' + abKeep.ab : '');
     var tk = window.PinLock && window.PinLock.ticket ? window.PinLock.ticket() : '';
     if (tk) url += '&ok=' + tk;
     if (IN_RD) { location.href = './' + url.slice(url.indexOf('#')); return; }   // 同じアプリの中で、リーダーへ
@@ -1340,7 +1341,8 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     var m = /[#&]d=([A-Za-z0-9_-]+)/.exec(h || ''); if (!m) return null;
     var t = /[#&]t=(\d+(?:\.\d+)?)/.exec(h), ok = /[#&]ok=([0-9]+\.[0-9a-f]+)/.exec(h);
     if (ok) { if (window.PinLock && window.PinLock.pass) window.PinLock.pass(ok[1]); else window.__pinPass = ok[1]; }
-    return { id: m[1], t: t ? Number(t[1]) : 0, p: /[#&]p=1/.test(h) };
+    var r = /[#&]r=(\d+(?:\.\d+)?)/.exec(h), ab = /[#&]ab=(\d+\.\d+)/.exec(h);
+    return { id: m[1], t: t ? Number(t[1]) : 0, p: /[#&]p=1/.test(h), h: /[#&]h=1/.test(h), l: /[#&]l=1/.test(h), r: r ? Number(r[1]) : 0, ab: ab ? ab[1] : '' };
   }
   function readJump() {
     var j = parseJump(location.hash);
@@ -1351,11 +1353,28 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     if (Math.abs(now() - Number(v.t || 0)) > RD_JUMP_MAX) return null;
     return parseJump(String(v.h));
   }
+  /* 英文リーダーから来たとき：❓だけ（h）・1文くり返し（l）・速さ（r）を引き継ぐ。A-B リピート（ab）は、リーダーへ戻るときにそのまま返す */
+  var abKeep = null;
+  function jumpState(j) {
+    if (!cur || curId !== j.id) return;
+    abKeep = j.ab ? { id: j.id, ab: j.ab } : null;
+    if (j.r > 0) { var best = 1, bd = 99; for (var i = 0; i < RATES.length; i++) { var dd = Math.abs(RATES[i] - j.r); if (dd < bd) { bd = dd; best = RATES[i]; } } pref.rate = best; P.setRate(best); savePref(); updBtns(); }
+    var k = idxAt(j.t); if (k < 0) k = 0;
+    if (j.l) { rep = k; $('b-rep').className = 'ib on'; }
+    if (j.h && hardCountP()) { hOnly = true; hCur = nextHardP(k); if (hCur < 0) hOnly = false; }
+    hOnlyBtn();
+  }
+  function openJ(j) {
+    // ❓だけ：今の文に印がなければ、次の印の文から始める
+    var d = docs[j.id];
+    if (j.h && d && d.hard && d.cues) { var k = 0; for (var i = 0; i < d.cues.length; i++) { if (d.cues[i][0] <= j.t + 0.15) k = i; else break; } for (var x = k; x < d.cues.length; x++) if (d.hard['s' + x]) { if (x !== k) j.t = d.cues[x][0]; break; } }
+    openDoc(j.id, j.t, j.p); jumpState(j);
+  }
   function doJump(j) {
     if (!j || !KEY) return;
-    if (docs[j.id]) { openDoc(j.id, j.t, j.p); return; }
+    if (docs[j.id]) { openJ(j); return; }
     api('/reader/' + j.id, function (err, d) {
-      if (!err && d && (d.lv || d.yt) && d.cues && d.cues.length) { docs[j.id] = d; openDoc(j.id, j.t, j.p); }
+      if (!err && d && (d.lv || d.yt) && d.cues && d.cues.length) { docs[j.id] = d; openJ(j); }
       else toast('この英文には動画がないか、見つかりませんでした');
     });
   }
