@@ -1055,7 +1055,12 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
   });
   on(v, 'play', function () { updBtns(); kick(); hideSoon(); });
   on(v, 'pause', function () { updBtns(); setUi(true); savePos(); });
-  on(v, 'ended', function () { updBtns(); setUi(true); });
+  on(v, 'ended', function () {
+    // 最後まで来た：1文くり返し・❓だけ のときは、止めずにそこへ戻って続ける（最後のセリフに印があるとき）
+    if (cur && rep >= 0 && cur.cues[rep]) { seekTo(cur.cues[rep][0]); P.play(); return; }
+    if (cur && hOnly) { var hk = nextHardP(0); if (hk >= 0) { hCur = hk; seekTo(cur.cues[hk][0]); P.play(); return; } }
+    updBtns(); setUi(true);
+  });
   on(v, 'timeupdate', function () { updTime(); if (now() - posT > 5000) savePos(); });
   on(v, 'seeked', function () { draw(); updTime(); });
   on(v, 'ratechange', updBtns);

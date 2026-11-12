@@ -5543,7 +5543,7 @@
       $('rd-status').textContent = 'この端末ではこの動画を再生できませんでした' + (/webm/i.test(d.lv.type || d.lv.name) ? '（webm は古い iPhone・iPad では再生できません。mp4 を使ってください）' : why ? '（' + why + (ec ? '・コード ' + ec : '') + (lvMode === 'drive' && lvLinkInfo ? '・' + lvLinkInfo : '') + (lvMode === 'drive' && lvLinkErr.length > 1 ? '・試したリンクのコード ' + lvLinkErr.join('→') : '') + '）' : '') + '。';
       if (d.lv.link) { $('lv-get').className = ''; $('lv-video').style.display = 'none'; $('lv-get-t').innerHTML = ''; var a = document.createElement('a'); a.href = d.lv.link; a.target = '_blank'; a.style.color = '#fff'; a.textContent = '🔗 Safari で動画を開く（別の画面で再生）'; $('lv-get-t').appendChild(a); $('lv-dl').style.display = 'none'; }
     });
-    lvA = { getPlayerState: function () { return !v.paused && !v.ended ? 1 : 2; },
+    lvA = { getPlayerState: function () { return v.ended ? 0 : !v.paused ? 1 : 2; },   // 0＝最後まで来た（YouTube と同じ。❓だけ・A-B で最初へ戻るのに使う）
       playVideo: function () { try { var p = v.play(); if (p && p['catch']) p['catch'](function () {}); } catch (e) {} },
       pauseVideo: function () { try { v.pause(); } catch (e) {} },
       seekTo: function (t) { try { v.currentTime = t; } catch (e) {} },
