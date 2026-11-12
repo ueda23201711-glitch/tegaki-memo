@@ -274,6 +274,12 @@
   .rd-hrow.rd-ch { margin-left: 18px; }
   #lv-src { background: #f7f9fa; color: #6b7a83; font-size: 13px; padding: 6px 12px 2px; text-align: left; border-top: 1px solid #d7dee3; }
   #yt-box { position: relative; }
+  #lv-ov { position: absolute; left: 0; right: 0; top: 50%; -webkit-transform: translateY(-50%); transform: translateY(-50%); text-align: center; z-index: 4; opacity: 0; -webkit-transition: opacity .2s; transition: opacity .2s; pointer-events: none; white-space: nowrap; }
+  #lv-ov.on { opacity: 1; }
+  #lv-ov button { pointer-events: none; display: inline-block; vertical-align: middle; margin: 0 6px; width: 46px; height: 46px; padding: 0; border: 0; border-radius: 50%; background: rgba(0,0,0,0.55); color: #fff; font-size: 15px; font-weight: bold; }
+  #lv-ov.on button { pointer-events: auto; }
+  #lv-ov button.big { width: 60px; height: 60px; font-size: 22px; }
+  @media (max-width: 420px) { #lv-ov button { margin: 0 3px; width: 42px; height: 42px; font-size: 14px; } #lv-ov button.big { width: 54px; height: 54px; } }
   #lv-capbox { position: absolute; left: 3%; right: 3%; bottom: 10px; text-align: center; pointer-events: none; z-index: 3; line-height: 1.25; }
   #lv-cover { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background: #000; z-index: 2; display: none; color: #555; font-size: 12px; padding: 8px; text-align: left; }
   #yt-box.vhide #lv-cover { display: block; }
@@ -5408,11 +5414,49 @@
     if (saved && saved.up && saved.off > 0) { showStep('🎞 動画をドライブに送っています…（前回の続き ' + Math.round(saved.off * 100 / file.size) + '% から）'); start({ ok: true, up: saved.up, off: saved.off }); }
     else { showStep('🎞 動画をドライブに送っています…（準備中：Apps Script に問い合わせ中）'); gasPostJ({ act: 'up0', name: '🎞 ' + d.lv.name, type: type, size: file.size }, start, 0, function (p) { if (p.retry) showStep('🎞 動画をドライブに送っています…（準備中）' + retryTxt(p)); }); }
   }
+  /* 動画をタップすると、真ん中に ⏮ 前の文／⏪ 10秒／▶ 再生・一時停止／10秒 ⏩／⏭ 次の文 が出る（字幕プレイヤーのように）。
+     しばらくさわらなければ消える。下の再生バー（シーク・全画面）は、これまでどおり端末のもの */
+  function lvOvSetup(v) {
+    var ov = document.createElement('div'); ov.id = 'lv-ov';
+    var hideT = null;
+    var hide = function () { if (hideT) clearTimeout(hideT); hideT = null; ov.className = ''; };
+    var show = function () { ov.className = 'on'; if (hideT) clearTimeout(hideT); hideT = setTimeout(hide, 3000); };
+    var mk = function (txt, tip, fn, big) {
+      var b = document.createElement('button'); b.type = 'button'; b.textContent = txt; b.title = tip; if (big) b.className = 'big';
+      on(b, 'click', function (e) { e.stopPropagation(); if (e.preventDefault) e.preventDefault(); if (ov.className !== 'on') { show(); return; } fn(); show(); });
+      ov.appendChild(b); return b;
+    };
+    var cueAt = function () { var cs = rdCur && rdCur.d.cues, t = v.currentTime || 0, k = 0; if (!cs || !cs.length) return -1; for (var i = 0; i < cs.length; i++) { if (cs[i][0] <= t + 0.15) k = i; else break; } return k; };
+    var skip = function (sec) { var d = v.duration, t = (v.currentTime || 0) + sec; if (t < 0) t = 0; if (isFinite(d) && d > 0 && t > d - 0.2) t = d - 0.2; try { v.currentTime = t; } catch (e) {} };
+    var hasCues = function () { return !!(rdCur && rdCur.d.cues && rdCur.d.cues.length); };
+    var prv = mk('⏮', '前の文', function () { var k = cueAt(); if (k < 0) { skip(-5); return; } var cs = rdCur.d.cues; if ((v.currentTime || 0) - cs[k][0] < 1.5 && k > 0) k--; ytSeek(k); });
+    mk('⏪10', '10秒もどる', function () { skip(-10); });
+    var pp = mk('▶', '再生／一時停止', function () { if (v.paused || v.ended) { var pr = v.play(); if (pr && pr.catch) pr.catch(function () {}); } else v.pause(); }, true);
+    mk('10⏩', '10秒すすむ', function () { skip(10); });
+    var nxt = mk('⏭', '次の文', function () { var k = cueAt(); if (k < 0) { skip(5); return; } if (k + 1 < rdCur.d.cues.length) ytSeek(k + 1); });
+    var upd = function () { pp.textContent = v.paused || v.ended ? '▶' : '❚❚'; var c = hasCues(); prv.style.display = c ? '' : 'none'; nxt.style.display = c ? '' : 'none'; };
+    v.addEventListener('play', upd); v.addEventListener('pause', upd); v.addEventListener('ended', upd); v.addEventListener('loadedmetadata', upd); upd();
+    // 動画そのものをタップしたら出す（端末の再生バーの上は除く）
+    var lastT = 0, sx = 0, sy = 0;
+    var tap = function (e) {
+      if (e.target !== v || v.style.display === 'none') return;
+      var now1 = new Date().getTime(); if (now1 - lastT < 400) return; lastT = now1;
+      var r = v.getBoundingClientRect(), y = e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientY : e.clientY;
+      if (y && r.bottom - y < 44) return;   // 下の再生バー
+      upd(); if (ov.className === 'on') hide(); else show();
+    };
+    v.addEventListener('touchstart', function (e) { var t = e.touches && e.touches[0]; if (t) { sx = t.clientX; sy = t.clientY; } }, { passive: true });
+    v.addEventListener('touchend', function (e) { var t = e.changedTouches && e.changedTouches[0]; if (t && Math.abs(t.clientX - sx) + Math.abs(t.clientY - sy) > 12) return; tap(e); });
+    v.addEventListener('click', tap);
+    v.addEventListener('mousemove', function () { if (ov.className === 'on') show(); });
+    $('yt-box').appendChild(ov);
+  }
   // 動画を開く
   function lvSetup() {
     if (lvA) return;
     var v = document.createElement('video'); v.id = 'lv-video'; v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', ''); v.controls = true; v.preload = 'auto';
     v.style.display = 'none'; $('yt-box').appendChild(v);
+    lvOvSetup(v);
     var cb = capBoxEnsure();
     v.addEventListener('timeupdate', lvCapDraw); v.addEventListener('seeked', lvCapDraw);
     var capPos = function () { cb.className = v.paused || v.ended ? 'paused' : ''; };
