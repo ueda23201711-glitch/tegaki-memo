@@ -172,12 +172,15 @@
   #rd-head .rd-h { margin: 8px 0 6px; }
   #rd-head #rd-sync-msg:empty, #rd-head #rd-sync-msg:empty { display: none; }
   @media (max-width: 600px) {   /* スマホ：ボタンは横に並べて、横に動かして選ぶ（上に出したままでも場所をとらない） */
-    #rd-hist-h { white-space: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 2px; }
+    /* スマホ：ボタンは小さくして折り返す（全部見えるように）。絞り込みは「🔍 絞り込み」でたたむ／広げる */
     #rd-hist-h .rd-htitle { display: none; }
+    #rd-hist-h button { font-size: 13px; padding: 4px 8px; margin: 2px 1px; }
+    #rf-tog { display: inline-block !important; }
+    #rf-tog.on { background: #2f4858; color: #fff; }
+    #rd-head.fold #rd-filter { display: none !important; }
     #rd-filter #rf-q { padding: 5px 10px !important; margin-bottom: 4px !important; }
-    #rf-row { flex-wrap: nowrap !important; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 2px; }
-    #rf-row select { font-size: 14px !important; padding: 4px 4px !important; flex-shrink: 0; }
-    #rf-row #rf-n, #rf-row #rf-clr { flex-shrink: 0; white-space: nowrap; }
+    #rf-row { gap: 4px !important; }
+    #rf-row select { font-size: 13px !important; padding: 3px 2px !important; max-width: calc(50% - 4px) !important; }
     #rd-selbar { white-space: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 6px 8px !important; }
     #rd-head .rd-h { margin: 4px 0 4px; }
   }
@@ -665,7 +668,7 @@
       </div>
       <p class="note">保存した単語・熟語は <a href="/kiku-memo/" target="_blank">📚 メモ単語帳</a> で学習できます（iPad 2/3 は <a href="/kiku-memo/ipad.html" target="_blank">こちら</a>）。</p>
       <div id="rd-head">
-      <h3 id="rd-hist-h" class="rd-h"><span class="rd-htitle">これまでの英文</span> <button id="rd-sync" type="button" class="rd-selbtn" title="ほかの端末で追加・変更した英文を読み込む">🔄 最新にする</button> <button id="rd-quota" type="button" class="rd-selbtn" title="Google ドライブと Firebase の使用量、動画の一覧（消して空ける）">☁ ドライブの容量</button> <button id="rd-sort" type="button" class="rd-selbtn" title="よく見る・読む英文を上に（もう一度押すと、追加した順に戻る）">👁 よく見る順</button> <button id="rd-fsort" type="button" class="rd-selbtn" title="★の多い英文を上に（もう一度押すと、追加した順に戻る）">⭐ 好み順</button> <button id="rd-sel" type="button" class="rd-selbtn" title="英文・動画・本を選んで、フォルダへ入れる・削除する・本をまとめる">☑ 選択</button> <button id="rd-pvall" type="button" class="rd-selbtn" title="見えている英文・動画の中身（画像・最初の文）をまとめて開く／閉じる">🖼 まとめて開く</button> <button id="rd-hidv" type="button" class="rd-selbtn hidden" title="一覧で非表示にした英文・動画・本の一覧">🙈 非表示の一覧</button></h3>
+      <h3 id="rd-hist-h" class="rd-h"><span class="rd-htitle">これまでの英文</span> <button id="rf-tog" type="button" class="rd-selbtn" style="display:none;" title="題名さがし・フォルダ・種類・★・印・状態の絞り込みを出す／たたむ">🔍 絞り込み</button> <button id="rd-sync" type="button" class="rd-selbtn" title="ほかの端末で追加・変更した英文を読み込む">🔄 最新にする</button> <button id="rd-quota" type="button" class="rd-selbtn" title="Google ドライブと Firebase の使用量、動画の一覧（消して空ける）">☁ ドライブの容量</button> <button id="rd-sort" type="button" class="rd-selbtn" title="よく見る・読む英文を上に（もう一度押すと、追加した順に戻る）">👁 よく見る順</button> <button id="rd-fsort" type="button" class="rd-selbtn" title="★の多い英文を上に（もう一度押すと、追加した順に戻る）">⭐ 好み順</button> <button id="rd-sel" type="button" class="rd-selbtn" title="英文・動画・本を選んで、フォルダへ入れる・削除する・本をまとめる">☑ 選択</button> <button id="rd-pvall" type="button" class="rd-selbtn" title="見えている英文・動画の中身（画像・最初の文）をまとめて開く／閉じる">🖼 まとめて開く</button> <button id="rd-hidv" type="button" class="rd-selbtn hidden" title="一覧で非表示にした英文・動画・本の一覧">🙈 非表示の一覧</button></h3>
       <p id="rd-hidnote" class="hidden">🙈 一覧で非表示にしたものです。「👁 表示に戻す」で、ふつうの一覧に戻ります。</p>
       <p class="note" id="rd-sync-msg"></p>
       <div id="rd-selbar" class="hidden"><span id="rd-selcount">0 件を選択</span>
@@ -7608,12 +7611,19 @@
     $('rd-filter').style.display = total >= 1 ? '' : 'none';
     if (document.activeElement !== $('rf-q')) $('rf-q').value = f.q || '';
     $('rf-type').value = f.type || ''; $('rf-fav').value = String(Number(f.fav) || 0); $('rf-st').value = f.st || ''; $('rf-flag').value = f.flag || '';
-    fdOpts();
+    fdOpts(); rfFoldUi();
     var on1 = rfOn(f);
     $('rf-n').textContent = on1 ? hit + ' / ' + total + ' 件' : '';
     $('rf-clr').className = on1 ? '' : 'hidden';
   }
   var rfTimer = null;
+  // スマホ：絞り込みをたたむ／広げる（覚えておく）。たたんでいても、絞り込み中ならボタンの色でわかる
+  function rfFoldUi() {
+    var fold = lsGet('memo_rffold') !== '0', on1 = rfOn(rfGet());
+    $('rd-head').className = fold ? 'fold' : '';
+    var b = $('rf-tog'); b.textContent = (on1 ? '🔍 絞り込み中' : '🔍 絞り込み') + (fold ? ' ▾' : ' ▴'); b.className = 'rd-selbtn' + (on1 ? ' on' : '');
+  }
+  on($('rf-tog'), 'click', function () { lsSet('memo_rffold', lsGet('memo_rffold') !== '0' ? '0' : '1'); rfFoldUi(); });
   function rfChange() { var f = rfGet(); f.q = String($('rf-q').value || '').replace(/^\s+|\s+$/g, ''); f.type = $('rf-type').value; f.fav = Number($('rf-fav').value) || 0; f.st = $('rf-st').value; f.flag = $('rf-flag').value; rfSet(f); renderRdHistory(); }
   on($('rf-fd'), 'change', fdSelChange);
   on($('rf-q'), 'input', function () { if (rfTimer) clearTimeout(rfTimer); rfTimer = setTimeout(rfChange, 150); });
