@@ -3,7 +3,7 @@
 importScripts("./drive-sw.js");
 // この端末に取り込んだ動画を、少しずつ <video> に渡す（./__local__）。メモリの少ない iPhone で落ちないように
 importScripts("./local-sw.js");
-const CACHE = "tegaki-memo-v222";
+const CACHE = "tegaki-memo-v223";
 const ASSETS = [
   "./",
   "./index.html",
@@ -43,11 +43,18 @@ self.addEventListener("fetch", (event) => {
   if (req.mode === "navigate") {
     // ページ本体：ネット優先（更新がすぐ届く）。つながらないときはキャッシュ。字幕プレイヤー（player.html）は別に置く
     const page = /\/player\.html$/.test(new URL(req.url).pathname) ? "./player.html" : "./index.html";
-    event.respondWith(
-      fetch(req, { cache: "no-cache" })   // GitHub Pages の10分キャッシュで古い版が出ないように
-        .then((res) => { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(page, copy)); return res; })
-        .catch(() => caches.match(page).then((c) => c || caches.match("./index.html")))
-    );
+    // ネットが遅い・つながりにくいとき（電波の弱い所など）、2.5 秒待っても返事がなければ手元の版ですぐ開く。
+    // （字幕プレイヤー ⇄ 英文リーダーの切り替えで「押しても戻らない」ことがないように。新しい版はその後で手元に入る）
+    const net = fetch(req, { cache: "no-cache" })   // GitHub Pages の10分キャッシュで古い版が出ないように
+      .then((res) => { if (res && res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(page, copy)); } return res; });
+    const cached = () => caches.match(page).then((c) => c || caches.match("./index.html"));
+    event.respondWith(new Promise((resolve) => {
+      let done = false;
+      const fin = (r) => { if (!done && r) { done = true; resolve(r); } };
+      const t = setTimeout(() => { cached().then((c) => { if (c) fin(c); }); }, 2500);
+      net.then((r) => { clearTimeout(t); fin(r); }).catch(() => { clearTimeout(t); cached().then((c) => fin(c || Response.error())); });
+    }));
+    event.waitUntil(net.catch(() => {}));
     return;
   }
   // アイコン等：キャッシュ優先
