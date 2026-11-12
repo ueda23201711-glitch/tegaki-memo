@@ -160,6 +160,7 @@
   .rd-pv { margin: -2px 0 8px; padding: 8px; background: #f3f6f8; border-radius: 0 0 10px 10px; }
   .rd-pvimg { width: 48%; max-width: 240px; margin: 0 2% 6px 0; border-radius: 6px; vertical-align: top; background: #dde3e7; }
   .rd-pvnote { font-size: 13px; color: #5b6a72; line-height: 1.5; margin: 2px 0; }
+  .rd-hrow.rd-last { background: #fff6dc; box-shadow: inset 4px 0 0 #e0a400; }
   .rd-fdtag { display: inline-block; margin-left: 6px; padding: 0 7px; border-radius: 9px; background: #eef1f4; color: #4a5560; font-size: 12px; line-height: 18px; cursor: pointer; white-space: nowrap; max-width: 12em; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
   .rd-seltag { display: block; font-size: 13px; color: #6b7780; margin-top: 2px; }
   .rd-seltag .rd-fav { border: 0; background: none; padding: 0; float: none; margin: 0; }
@@ -7472,7 +7473,7 @@
     return t;
   }
   function bookRow(bk) {
-    var chs = bookChapters(bk), d0 = rdDocs[chs[0]], row = document.createElement('div'); row.className = 'rd-hrow rd-book';
+    var chs = bookChapters(bk), d0 = rdDocs[chs[0]], row = document.createElement('div'); row.className = 'rd-hrow rd-book' + (rdLastSeen === 'b:' + bk ? ' rd-last' : '');
     var b = document.createElement('b'); b.textContent = (rdOpenBook[bk] ? '▼ ' : '▶ ') + '📚 ' + (d0.bookTitle || '') + '（' + chs.length + ' 章）';
     var sp = document.createElement('span'), bmAt = -1;
     each(chs, function (c, k) { if (typeof rdDocs[c].bm === 'number') bmAt = k; });
@@ -7749,7 +7750,7 @@
       shown++;
       if (id.indexOf('B:') === 0) { box.appendChild(bookRow(id.slice(2))); return; }
       var d = rdDocs[id];
-      var row = document.createElement('div'); row.className = 'rd-hrow' + (d.book ? ' rd-ch' : '');
+      var row = document.createElement('div'); row.className = 'rd-hrow' + (d.book ? ' rd-ch' : '') + (!d.book && rdLastSeen === id ? ' rd-last' : '');
       var b = document.createElement('b'); b.textContent = (sn[id] ? sn[id] + '. ' : '') + (d.book ? '第' + d.ch + '章　' + (d.chTitle || '') : (d.title || d.text.slice(0, 50)));
       var sp = document.createElement('span'); sp.textContent = (d.book ? '' : fmtClipTime(d.at)) + (typeof d.bm === 'number' && d.bmP !== undefined ? '　🔖 ' + d.bmP + '%' : '') + (d.vbm > 0 ? '　🔖 ' + vbmFmt(d.vbm) : '') + (hardCount(d) ? '　❓' + hardCount(d) : '') + (pop && um[id] ? '　👁 ' + um[id][0] + '回' : '');
       var del = document.createElement('button'); del.type = 'button'; del.textContent = '削除'; del.className = 'danger';
@@ -7999,7 +8000,13 @@
     $('rd-paste').className = (navigator.clipboard && navigator.clipboard.readText) ? '' : 'hidden';
     renderRdHistory(); syncMsg(''); rdSyncNew(true); resumeShow();
     var y = rdListY, b = $('rd-body'); b.scrollTop = y;
-    setTimeout(function () { if (!rdCur && b.scrollTop !== y) b.scrollTop = y; }, 0);
+    setTimeout(function () {
+      if (rdCur) return;
+      if (b.scrollTop !== y) b.scrollTop = y;
+      // 今見ていた行が隠れていたら、見えるところへ（上に出したままのボタンの下）
+      var r = document.querySelector('#rd-hist .rd-last'), hd = $('rd-head');
+      if (r) { var rb = r.getBoundingClientRect(), bb = b.getBoundingClientRect(), top = bb.top + (hd ? hd.offsetHeight : 0); if (rb.top < top || rb.bottom > bb.bottom) b.scrollTop += rb.top - top - (bb.bottom - top - rb.height) / 2; }
+    }, 0);
   }
   // 記事のアドレスから本文を取り込む（Apps Script がページを読みに行く）
   function rdFetchUrl(url) {
@@ -8237,8 +8244,11 @@
      ほかの英文を一覧から開いたら、ふだんどおりに戻る */
   var rdOneDoc = '', ytStopAt = -1;
   function rdOne() { return !!(rdCur && rdOneDoc && rdOneDoc === rdCur.id); }
+  // 今見ていた英文・動画：一覧に戻ったとき、背景に色を付けて目安にする
+  var rdLastSeen = lsGet('memo_rdlast') || '';
   function openRdDoc(id, isNew) {
     if (id !== rdOneDoc) rdOneDoc = '';
+    if (rdDocs[id]) { rdLastSeen = rdDocs[id].book ? 'b:' + rdDocs[id].book : id; lsSet('memo_rdlast', rdLastSeen); }
     ytStopAt = -1;
     var d = rdDocs[id]; if (!d) return;
     if (!rdCur) rdListY = $('rd-body').scrollTop;

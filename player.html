@@ -50,6 +50,7 @@
   .item .tx { flex:1; min-width:0; }
   .item .t { font-size:16px; font-weight:600; line-height:1.4; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
   .item .s { margin-top:4px; color:var(--sub); font-size:13px; }
+  .item.last { background:#173040; border-color:var(--acc); box-shadow:0 0 0 1px var(--acc) inset; }
   .item .go { flex:none; color:var(--acc); font-size:22px; }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:12px; }
   .card h2 { margin:0 0 8px; font-size:16px; }
@@ -477,6 +478,8 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     return a;
   }
   function sortLabel() { var m = lsGet(SORT_KEY) || ''; $('b-sort').textContent = m === 'pop' ? '🕒 追加した順に戻す' : '👁 よく見る順'; $('b-fsort').textContent = m === 'fav' ? '🕒 追加した順に戻す' : '⭐ 好み順'; }
+  // 今見ていた動画：一覧に戻ったとき、背景に色を付けて、その行が見えるところまで動かす（次に見る動画の目安）
+  var LAST_KEY = C.cache + '_last', lastSeen = lsGet(LAST_KEY) || '', lastScroll = false;
   function render() {
     idbKeys(function (h) {
       have = h;
@@ -488,7 +491,7 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
         return;
       }
       each(list, function (id) {
-        var d = docs[id], b = el('button', 'item'); b.type = 'button';
+        var d = docs[id], b = el('button', 'item' + (id === lastSeen ? ' last' : '')); b.type = 'button';
         var ic = el('div', 'ic', d.yt ? '📺' : '🎬'), tx = el('div', 'tx'), go = el('div', 'go', '▶');
         tx.appendChild(el('div', 't', (serial[id] ? serial[id] + '. ' : '') + cleanTitle(d.title)));
         var s = [], last = d.cues[d.cues.length - 1][0];
@@ -507,6 +510,7 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
         on(b, 'click', function () { useBump(id); openDoc(id); });
         box.appendChild(b);
       });
+      if (lastScroll) { lastScroll = false; var lb = box.querySelector('.item.last'); if (lb && lb.scrollIntoView) setTimeout(function () { try { lb.scrollIntoView({ block: 'center' }); } catch (e) { lb.scrollIntoView(); } }, 0); }
     });
   }
   on($('b-re'), 'click', loadList);
@@ -763,6 +767,7 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
 
   var autoStart = false;   // 行き来してきたとき：音を消して、その時間から自動で再生する
   function openDoc(id, startAt, auto) {
+    lastSeen = id; lsSet(LAST_KEY, id);
     autoStart = !!auto; muteOff();
     var d = docs[id]; if (!d) return;
     cur = d; curId = id; capKey = ''; rep = -1; $('b-rep').className = 'ib'; hOnly = false; hCur = -1; setTimeout(hOnlyBtn, 0);
@@ -1063,7 +1068,7 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     cur = null; curId = ''; msg(''); muteOff(); autoStart = false;
     exitFs();
     $('stage').className = 'hidden'; $('home').className = '';
-    render();
+    lastScroll = true; render();
   }
   on($('b-back'), 'click', back);
 
