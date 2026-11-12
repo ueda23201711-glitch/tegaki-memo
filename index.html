@@ -4080,6 +4080,16 @@
     var n = 0, at = 0; for (var k = 0; k < rdSents.length; k++) if (isHard(k)) { n++; if (k === i) at = n; }
     $('rd-status').textContent = '❓ 印の文だけ：' + at + ' / ' + n + '（' + (i + 1) + ' 文目）を再生しています';
   }
+  /* 開いている英文に、クラウドの新しい印（❓・★・⚑・フォルダ）を反映する。
+     アプリを開いてすぐ前回の英文が開くと、クラウドを読む前の古い中身のまま表示されるため（ほかの端末・字幕プレイヤーでつけた ❓ が出ない） */
+  function rdCurRefresh(sd) {
+    var d = rdCur.d; if (!sd || sd === d) return;
+    each(['hard', 'fav', 'flag', 'fd', 'bfav'], function (k) { if (sd[k] !== undefined) d[k] = sd[k]; else delete d[k]; });
+    rdDocs[rdCur.id] = d;
+    var bl = document.querySelectorAll('#rd-text .rd-sent');
+    for (var i = 0; i < bl.length; i++) { var c = ' ' + bl[i].className + ' ', h = isHard(i); if (h && c.indexOf(' hard ') < 0) bl[i].className += ' hard'; else if (!h && c.indexOf(' hard ') >= 0) bl[i].className = c.replace(' hard ', ' ').replace(/^\s+|\s+$/g, ''); }
+    hardLabel(); try { favBtnShow(); fdBtnShow(); } catch (e) {}
+  }
   function hardLabel() {
     var b = $('rd-hardonly'); if (!b) return;
     var n = rdCur ? hardCount(rdCur.d) : 0;
@@ -7911,6 +7921,7 @@
       srvSeenAdd(data);
       rdDocs = data || {};
       if (keep) rdDocs[keep.id] = keep.d;
+      if (rdCur && !keep && rdDocs[rdCur.id]) rdCurRefresh(rdDocs[rdCur.id]);
       rdSaveLocal();
       if (!rdCur) renderRdHistory();
       setTimeout(backfillSrc, 1500); setTimeout(favSync, 3000);
