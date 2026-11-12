@@ -15,12 +15,22 @@ self.addEventListener('fetch', function (e) {
   }));
 });
 
+// 端末の保存場所（IndexedDB）は、開いたものを使い回す（範囲ごとに開き直すと、たまって重くなる）
+var localDbs = {};
 function localDb(name) {
-  return new Promise(function (ok, ng) {
+  if (localDbs[name]) return localDbs[name];
+  var pr = new Promise(function (ok, ng) {
     var rq = indexedDB.open(name);
-    rq.onsuccess = function () { ok(rq.result); };
-    rq.onerror = function () { ng(rq.error || new Error('idb')); };
+    rq.onsuccess = function () {
+      var db = rq.result;
+      db.onversionchange = function () { try { db.close(); } catch (e) {} delete localDbs[name]; };
+      db.onclose = function () { delete localDbs[name]; };
+      ok(db);
+    };
+    rq.onerror = function () { delete localDbs[name]; ng(rq.error || new Error('idb')); };
   });
+  localDbs[name] = pr;
+  return pr;
 }
 function localGet(db, key) {
   return new Promise(function (ok, ng) {

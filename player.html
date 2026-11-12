@@ -1339,7 +1339,14 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
       + (hOnly ? '&h=1' : '') + (rep >= 0 ? '&l=1' : '') + '&r=' + (P.rate() || pref.rate || 1) + (abKeep && abKeep.id === curId ? '&ab=' + abKeep.ab : '');
     var tk = window.PinLock && window.PinLock.ticket ? window.PinLock.ticket() : '';
     if (tk) url += '&ok=' + tk;
-    if (IN_RD) { location.href = './' + url.slice(url.indexOf('#')); return; }   // 同じアプリの中で、リーダーへ
+    if (IN_RD) {   // 同じアプリの中で、リーダーへ
+      // 端末の動画を読み続けていると、ページの切り替えが待たされることがある：先に動画を外してから移る
+      toast('📖 英文リーダーに戻っています…');
+      if (P.kind !== 'yt') { try { v.removeAttribute('src'); v.load(); } catch (er) {} }
+      var go = './' + url.slice(url.indexOf('#'));
+      setTimeout(function () { location.href = go; }, 30);
+      return;
+    }
     try { localStorage.setItem(C.jump, JSON.stringify({ h: url.slice(url.indexOf('#')), t: now() })); } catch (er) {}
     window.open(url, '_blank');
   });

@@ -6325,7 +6325,11 @@
     if (!t && rdIdx >= 0 && rdCur.d.cues[rdIdx]) t = rdCur.d.cues[rdIdx][0];
     var was = ytState() === 1;
     try { if (ytPlayer && ytReady) ytPlayer.pauseVideo(); } catch (e) {}
-    location.href = 'player.html#d=' + rdCur.id + '&t=' + (Math.round(t * 10) / 10) + (was ? '&p=1' : '') + rdStateHash();
+    var go = 'player.html#d=' + rdCur.id + '&t=' + (Math.round(t * 10) / 10) + (was ? '&p=1' : '') + rdStateHash();
+    // 端末の動画を読み続けていると、ページの切り替えが待たされることがある：先に動画を外してから移る
+    $('rd-status').textContent = '🎬 字幕プレイヤーを開いています…';
+    var lvv = $('lv-video'); if (lvv && lvv.getAttribute('src')) { try { lvv.pause(); lvv.removeAttribute('src'); lvv.load(); } catch (e) {} }
+    setTimeout(function () { location.href = go; }, 30);
   });
   // 字幕プレイヤーから戻ってきたとき：動画の準備ができたら、その場面に合わせる。再生中だったら音を消して続きを再生
   function rdSeekWhenReady(id, t, play) {
