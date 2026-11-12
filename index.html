@@ -713,6 +713,7 @@
         <button id="rd-ab" type="button" title="1回目に押した文（A）から2回目に押した文（B）までをくり返す">🅰🅱 A-B リピート</button>
         <button id="rd-hardonly" class="hidden" type="button" title="❓ の印を付けた文だけを、続けて再生・読み上げする">❓ 印の文だけ：オフ</button>
         <button id="rd-hardclr" class="hidden" type="button" title="この英文（本ならこの章）の ❓ の印をすべて外す">❓✕ 印を全部外す</button>
+        <button id="rd-flagbtn" type="button" title="色の印（★ とは別の目印）">⚐ 印</button>
         <button id="rd-fdbtn" type="button" title="この英文（本なら本ごと）を入れるフォルダ">📁</button>
         <button id="rd-favbtn" type="button" class="rd-fav" title="好み（押すたびに ★1→★2→★3→なし）。本のときは本全体の ★">☆☆☆</button>
         <button id="rd-subin" type="button" class="hidden" title="この動画に英語の字幕（.srt / .vtt / 時刻つきの文字起こし）を入れる・入れ直す">🔤 字幕を入れる</button><input id="rd-subfile" type="file" accept=".srt,.vtt,.txt,text/plain" style="display:none">
@@ -4088,7 +4089,7 @@
     rdDocs[rdCur.id] = d;
     var bl = document.querySelectorAll('#rd-text .rd-sent');
     for (var i = 0; i < bl.length; i++) { var c = ' ' + bl[i].className + ' ', h = isHard(i); if (h && c.indexOf(' hard ') < 0) bl[i].className += ' hard'; else if (!h && c.indexOf(' hard ') >= 0) bl[i].className = c.replace(' hard ', ' ').replace(/^\s+|\s+$/g, ''); }
-    hardLabel(); try { favBtnShow(); fdBtnShow(); } catch (e) {}
+    hardLabel(); try { favBtnShow(); fdBtnShow(); flagBtnShow(); } catch (e) {}
   }
   function hardLabel() {
     var b = $('rd-hardonly'); if (!b) return;
@@ -8438,6 +8439,19 @@
     var b = $('rd-favbtn'); if (!b || !rdCur) return;
     var n = favOf(rdCur.id); b.textContent = (rdCur.d.book ? '本 ' : '') + favStr(n); b.className = 'rd-fav' + (n ? ' on' : '');
   }
+  function flagBtnShow() {
+    var b = $('rd-flagbtn'); if (!b || !rdCur) return; var f = flagInfo(rdCur.d.flag);
+    b.innerHTML = ''; var g = document.createElement('span'); g.textContent = f ? '\u2691\uFE0E' : '\u2690\uFE0E'; g.style.color = f ? f[2] : '#9aa5ad'; b.appendChild(g);
+    b.appendChild(document.createTextNode(' ' + (f ? f[1] : '印')));
+  }
+  on($('rd-flagbtn'), 'click', function () {
+    if (!rdCur) return;
+    var cid = rdCur.id;
+    flagPick(rdCur.d.flag || '', '色の印を選んでください', function (n) {
+      flagSet([cid], n); flagBtnShow();
+      var f = flagInfo(n); $('rd-status').textContent = f ? '⚑ 「' + f[1] + '」の印をつけました。' : '⚑ 印を外しました。';
+    });
+  });
   function fdBtnShow() { var b = $('rd-fdbtn'); if (!b || !rdCur) return; b.textContent = '📁 ' + (rdCur.d.fd || 'フォルダへ'); }
   on($('rd-fdbtn'), 'click', function () {
     if (!rdCur) return;
@@ -8455,7 +8469,7 @@
   });
   function renderRd() {
     if (!rdCur) return;
-    favBtnShow(); fdBtnShow(); subInShow();
+    favBtnShow(); fdBtnShow(); flagBtnShow(); subInShow();
     if (fnd.id && rdCur.id !== fnd.id) { fnd.hits = []; fnd.map = {}; fnd.at = -1; fnd.id = rdCur.id; if (fnd.q) setTimeout(function () { findRun(false); }, 0); }
     setTimeout(bmMarkUpdate, 0);   // しおりの 🔖（描き終わってから）
     var d = rdCur.d, box = $('rd-text'); box.innerHTML = '';
