@@ -163,6 +163,8 @@
   .rd-pvnote { font-size: 13px; color: #5b6a72; line-height: 1.5; margin: 2px 0; }
   .rd-flag { border: 0; background: none; font-size: 19px; line-height: 1; padding: 4px 4px; cursor: pointer; }
   .rd-hrow.rd-last { background: #fff6dc; box-shadow: inset 4px 0 0 #e0a400; }
+  .rd-maketog { display: block; width: 100%; text-align: left; margin: 0 0 10px; padding: 10px 12px; font-size: 15px; font-weight: 700; border-radius: 10px; }
+  .rd-maketog .note { font-weight: normal; font-size: 13px; }
   .rd-fdtag { display: inline-block; margin-left: 6px; padding: 0 7px; border-radius: 9px; background: #eef1f4; color: #4a5560; font-size: 12px; line-height: 18px; cursor: pointer; white-space: nowrap; max-width: 12em; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
   .rd-seltag { display: block; font-size: 13px; color: #6b7780; margin-top: 2px; }
   .rd-seltag .rd-fav { border: 0; background: none; padding: 0; float: none; margin: 0; }
@@ -619,6 +621,8 @@
     <div id="mk-banner" class="hidden"></div>
     <div id="rd-input" class="rd-wrap">
       <button id="rd-resume" class="hidden primary" type="button" style="display:block; width:100%; text-align:left; margin:0 0 10px; padding:10px 12px; line-height:1.4;"></button>
+      <button id="rd-make-tog" type="button" class="rd-maketog">＋ 英文・動画を追加する <span class="note">（貼り付け・YouTube・手元の動画・画像から本）</span></button>
+      <div id="rd-make" class="hidden">
       <div class="clip-send">
         <textarea id="rd-in" placeholder="英文を貼り付けてください（Kindle などからコピーした文章）。英語の記事のアドレス（https://…）を貼ると、そのページの本文を読み込みます"></textarea>
         <div class="row">
@@ -667,6 +671,7 @@
           <div id="bk-heads"></div>
           <div class="row"><button id="bk-save" class="primary" type="button">この章分けで本にする</button> <button id="bk-cancel" type="button">やめる</button></div>
         </div>
+      </div>
       </div>
       <p class="note">保存した単語・熟語は <a href="/kiku-memo/" target="_blank">📚 メモ単語帳</a> で学習できます（iPad 2/3 は <a href="/kiku-memo/ipad.html" target="_blank">こちら</a>）。</p>
       <div id="rd-head">
@@ -6780,6 +6785,16 @@
     $('rd-status').textContent = '🔖 しおりを消しました。';
   });
   // ボタン類をたたむ／出す（この端末で覚える）
+  /* 英文・動画を追加する所（貼り付け・YouTube・手元の動画・画像から本）：ふだんはたたんで、これまでの英文を先に見せる */
+  var MAKE_KEY = 'memo_rdmake';
+  function rdMakeSet(on1, keep) {
+    $('rd-make').className = on1 ? '' : 'hidden';
+    $('rd-make-tog').firstChild.nodeValue = on1 ? '− 英文・動画を追加する所をたたむ ' : '＋ 英文・動画を追加する ';
+    if (!keep) lsSet(MAKE_KEY, on1 ? '1' : '0');
+  }
+  function rdMakeOpen() { if ($('rd-make').className) rdMakeSet(true, true); }
+  on($('rd-make-tog'), 'click', function () { rdMakeSet(!!$('rd-make').className); });
+  rdMakeSet(lsGet(MAKE_KEY) === '1', true);
   function rdFoldSet(on) { $('rd-ctrl').className = on ? 'folded' : ''; $('rd-fold').textContent = on ? '▾ ボタンを出す' : '▴ たたむ'; }
   rdFoldSet(lsGet('memo_rdfold') === '1');
   on($('rd-fold'), 'click', function () { var f = $('rd-ctrl').className !== 'folded'; if (f) lsSet('memo_rdfold', '1'); else lsDel('memo_rdfold'); rdFoldSet(f); });
@@ -8957,7 +8972,7 @@
     navigator.clipboard.readText().then(function (t) { if (t) $('rd-in').value = t; }, function () { alert('貼り付けできませんでした。入力欄を長押しして「ペースト」を選んでください。'); });
   });
   on($('rd-my'), 'click', function () { window.open(/OS [5-9]_\d.* like Mac OS X/.test(navigator.userAgent) ? '/kiku-memo/ipad.html' : '/kiku-memo/', '_blank'); });
-  on($('rd-new'), 'click', function () { $('rd-in').value = ''; rdShowInput(); });
+  on($('rd-new'), 'click', function () { $('rd-in').value = ''; rdShowInput(); rdMakeOpen(); });
   on($('rd-play'), 'click', function () { if (pk && pkPaused) { pkResume(); return; } if (pk && rdSpeaking) { pkPause(); return; } if (ytOn()) { ytToggle(); return; } if (rdSpeaking) stopSpeak(); else playFrom(rdIdx >= 0 ? rdIdx : rdLastIdx >= 0 && rdLastIdx < rdSents.length ? rdLastIdx : 0); });
   on($('yt-go'), 'click', ytLoad);
   on($('yt-safari-btn'), 'click', function () { ytOpenOut(0); });
