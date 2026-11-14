@@ -3,7 +3,7 @@
 importScripts("./drive-sw.js");
 // この端末に取り込んだ動画を、少しずつ <video> に渡す（./__local__）。メモリの少ない iPhone で落ちないように
 importScripts("./local-sw.js");
-const CACHE = "tegaki-memo-v237";
+const CACHE = "tegaki-memo-v238";
 const ASSETS = [
   "./",
   "./index.html",

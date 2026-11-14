@@ -213,7 +213,7 @@
   .rd-hrow b.rd-t2 { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; line-height: 1.35; word-break: break-word; }
   .rd-hrow .rd-line { display: flex; align-items: flex-end; gap: 6px; margin-top: 4px; }
   .rd-hrow .rd-info { flex: 1; min-width: 0; line-height: 1.5; }
-  .rd-hrow .rd-info .rd-badge { margin-left: 6px; }
+  .rd-hrow .rd-info .rd-badge { margin-left: 6px; display: inline-block; }   /* 「有端末・有ドライブ」を途中で切らない */
   .rd-hrow .rd-acts { flex: none; display: flex; align-items: center; gap: 2px; white-space: nowrap; }
   .rd-hrow .rd-acts button { float: none; margin: 0; padding: 4px 7px; font-size: 12px; }
   .rd-hrow .rd-acts .rd-fav { font-size: 14px; padding: 4px 4px; letter-spacing: 0; }
@@ -8096,7 +8096,13 @@
   }
   /* ---- ほかの端末で増えた英文を読み込む ---- */
   var rdSyncAt = 0, rdSyncBusy = false;
-  function syncMsg(t) { var m = $('rd-sync-msg'); if (m) m.textContent = t || ''; }
+  // 一覧の上のお知らせ：しばらくしたら消す（上に出したままの所が大きくならないように）。できなかった知らせは長めに出す
+  var syncMsgT = null;
+  function syncMsg(t) {
+    var m = $('rd-sync-msg'); if (!m) return; m.textContent = t || '';
+    if (syncMsgT) clearTimeout(syncMsgT); syncMsgT = null;
+    if (t) syncMsgT = setTimeout(function () { if (m.textContent === t) m.textContent = ''; }, /できません|失敗|⚠/.test(t) ? 20000 : 8000);
+  }
   // 軽い確認：英文の ID の一覧だけを取り、まだない英文だけを読み込む
   function rdSyncNew(force) {
     if (!KEY || rdSyncBusy || (!force && now() - rdSyncAt < 15000)) return;
