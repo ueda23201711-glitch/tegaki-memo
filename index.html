@@ -234,6 +234,8 @@
   .rd-hrow .rd-acts .rd-fav.on { color: #e8a317; }
   .rd-hrow .rd-acts .rd-ren { color: #2f4a57; }
   #rd-ctrl { position: -webkit-sticky; position: sticky; top: 0; z-index: 3; background: #f7f9fa; border-bottom: 1px solid #d7dee3; padding: 8px 12px; }
+  /* 小さい画面で動画とボタンが画面より高くなっても、ボタンの所だけ中でスクロールして下のボタンまで届くように */
+  #rd-ctrl { max-height: calc(100vh - 130px); overflow-y: auto; -webkit-overflow-scrolling: touch; }
   #rd-ctrl button, #rd-ctrl select { margin: 2px 6px 2px 0; }
   #rd-ctrl select { font-size: 15px; padding: 6px; border-radius: 8px; border: 1px solid #c9d2d8; background: #fff; }
   .rd-hint { margin: 0 0 10px; }
