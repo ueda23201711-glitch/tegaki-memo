@@ -291,6 +291,7 @@
   #lv-capbox.paused { bottom: 54px; }
   #lv-capbox span { display: inline-block; background: rgba(0,0,0,.6); color: #fff; padding: 1px 6px; margin-top: 2px; border-radius: 4px; font-size: 15px; }
   #lv-capbox span.ja { color: #ffe9a8; font-size: 13px; }
+  #lv-capbox.solid span { background: #000; }   /* 字幕の後ろを黒くぬる（動画の文字と重なって読みにくいとき） */
   @media (min-width: 700px) { #lv-capbox span { font-size: 20px; } #lv-capbox span.ja { font-size: 17px; } }
   #lv-get button:not(.primary), #lv-get .bk-file { color: #1f2a30; }
   @media (max-width: 480px) { #lv-src button, #lv-src select { padding: 3px 6px !important; margin-right: 3px !important; } }
@@ -700,7 +701,7 @@
     </div>
     <div id="rd-view" class="hidden">
       <div id="rd-ctrl">
-        <div id="yt-wrap" class="hidden"><div id="yt-box"><div id="yt-player"></div></div><div id="lv-src" class="hidden"><span id="lv-src-t"></span> <button id="lv-sw" type="button" class="hidden"></button> <select id="lv-sub" class="hidden" title="動画の字幕"></select> <select id="lv-cap" class="hidden" title="取り込んだ字幕を動画に重ねる"><option value="none">🔤 字幕：なし</option><option value="en">🔤 字幕：英語</option><option value="ja">🔤 字幕：日本語</option><option value="both">🔤 字幕：英語＋日本語</option></select> <button id="lv-hide" type="button" class="hidden" title="映像を黒く隠す／出す"></button> <button id="lv-mute" type="button" class="hidden" title="音を消す／出す"></button></div>
+        <div id="yt-wrap" class="hidden"><div id="yt-box"><div id="yt-player"></div></div><div id="lv-src" class="hidden"><span id="lv-src-t"></span> <button id="lv-sw" type="button" class="hidden"></button> <select id="lv-sub" class="hidden" title="動画の字幕"></select> <select id="lv-cap" class="hidden" title="取り込んだ字幕を動画に重ねる"><option value="none">🔤 字幕：なし</option><option value="en">🔤 字幕：英語</option><option value="ja">🔤 字幕：日本語</option><option value="both">🔤 字幕：英語＋日本語</option></select> <button id="lv-cbg" type="button" class="hidden" title="字幕の後ろ：透ける（ふつう）／黒くぬる（動画の文字と重なって読みにくいとき）"></button> <button id="lv-hide" type="button" class="hidden" title="映像を黒く隠す／出す"></button> <button id="lv-mute" type="button" class="hidden" title="音を消す／出す"></button></div>
           <div id="lv-get" class="hidden" style="color:#fff;padding:14px 12px;font-size:14px;line-height:1.6"><span id="lv-get-t"></span><br>
             <button id="lv-dl" class="primary" type="button" style="margin-top:8px">⬇ ドライブから取り込む（次からすぐ見られる）</button>
             <button id="lv-st" type="button" style="margin-top:8px">▶ 取り込まずに再生</button>
@@ -5480,7 +5481,7 @@
     lvOvSetup(v);
     var cb = capBoxEnsure();
     v.addEventListener('timeupdate', lvCapDraw); v.addEventListener('seeked', lvCapDraw);
-    var capPos = function () { cb.className = v.paused || v.ended ? 'paused' : ''; };
+    var capPos = function () { cb.className = (v.paused || v.ended ? 'paused' : '') + (capSolid ? ' solid' : ''); };
     v.addEventListener('play', capPos); v.addEventListener('pause', capPos); v.addEventListener('ended', capPos); capPos();
     v.addEventListener('loadedmetadata', function () { setTimeout(lvSubList, 300); });
     // 音は出るのに映像が出ない（この端末で映像の形式を読めない：AV1・HEVC・VP9 など）ときは知らせる
@@ -5581,7 +5582,7 @@
   function lvCapDraw() {
     var box = $('lv-capbox'); if (!box) return;
     var d = rdCur && rdCur.d, k = -1, t = capNow();
-    if (d && !d.lv && d.yt) box.className = ytState() === 1 ? '' : 'paused';
+    if (d && !d.lv && d.yt) box.className = (ytState() === 1 ? '' : 'paused') + (capSolid ? ' solid' : '');
     if (lvCapMode !== 'none' && t >= 0) k = lvCapIdx(t);
     if (k >= 0 && k < d.cues.length - 1 && d.cues[k + 1][0] - d.cues[k][0] > 12 && t - d.cues[k][0] > 8) k = -1;   // 長い間セリフがないところは消す
     var key = lvCapMode + ':' + k; if (box.getAttribute('data-k') === key) return; box.setAttribute('data-k', key);
@@ -5596,11 +5597,16 @@
     var d = rdCur && rdCur.d;
     sel.className = d && (d.lv || d.yt) && d.cues && d.cues.length ? '' : 'hidden';
     sel.value = lvCapMode; lvCapDraw();
+    var cg = $('lv-cbg'); if (cg) { cg.className = sel.className === '' && lvCapMode !== 'none' ? '' : 'hidden'; cg.textContent = capSolid ? '■ 字幕の後ろ：黒' : '◐ 字幕の後ろ：透ける'; }
+    var cbx = $('lv-capbox'); if (cbx && cbx.classList) { if (capSolid) cbx.classList.add('solid'); else cbx.classList.remove('solid'); }
     var hb = $('lv-hide'); if (hb) { hb.className = sel.className; hb.textContent = lvHide ? '👁 映像オン' : '🙈 映像オフ'; }
     var mb = $('lv-mute'); if (mb) { mb.className = sel.className; mb.textContent = lvMute ? '🔊 音オン' : '🔇 音オフ'; }
     lvMuteApply();
     $('yt-box').className = lvHide && sel.className === '' ? 'vhide' : '';
   }
+  // 字幕の後ろ：透ける（ふつう）／黒くぬる。字幕プレイヤーと同じ設定（この端末に覚える）
+  var CAPBG_KEY = 'memo_reader_capbg', capSolid = lsGet(CAPBG_KEY) === '1';
+  on($('lv-cbg'), 'click', function () { capSolid = !capSolid; lsSet(CAPBG_KEY, capSolid ? '1' : '0'); lvCapUpdate(); });
   var lvMute = false;   // 音を消す（開き直すと音は出る）
   function lvMuteApply() {
     var v = $('lv-video'); if (v) v.muted = lvMute;
@@ -5800,7 +5806,7 @@
     return h;
   }
   on($('lv-hide'), 'click', function () { lvHide = !lvHide; lsSet('memo_lvhide', lvHide ? '1' : '0'); lvCapUpdate(); if (!lvHide) lvRepaint(); });
-  on($('lv-cap'), 'change', function () { lvCapMode = $('lv-cap').value; lsSet('memo_lvcap', lvCapMode); lvCapDraw(); lvSubList(); });
+  on($('lv-cap'), 'change', function () { lvCapMode = $('lv-cap').value; lsSet('memo_lvcap', lvCapMode); lvCapUpdate(); lvSubList(); });
   on($('lv-st'), 'click', function () { if (rdCur && rdCur.d.lv) { $('lv-get').className = 'hidden'; $('lv-video').style.display = 'block'; lvStream(rdCur.d); } });
   on($('lv-pick'), 'change', function () {
     var f = $('lv-pick').files[0]; $('lv-pick').value = '';

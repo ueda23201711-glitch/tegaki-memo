@@ -83,6 +83,7 @@
   #cap .ja { color:var(--ja); margin-top:.35em; }
   #cap.over .en, #cap.over .ja { display:inline; padding:.06em .3em; background:rgba(0,0,0,.72); -webkit-box-decoration-break:clone; box-decoration-break:clone; border-radius:.2em; text-shadow:0 1px 2px #000; }
   #cap.over .br { display:block; height:.3em; }
+  #cap.over.solid .en, #cap.over.solid .ja { background:#000; }   /* 字幕の後ろを黒くぬる（動画の文字と重なって読みにくいとき） */
   #cap.sep .en, #cap.sep .ja { text-shadow:none; }
   #msg { white-space:pre-line; position:absolute; left:50%; top:50%; -webkit-transform:translate(-50%,-50%); transform:translate(-50%,-50%); width:86%; max-width:520px; text-align:center; font-size:15px; line-height:1.6; color:#dfe7eb; background:rgba(20,28,33,.92); border-radius:14px; padding:16px; z-index:3; }
   #msg a { color:var(--acc); }
@@ -182,7 +183,7 @@
         <button id="b-bg" class="ib" type="button" title="字幕を大きく">A＋</button>
         <button id="b-sw" class="ib hidden" type="button" title="動画の読み込み元（この端末／ドライブ）を切り替える">📱 端末</button>
         <button id="b-dl" class="ib hidden" type="button" title="見ながら、この端末に取り込む（終わったら、同じ場面からこの端末の動画に切り替わる）">⬇ 取り込む</button>
-        <button id="b-pos" class="ib" type="button" title="字幕の位置（自動＝縦画面では動画の下に分ける）">⇕ 自動</button>
+        <button id="b-cbg" class="ib" type="button" title="字幕の後ろ：透ける（ふつう）／黒くぬる（動画の文字と重なって読みにくいとき）">◐ 透ける</button><button id="b-pos" class="ib" type="button" title="字幕の位置（自動＝縦画面では動画の下に分ける）">⇕ 自動</button>
       </div>
     </div>
   </div>
@@ -1166,7 +1167,7 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
       if (aw / ah > ar) { h = ah; w = ah * ar; } else { w = aw; h = aw / ar; }
       x = safe.l + (aw - w) / 2; y = safe.t + (ah - h) / 2;
       capMode = 'over';
-      cap.className = 'over';
+      cap.className = 'over' + (lsGet(C.cache + '_capbg') === '1' ? ' solid' : '');
       cap.style.left = px(safe.l + 12); cap.style.right = px(safe.r + 12); cap.style.top = ''; cap.style.height = '';
       capMax = ah * 0.42;
       capBase = Math.min(Math.max(Math.min(W, H) * 0.06, 17), 50);
@@ -1258,6 +1259,11 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
   });
   on($('b-sm'), 'click', function (e) { stop(e); size(-0.1); hideSoon(); });
   on($('b-bg'), 'click', function (e) { stop(e); size(0.1); hideSoon(); });
+  // 字幕の後ろ：透ける（ふつう）／黒くぬる。英文リーダーと同じ設定（この端末に覚える）
+  var CAPBG_KEY = C.cache + '_capbg';
+  function capBgUi() { var on1 = lsGet(CAPBG_KEY) === '1'; var c = $('cap'); if (c && c.classList) { if (on1) c.classList.add('solid'); else c.classList.remove('solid'); } $('b-cbg').textContent = on1 ? '■ 黒' : '◐ 透ける'; }
+  on($('b-cbg'), 'click', function (e) { stop(e); lsSet(CAPBG_KEY, lsGet(CAPBG_KEY) === '1' ? '0' : '1'); capBgUi(); hideSoon(); });
+  capBgUi();
   on($('b-pos'), 'click', function (e) { stop(e); pref.pos = pref.pos === 'over' ? 'auto' : 'over'; savePref(); updBtns(); layout(); hideSoon(); });
   each(['b-back', 'b-fs', 'seek'], function (x) { on($(x), 'click', stop); });
   var seeking = false;
