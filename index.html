@@ -1328,17 +1328,85 @@
     if (flushTimer) clearTimeout(flushTimer);
     flushTimer = setTimeout(flush, ms === undefined ? 1200 : ms);
   }
+  /* ---- ほかの端末での書き足しを消さないための合わせ込み ----
+     メモを送る前に、クラウドの版が「この端末が最後に受け取った版（_b）」より新しくなっていないかを確かめる。
+     新しくなっていたら（ほかの端末で書き足した）、上書きせずに両方を合わせてから送る：
+       文字・画像（items）は id ごとに両方残す（同じ id はこの端末のほう）。線は共通の部分のあとに、クラウドの分→この端末の分。ページも同じ。 */
+  function sameJ(a, b) { try { return JSON.stringify(a) === JSON.stringify(b); } catch (e) { return false; } }
+  function mergePage(lp, sp) {
+    lp = normPage(lp || {}); sp = normPage(sp || {});
+    var ls = lp.strokes, ss = sp.strokes, k = 0;
+    while (k < ls.length && k < ss.length && sameJ(ls[k], ss[k])) k++;
+    var out = { strokes: ss.slice(0).concat(ls.slice(k)), items: [], h: Math.max(lp.h || 0, sp.h || 0) || A4_H };
+    if (k >= ss.length) out.strokes = ls.slice(0);            // クラウドの線はぜんぶこの端末にもある
+    else if (k >= ls.length) out.strokes = ss.slice(0);       // この端末の線はぜんぶクラウドにもある
+    var seen = {};
+    each(lp.items, function (it) { if (it && it.id) seen[it.id] = 1; out.items.push(it); });
+    each(sp.items, function (it) { if (it && (!it.id || !seen[it.id])) out.items.push(it); });
+    var bg = lp.bg || sp.bg; if (bg) out.bg = bg;
+    for (var f in lp) if (!(f in out) && f !== 'more') out[f] = lp[f];
+    return out;
+  }
+  function mergeNotes(ln, sn) {
+    var lps = pagesOf(ln), sps = pagesOf(sn), n = Math.max(lps.length, sps.length), pages = [];
+    for (var i = 0; i < n; i++) pages.push(lps[i] && sps[i] ? mergePage(lps[i], sps[i]) : normPage(JSON.parse(JSON.stringify(lps[i] || sps[i]))));
+    var m = pages[0];
+    for (var f in ln) if (!(f in m) && f !== 'more' && f !== 'strokes' && f !== 'items') m[f] = ln[f];
+    if (!m.title && sn.title) m.title = sn.title;
+    if (pages.length > 1) m.more = pages.slice(1); else delete m.more;
+    m.id = ln.id || sn.id;
+    m.updated = Math.max(ln.updated || 0, sn.updated || 0) + 1;
+    m._b = sn.updated || 0;
+    return m;
+  }
+  var mergeRetry = false;
+  function mergeInto(id, sn) {
+    normNote(sn);
+    var isCur = cur && cur.id === id;
+    if (isCur && (drawing || dragging || gest)) { mergeRetry = true; return false; }
+    var ln = isCur ? cur : lsJSON(noteKey(id), null); if (!ln) return false;
+    var m = mergeNotes(ln, sn);
+    if (index[id]) { index[id].updated = m.updated; saveIndexLocal(); }
+    if (isCur) {
+      cur = m; bindPage(Math.min(pageIdx, pageCount() - 1));
+      $('inp-title').value = cur.title || '';
+      redraw(); renderItems();
+      setSync('ほかの端末の書き足しと合わせました');
+    }
+    cacheNote(m);
+    return true;
+  }
   function flush() {
     flushTimer = null;
     if (flushing || !KEY) return;
     uploadImages();
     var ids = []; for (var id in dirty) ids.push(id);
     if (!ids.length) { setSync('保存済み'); return; }
-    var body = {};
+    // 送る前に、クラウドの版を確かめる（ほかの端末で書き足されていたら合わせる）
+    var chk = []; each(ids, function (id) { if (dirty[id] !== 'del') chk.push(id); });
+    if (chk.length) {
+      flushing = true; mergeRetry = false;
+      var left = chk.length;
+      var done = function () { if (--left > 0) return; flushing = false; if (mergeRetry) { scheduleFlush(1500); return; } flushSend(ids); };
+      each(chk, function (id) {
+        api('GET', '/notes/' + id + '/updated', undefined, function (err, t) {
+          var n = (cur && cur.id === id) ? cur : lsJSON(noteKey(id), null);
+          if (err || !n || !t || t <= (n._b || 0) || t === n.updated) { done(); return; }
+          api('GET', '/notes/' + id, undefined, function (e2, sn) { if (!e2 && sn) mergeInto(id, sn); done(); });
+        });
+      });
+      return;
+    }
+    flushSend(ids);
+  }
+  function flushSend(ids) {
+    if (flushing || !KEY) return;
+    var body = {}, sentUpd = {};
     each(ids, function (id) {
       if (dirty[id] === 'del') { body['notes/' + id] = null; body['index/' + id] = null; return; }
       var n = (cur && cur.id === id) ? cur : lsJSON(noteKey(id), null);
       if (!n) { delete dirty[id]; return; }
+      n._b = n.updated || 0; sentUpd[id] = n._b;   // この版を送る：受け取った端末にとっての「もとの版」
       body['notes/' + id] = n;
       body['index/' + id] = index[id] || { title: n.title, updated: n.updated };
     });
@@ -1354,6 +1422,7 @@
         retryTimer = setTimeout(flush, 15000);
         return;
       }
+      each(ids, function (id) { if (sentUpd[id] === undefined) return; var n = (cur && cur.id === id) ? cur : lsJSON(noteKey(id), null); if (n && n !== cur && (n._b || 0) !== sentUpd[id]) { n._b = sentUpd[id]; cacheNote(n); } });
       memoBkSoon(ids);   // 控え：送れたメモ（変わったものだけ）をドライブにも
       // 送信中にさらに書き足されたものは dirty のまま残す
       each(ids, function (id) {
@@ -1765,7 +1834,7 @@
         normNote(n);
         if (dragging || gest) return;
         if ((n.updated || 0) > (cur.updated || 0) || force) {
-          n.id = id; cur = n;
+          n.id = id; n._b = n.updated || 0; cur = n;
           var keepPage = pageIdx, sameH = pagesOf(n)[Math.min(keepPage, pagesOf(n).length - 1)].h === PAGE_H;
           bindPage(keepPage);
           $('inp-title').value = cur.title || '';
