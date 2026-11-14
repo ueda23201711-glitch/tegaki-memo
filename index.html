@@ -629,7 +629,7 @@
     <div id="rd-input" class="rd-wrap">
       <button id="rd-resume" class="hidden primary" type="button" style="display:block; width:100%; text-align:left; margin:0 0 10px; padding:10px 12px; line-height:1.4;"></button>
       <button id="rd-make-tog" type="button" class="rd-maketog">＋ 英文・動画を追加する <span class="note">（貼り付け・YouTube・手元の動画・画像から本）</span></button>
-      <div id="rd-make" class="hidden">
+      <div id="rd-addbox" class="hidden">
       <div class="clip-send">
         <textarea id="rd-in" placeholder="英文を貼り付けてください（Kindle などからコピーした文章）。英語の記事のアドレス（https://…）を貼ると、そのページの本文を読み込みます"></textarea>
         <div class="row">
@@ -6795,12 +6795,12 @@
   /* 英文・動画を追加する所（貼り付け・YouTube・手元の動画・画像から本）：ふだんはたたんで、これまでの英文を先に見せる */
   var MAKE_KEY = 'memo_rdmake';
   function rdMakeSet(on1, keep) {
-    $('rd-make').className = on1 ? '' : 'hidden';
+    $('rd-addbox').className = on1 ? '' : 'hidden';
     $('rd-make-tog').firstChild.nodeValue = on1 ? '− 英文・動画を追加する所をたたむ ' : '＋ 英文・動画を追加する ';
     if (!keep) lsSet(MAKE_KEY, on1 ? '1' : '0');
   }
-  function rdMakeOpen() { if ($('rd-make').className) rdMakeSet(true, true); }
-  on($('rd-make-tog'), 'click', function () { rdMakeSet(!!$('rd-make').className); });
+  function rdMakeOpen() { if ($('rd-addbox').className) rdMakeSet(true, true); }
+  on($('rd-make-tog'), 'click', function () { rdMakeSet(!!$('rd-addbox').className); });
   rdMakeSet(lsGet(MAKE_KEY) === '1', true);
   function rdFoldSet(on) { $('rd-ctrl').className = on ? 'folded' : ''; $('rd-fold').textContent = on ? '▾ ボタンを出す' : '▴ たたむ'; }
   rdFoldSet(lsGet('memo_rdfold') === '1');
