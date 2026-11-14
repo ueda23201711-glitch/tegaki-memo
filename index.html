@@ -5622,7 +5622,18 @@
       if (d.lv.link) { $('lv-get').className = ''; $('lv-video').style.display = 'none'; $('lv-get-t').innerHTML = ''; var a = document.createElement('a'); a.href = d.lv.link; a.target = '_blank'; a.style.color = '#fff'; a.textContent = '🔗 Safari で動画を開く（別の画面で再生）'; $('lv-get-t').appendChild(a); $('lv-dl').style.display = 'none'; }
     });
     lvA = { getPlayerState: function () { return v.ended ? 0 : !v.paused ? 1 : 2; },   // 0＝最後まで来た（YouTube と同じ。❓だけ・A-B で最初へ戻るのに使う）
-      playVideo: function () { try { var p = v.play(); if (p && p['catch']) p['catch'](function () {}); } catch (e) {} },
+      playVideo: function () {
+        try {
+          var p = v.play();
+          // 字幕プレイヤーから戻った直後など、画面にさわる前は iPhone が音つきの再生を止めることがある：
+          // そのときは音を消して再生し、「タップで音を出す」を出す（どこかをさわれば音が出る）
+          if (p && p['catch']) p['catch'](function (er) {
+            if (!er || er.name !== 'NotAllowedError' || v.muted) return;
+            v.muted = true; lvAutoMuted = true; lvUnmuteBar(true);
+            var p2 = v.play(); if (p2 && p2['catch']) p2['catch'](function () { v.muted = lvMute; lvAutoMuted = false; lvUnmuteBar(false); });
+          });
+        } catch (e) {}
+      },
       pauseVideo: function () { try { v.pause(); } catch (e) {} },
       seekTo: function (t) { try { v.currentTime = t; } catch (e) {} },
       getCurrentTime: function () { return v.currentTime || 0; },
@@ -5678,8 +5689,26 @@
   var CAPBG_KEY = 'memo_reader_capbg', capSolid = lsGet(CAPBG_KEY) === '1';
   on($('lv-cbg'), 'click', function () { capSolid = !capSolid; lsSet(CAPBG_KEY, capSolid ? '1' : '0'); lvCapUpdate(); });
   var lvMute = false;   // 音を消す（開き直すと音は出る）
+  // 音を出せずに、音を消して再生しているとき：画面のどこかをさわれば音を出す
+  var lvAutoMuted = false;
+  function lvUnmuteBar(on1) {
+    var b = $('lv-unmute');
+    if (!b) {
+      if (!on1) return;
+      b = document.createElement('button'); b.id = 'lv-unmute'; b.type = 'button'; b.textContent = '🔇 音を消して再生中 ― タップで音を出す';
+      b.style.cssText = 'position:absolute; left:50%; top:10px; -webkit-transform:translateX(-50%); transform:translateX(-50%); z-index:6; background:rgba(20,28,33,.88); color:#fff; border:0; border-radius:18px; padding:8px 14px; font-size:14px; white-space:nowrap;';
+      $('yt-box').appendChild(b);
+    }
+    b.style.display = on1 ? '' : 'none';
+  }
+  function lvUnmuteNow() {
+    if (!lvAutoMuted) return;
+    lvAutoMuted = false; lvUnmuteBar(false);
+    var v = $('lv-video'); if (v) { v.muted = lvMute; if (v.paused && !v.ended) { var p = v.play(); if (p && p['catch']) p['catch'](function () {}); } }
+  }
+  on(document, 'touchend', lvUnmuteNow); on(document, 'click', lvUnmuteNow);
   function lvMuteApply() {
-    var v = $('lv-video'); if (v) v.muted = lvMute;
+    var v = $('lv-video'); if (v) v.muted = lvMute || lvAutoMuted;
     try { if (ytYT && ytYTReady) { if (lvMute) ytYT.mute(); else ytYT.unMute(); } } catch (e) {}
   }
   var lvHide = lsGet('memo_lvhide') === '1';
