@@ -162,6 +162,12 @@
   .rd-pvimg { width: 48%; max-width: 240px; margin: 0 2% 6px 0; border-radius: 6px; vertical-align: top; background: #dde3e7; }
   .rd-pvnote { font-size: 13px; color: #5b6a72; line-height: 1.5; margin: 2px 0; }
   .rd-flag { border: 0; background: none; font-size: 19px; line-height: 1; padding: 4px 4px; cursor: pointer; }
+  #rd-text.delmode .rd-sent { cursor: pointer; }
+  #rd-text .rd-sent.delsel { background: #fde8e6 !important; box-shadow: inset 4px 0 0 #c0392b; opacity: .75; text-decoration: line-through; }
+  #rd-delbar { position: fixed; left: 50%; bottom: 64px; -webkit-transform: translateX(-50%); transform: translateX(-50%); z-index: 60; background: #fff; border-radius: 12px; box-shadow: 0 4px 18px rgba(0,0,0,.25); padding: 8px 10px; white-space: nowrap; max-width: 96%; overflow-x: auto; }
+  #rd-delbar button { padding: 6px 10px; font-size: 13px; margin-left: 4px; }
+  #rd-delbar span { font-size: 13px; font-weight: 700; }
+  #rd-delsel.on { background: #c0392b; color: #fff; }
   .rd-hrow.rd-last { background: #fff6dc; box-shadow: inset 4px 0 0 #e0a400; }
   .rd-maketog { display: block; width: 100%; text-align: left; margin: 0 0 10px; padding: 10px 12px; font-size: 15px; font-weight: 700; border-radius: 10px; }
   .rd-maketog .note { font-weight: normal; font-size: 13px; }
@@ -735,6 +741,7 @@
         <button id="rd-favbtn" type="button" class="rd-fav" title="好み（押すたびに ★1→★2→★3→なし）。本のときは本全体の ★">☆☆☆</button>
         <button id="rd-subin" type="button" class="hidden" title="この動画に英語の字幕（.srt / .vtt / 時刻つきの文字起こし）を入れる・入れ直す">🔤 字幕を入れる</button><input id="rd-subfile" type="file" accept=".srt,.vtt,.txt,text/plain" style="display:none">
         <button id="rd-find" type="button" title="この英文（本ならこの章）の中で、単語や文字をさがす">🔍 検索</button>
+        <button id="rd-delsel" type="button" title="いらない文（広告・メニューなど）を選んで、まとめて消す">🗑 文を消す</button>
         <button id="rd-repl" type="button" title="英文の中の文字を、まとめて置き換える（聞き取りのまちがいを直すときなど）">🔁 置き換え</button>
         <button id="lv-save" class="hidden" type="button" title="ドライブの動画をこの端末に取り込んで、次からすぐ見られるようにする">⬇ この端末に取り込む</button>
         <button id="rd-cont" type="button" title="🔊 で読んだあと、次の文も続けて読む">🔁 続けて：オフ</button>
@@ -765,6 +772,7 @@
         <div id="rd-src-box" class="hidden"><a id="rd-src" href="#" target="_blank" rel="noopener"></a> <button id="rd-src-ed" type="button" class="hidden" style="font-size:13px; padding:3px 9px; margin-left:4px;"></button> <label id="rd-brave-l" style="font-size:12px; color:#6b5a4a; margin-left:4px; white-space:nowrap;" title="iPhone・Android で、Brave が入っていれば Brave で開きます（入っていなければ、ふだんのブラウザ）"><input id="rd-brave" type="checkbox" style="vertical-align:middle"> 🦁 Brave で開く</label></div>
         <p class="note rd-hint" id="rd-hint-p">単語をタップすると意味と発音、<span class="idm-sample">下線</span>は熟語・定型表現、<span class="saved-sample">黄色</span>はメモ単語帳に保存済みの単語です。🔊 でその文を読みます（「🔁 続けて」がオンなら、そこから最後まで）。</p>
         <div id="rd-text"></div>
+        <div id="rd-delbar" class="hidden"><span id="rd-delcnt">消す文をタップ</span> <button id="rd-delgo" type="button" class="danger" disabled>🗑 選んだ文を消す</button> <button id="rd-delall" type="button">ここから下を全部</button> <button id="rd-delno" type="button">やめる</button></div>
       </div>
     </div>
   </div>
@@ -8624,7 +8632,7 @@
     var d = rdCur.d, box = $('rd-text'); box.innerHTML = '';
     var allIdioms = [];
     each(rdSents, function (s, si) {
-      var blk = document.createElement('div'); blk.className = 'rd-sent' + (isHard(si) ? ' hard' : '') + (si === rdIdx ? ' now' : '') + findCls(si);
+      var blk = document.createElement('div'); blk.className = 'rd-sent' + (isHard(si) ? ' hard' : '') + (si === rdIdx ? ' now' : '') + findCls(si) + (delSel && delSel[si] ? ' delsel' : ''); blk.setAttribute('data-si', si);
       var hb = document.createElement('button'); hb.type = 'button'; hb.className = 'rd-hard'; hb.textContent = '❓'; hb.title = 'わからなかった文の印（もう一度押すと外す）';
       hb.title = 'わからなかった文の印（もう一度押すと外す）。Shift を押しながらクリック、または長押しで、前に押した ❓ からここまでをまとめて';
       (function (blk0) {
@@ -9137,6 +9145,60 @@
     $('rd-status').textContent = '✎ ' + (si + 1) + ' 文目を直しました。' + (gasUrl ? '訳を作り直しています…' : '');
   }
   on($('pop-sent'), 'click', function () { if (popItem && popItem.si !== undefined) editSentence(popItem.si); });
+  /* ---- いらない文を選んで消す（ブックマークから取り込んだ記事のメニュー・広告の文など）----
+     「🗑 文を消す」→ 文をタップして選ぶ（Shift で範囲、「ここから下を全部」）→「選んだ文を消す」。↩ 元に戻す で戻せる */
+  var delSel = null, delLast = -1;
+  function delUi() {
+    var on1 = !!delSel, n = 0; if (delSel) for (var k in delSel) n++;
+    $('rd-delbar').className = on1 ? '' : 'hidden';
+    $('rd-delsel').className = on1 ? 'on' : '';
+    $('rd-delcnt').textContent = n ? n + ' 文を選んでいます' : '消す文をタップしてください（Shift で範囲）';
+    $('rd-delgo').disabled = !n;
+    var bl = document.querySelectorAll('#rd-text .rd-sent');
+    for (var i = 0; i < bl.length; i++) { var si = Number(bl[i].getAttribute('data-si')), c = bl[i].className.replace(/ delsel\b/g, ''); bl[i].className = c + (delSel && delSel[si] ? ' delsel' : ''); }
+    $('rd-text').className = on1 ? 'delmode' : '';
+  }
+  on($('rd-delsel'), 'click', function () { if (!rdCur) return; delSel = delSel ? null : {}; delLast = -1; delUi(); if (delSel) $('rd-status').textContent = '🗑 消す文をタップして選んでください。もう一度タップで外します。'; });
+  on($('rd-delno'), 'click', function () { delSel = null; delUi(); $('rd-status').textContent = ''; });
+  on($('rd-delall'), 'click', function () {
+    if (!delSel || delLast < 0) { alert('先に、消し始める文を 1 つタップしてください。'); return; }
+    for (var k = delLast; k < rdSents.length; k++) delSel[k] = 1; delUi();
+  });
+  // 選んでいるあいだは、文のタップ＝選ぶ（単語の窓・再生は出さない）
+  document.addEventListener('click', function (e) {
+    if (!delSel) return;
+    var el = e.target; while (el && el !== document.body && !(el.getAttribute && el.getAttribute('data-si') !== null && /\brd-sent\b/.test(el.className))) el = el.parentNode;
+    if (!el || el === document.body) return;
+    e.preventDefault(); e.stopPropagation();
+    var si = Number(el.getAttribute('data-si'));
+    if (e.shiftKey && delLast >= 0) { var a = Math.min(delLast, si), b = Math.max(delLast, si); for (var k = a; k <= b; k++) delSel[k] = 1; }
+    else if (delSel[si]) delete delSel[si]; else delSel[si] = 1;
+    delLast = si; delUi();
+  }, true);
+  on($('rd-delgo'), 'click', function () {
+    if (!rdCur || !delSel) return;
+    var id = rdCur.id, set = delSel, list = []; for (var k in set) list.push(Number(k)); if (!list.length) return;
+    if (list.length >= rdSents.length) { alert('すべての文は消せません（英文ごと消すときは、一覧の「削除」を使ってください）。'); return; }
+    if (!window.confirm(list.length + ' 文を消します。よろしいですか？（「↩ 元に戻す」で戻せます）')) return;
+    undoPush([id], '文の削除');
+    rdTextChanged(id, function (d, oldList) {
+      var map = [], nk = 0; for (var i = 0; i < oldList.length; i++) map.push(set[i] ? -1 : nk++);
+      if (d.cues) d.cues = d.cues.filter(function (c, i2) { return !set[i2]; });
+      else {
+        var t = String(d.text || '').replace(/\r/g, '').replace(/[ \t]+/g, ' '), pos = 0, out = '';
+        for (var j = 0; j < oldList.length; j++) {
+          var at = t.indexOf(oldList[j], pos); if (at < 0) continue;
+          if (set[j]) { out += t.slice(pos, at); pos = at + oldList[j].length; while (t.charAt(pos) === ' ') pos++; }
+          else { out += t.slice(pos, at + oldList[j].length); pos = at + oldList[j].length; }
+        }
+        d.text = (out + t.slice(pos)).replace(/\n{3,}/g, '\n\n').replace(/^\s+|\s+$/g, '');
+      }
+      if (d.hard) { var nh = {}, any = false; for (var hk in d.hard) { var o = Number(String(hk).slice(1)); if (map[o] >= 0) { nh['s' + map[o]] = 1; any = true; } } if (any) d.hard = nh; else delete d.hard; }
+      if (typeof d.bm === 'number') { var b = d.bm; while (b < map.length && map[b] < 0) b++; if (b < map.length) d.bm = map[b]; else delete d.bm; }
+    }, true);
+    delSel = null; delUi();
+    $('rd-status').textContent = '🗑 ' + list.length + ' 文を消しました（「↩ 元に戻す」で戻せます）。';
+  });
   // まとめて置き換え（大文字・小文字は区別しない。単語の途中には当てない。文の頭なら大文字にそろえる）
   function replRe(find) {
     var esc = find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
