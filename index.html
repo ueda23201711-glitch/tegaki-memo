@@ -8475,6 +8475,7 @@
   var rdLastSeen = lsGet('memo_rdlast') || '';
   function openRdDoc(id, isNew) {
     if (id !== rdOneDoc) rdOneDoc = '';
+    if (delSel) { delSel = null; $('rd-delbar').className = 'hidden'; $('rd-delsel').className = ''; $('rd-text').className = ''; }
     if (rdDocs[id]) { rdLastSeen = rdDocs[id].book ? 'b:' + rdDocs[id].book : id; lsSet('memo_rdlast', rdLastSeen); }
     ytStopAt = -1;
     var d = rdDocs[id]; if (!d) return;
