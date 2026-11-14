@@ -739,6 +739,7 @@
         <button id="rd-flagbtn" type="button" title="色の印（★ とは別の目印）">⚐ 印</button>
         <button id="rd-fdbtn" type="button" title="この英文（本なら本ごと）を入れるフォルダ">📁</button>
         <button id="rd-favbtn" type="button" class="rd-fav" title="好み（押すたびに ★1→★2→★3→なし）。本のときは本全体の ★">☆☆☆</button>
+        <button id="rd-vdel" type="button" class="hidden" title="この端末に入れてある動画だけを消して、容量を空ける（ドライブの動画・字幕・訳はそのまま）">📱 この端末の動画を消す</button>
         <button id="rd-vrep" type="button" class="hidden" title="同じ動画の別のファイル（サイズを小さくしたものなど）に差し替える。字幕・訳・印・しおりはそのまま">🎞 動画を差し替える</button><input id="rd-vfile" type="file" accept="video/*,.webm,.mp4,.mkv,.mov" style="display:none">
         <button id="rd-subin" type="button" class="hidden" title="この動画に英語の字幕（.srt / .vtt / 時刻つきの文字起こし）を入れる・入れ直す">🔤 字幕を入れる</button><input id="rd-subfile" type="file" accept=".srt,.vtt,.txt,text/plain" style="display:none">
         <button id="rd-find" type="button" title="この英文（本ならこの章）の中で、単語や文字をさがす">🔍 検索</button>
@@ -5205,7 +5206,7 @@
       rq.onerror = function () { cb(null); };
     } catch (e) { cb(null); }
   }
-  function lvPut(id, blob, cb) { if (lvOld) { cb(false); return; } lvIdb(function (db) { if (!db) { cb(false); return; } try { var tx = db.transaction('v', 'readwrite'); tx.objectStore('v').put(blob, id); tx.oncomplete = function () { if (String(id).indexOf('#') < 0) lvHave[id] = 1; cb(true); }; tx.onerror = tx.onabort = function () { cb(false); }; } catch (e) { cb(false); } }); }
+  function lvPut(id, blob, cb) { if (lvOld) { cb(false); return; } lvIdb(function (db) { if (!db) { cb(false); return; } try { var tx = db.transaction('v', 'readwrite'); tx.objectStore('v').put(blob, id); tx.oncomplete = function () { if (String(id).indexOf('#') < 0) { lvHave[id] = 1; lsSet('memo_lvv_' + id, String(now())); } cb(true); }; tx.onerror = tx.onabort = function () { cb(false); }; } catch (e) { cb(false); } }); }
   // この端末に取り込んだ動画の再生用 URL。サービスワーカーが動いていれば ./__local__（必要な範囲だけ少しずつ渡す。
   //   メモリの少ない iPhone 8 などで、大きな動画を 1 つにまとめて落ちないように）。だめなら、まとめた Blob の URL
   var lvLocalBad = {};   // __local__ で再生できなかった動画（次からは Blob で）
@@ -5736,7 +5737,7 @@
   }
   var lvHide = lsGet('memo_lvhide') === '1';
   var lvMode = '';   // 'local'（この端末）／'drive'（ドライブ）
-  function lvSrc(t) {
+  function lvSrc(t) { setTimeout(subInShow, 0);
     var e = $('lv-src'); if (!e) return;
     $('lv-src-t').textContent = t || ''; e.className = t ? '' : 'hidden';
     lvMode = /^📱/.test(t || '') ? 'local' : /^☁/.test(t || '') ? 'drive' : '';
@@ -5782,8 +5783,15 @@
     if (f) f.style.display = on ? 'none' : '';
     $('lv-get').className = 'hidden';
   }
+  // ほかの端末で動画が差し替えられた（d.lv.at）のに、この端末には前の動画が残っている：前の動画を消して、新しい動画を使う
+  function lvStale(id) {
+    var d = rdDocs[id]; if (!d || !d.lv || !d.lv.at || !d.lv.drive || !lvHave[id]) return false;
+    return Number(lsGet('memo_lvv_' + id) || 0) < d.lv.at;
+  }
+  function lvForget(id) { lvDelLocal(id); try { delete lvMem[id]; } catch (e) {} delete lvHave[id]; if (lvCur === id) lvCur = ''; lsDel('memo_lvv_' + id); }
   function lvOpen(d) {
     lvSetup();
+    if (rdCur && lvStale(rdCur.id)) { lvForget(rdCur.id); setTimeout(function () { $('rd-status').textContent = '🎞 この動画はほかの端末で差し替えられたので、この端末の前の動画を消しました。新しい動画はドライブから再生できます（この端末に入れ直すこともできます）。'; }, 800); }
     $('yt-wrap').className = ''; ytShowCtl(true); $('yt-safari').className = 'hidden'; $('yt-box').style.display = '';
     ytSizeSoon(); ytLoop = false; ytLoopIdx = -1; ytLoopLabel();
     if (ytPlayer !== lvA) { if (ytPlayer) { try { ytPlayer.pauseVideo(); } catch (e) {} } ytPlayer = lvA; }
@@ -8580,10 +8588,18 @@
 
   // 読んでいる・見ている途中でも ★ をつけられるように（ボタンの中の ★。本のときは本全体の ★）
   // 🔤 動画に字幕を入れる・入れ直す（一覧に戻した動画や、字幕を差し替えたいとき）
-  function subInShow() { var vb = $('rd-vrep'); if (vb && rdCur) vb.className = rdCur.d.lv ? '' : 'hidden'; var b = $('rd-subin'); if (!b || !rdCur) return; b.className = rdCur.d.lv ? '' : 'hidden'; b.textContent = rdCur.d.cues && rdCur.d.cues.length ? '🔤 字幕を入れ直す' : '🔤 字幕を入れる'; }
+  function subInShow() { var vb = $('rd-vrep'); if (vb && rdCur) vb.className = rdCur.d.lv ? '' : 'hidden'; var vd = $('rd-vdel'); if (vd && rdCur) vd.className = rdCur.d.lv && rdCur.d.lv.drive && lvHave[rdCur.id] ? '' : 'hidden'; var b = $('rd-subin'); if (!b || !rdCur) return; b.className = rdCur.d.lv ? '' : 'hidden'; b.textContent = rdCur.d.cues && rdCur.d.cues.length ? '🔤 字幕を入れ直す' : '🔤 字幕を入れる'; }
   /* ---- 🎞 動画を差し替える（サイズを小さくした同じ動画など）。字幕・訳・❓・★・しおりはそのまま ----
      この端末の動画を入れ替え → ドライブに新しい動画を送る → 送り終えたら前の動画をドライブから消す（ゴミ箱へ） */
   function fmtMB(n) { return n >= 1073741824 ? (n / 1073741824).toFixed(2) + ' GB' : Math.round(n / 1048576) + ' MB'; }
+  on($('rd-vdel'), 'click', function () {
+    if (!rdCur || !rdCur.d.lv) return;
+    if (!rdCur.d.lv.drive) { alert('この動画はまだドライブに送れていないので、この端末から消すと見られなくなります。'); return; }
+    if (!window.confirm('この端末に入れてある動画を消して、容量を空けますか？\n（ドライブの動画・字幕・訳・印はそのままです。ドライブから再生したり、入れ直したりできます）')) return;
+    var id = rdCur.id, v = $('lv-video'); if (v) { try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {} }
+    lvForget(id);
+    setTimeout(function () { if (rdCur && rdCur.id === id) { lvCur = ''; openRdDoc(id); setTimeout(function () { $('rd-status').textContent = '📱 この端末の動画を消しました。ドライブから再生できます。'; }, 800); } }, 300);
+  });
   on($('rd-vrep'), 'click', function () { if (!rdCur || !rdCur.d.lv) return; if (lvUp[rdCur.id]) { alert('いま動画をドライブに送っています。終わってから差し替えてください。'); return; } $('rd-vfile').value = ''; $('rd-vfile').click(); });
   on($('rd-vfile'), 'change', function () {
     var f = $('rd-vfile').files[0]; if (!f || !rdCur || !rdCur.d.lv) return;
