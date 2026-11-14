@@ -6463,7 +6463,9 @@
       if (!ready) { if (tries === 10 && rdCur.d.lv) $('rd-status').textContent = '🎞 動画を準備しています（大きい動画は少しかかります）…'; setTimeout(go, 300); return; }
       if (tries > 10 && /^🎞 動画を準備/.test($('rd-status').textContent)) $('rd-status').textContent = '';
       try { ytPlayer.seekTo(t, true); } catch (e) {}
-      if (play) { lvMute = true; lvCapUpdate(); try { ytPlayer.playVideo(); } catch (e) {} $('rd-status').textContent = '🔇 音を消して続きを再生しています。「🔊 音オン」を押すと音が出ます。'; }
+      // 端末・ドライブの動画：まず音ありで再生。iPhone に止められたら、音を消して再生し、画面のどこかをさわれば音が出る（上に「タップで音を出す」）
+      if (play && rdCur.d.lv) { try { ytPlayer.playVideo(); } catch (e) {} }
+      else if (play) { lvMute = true; lvCapUpdate(); try { ytPlayer.playVideo(); } catch (e) {} $('rd-status').textContent = '🔇 音を消して続きを再生しています。「🔊 音オン」を押すと音が出ます。'; }
     };
     setTimeout(go, 300);
   }
