@@ -9231,7 +9231,7 @@
 
   // 翻訳の設定
   // Apps Script のコードの版。コードを変えたら必ず上げる（コードの1行目と、アプリの表示に出る）
-  var GAS_VER_LATEST = '2026-11-09e';
+  var GAS_VER_LATEST = '2026-11-14a';
   var GAS_CODE = [
     "// バージョン: " + GAS_VER_LATEST + "（英文リーダー・手書きメモ 共通。アプリの「⚙ 翻訳の設定」に出る最新の版と同じか確かめてください）",
     "var GAS_VER = \"" + GAS_VER_LATEST + "\";",
@@ -9651,8 +9651,26 @@
     "  var blocks = pageBlocks(m ? m[0] : html);",
     "  if (blocks.length < 3 && m) blocks = pageBlocks(html);",
     "  var text = blocks.join(\"\\n\\n\").slice(0, 20000);",
+    "  // 本文がページの HTML に直接ないサイト（JavaScript で表示する）：ページに埋めこまれたデータから本文を探す",
+    "  if (text.length < 300) { var alt = pageJsonText(res.getContentText()); if (alt.length > text.length) text = alt.slice(0, 20000); }",
     "  if (text.length < 80) return { ok: false, error: \"notext\" };",
     "  return { ok: true, title: tm ? cleanHtml(tm[1]).slice(0, 100) : \"\", text: text };",
+    "}",
+    "// ページに埋めこまれたデータ（schema.org の articleBody、Next.js などの JSON の中の本文 HTML）から本文を取り出す",
+    "function pageJsonText(raw) {",
+    "  var best = \"\", re = /<script[^>]*type=[\"']application\\/ld\\+json[\"'][^>]*>([\\s\\S]*?)<\\/script>/gi, x;",
+    "  var take = function (t) { t = String(t || \"\"); if (/<p[\\s>]/i.test(t)) t = pageBlocks(t).join(\"\\n\\n\"); else t = cleanHtml(t).replace(/\\s*\\n\\s*/g, \"\\n\\n\"); if (t.length > best.length) best = t; };",
+    "  var walk = function (o, d) {",
+    "    if (!o || d > 12) return;",
+    "    if (typeof o === \"string\") { if (o.length > 400 && (/<p[\\s>]/i.test(o) || /[a-z]{3,} [a-z]{3,} [a-z]{3,}.*\\. [A-Z]/.test(o))) take(o); return; }",
+    "    if (typeof o !== \"object\") return;",
+    "    for (var k in o) { if (k === \"articleBody\" && typeof o[k] === \"string\") take(o[k]); else walk(o[k], d + 1); }",
+    "  };",
+    "  while ((x = re.exec(raw))) { try { walk(JSON.parse(x[1]), 0); } catch (e) {} }",
+    "  var nx = /<script[^>]*id=[\"']__NEXT_DATA__[\"'][^>]*>([\\s\\S]*?)<\\/script>/i.exec(raw) || /<script[^>]*id=[\"']__NUXT_DATA__[\"'][^>]*>([\\s\\S]*?)<\\/script>/i.exec(raw);",
+    "  if (nx) { try { walk(JSON.parse(nx[1]), 0); } catch (e) {} }",
+    "  if (!best) { var og = /<meta[^>]+(?:property|name)=[\"'](?:og:)?description[\"'][^>]+content=[\"']([^\"']{120,})/i.exec(raw); if (og) best = cleanHtml(og[1]); }",
+    "  return best;",
     "}",
     "function pageBlocks(area) {",
     "  var out = [], re = /<(p|h[1-3]|li|blockquote)(\\s[^>]*)?>([\\s\\S]*?)<\\/\\1>/gi, x;",
