@@ -150,7 +150,7 @@
   /* ボタン類をたたむ（▶ 再生・たたむボタン・お知らせだけ残す。小さい iPhone で英文が見えるように） */
   #rd-ctrl.folded > button, #rd-ctrl.folded > select, #rd-ctrl.folded #lv-src { display: none !important; }
   #rd-ctrl.folded > #rd-play, #rd-ctrl.folded > #rd-fold { display: inline-block !important; }
-  #rd-ctrl.folded > #yt-loop:not(.hidden) { display: inline-block !important; }   /* 1文くり返しは、たたんでも出しておく */
+  #rd-ctrl.folded > #yt-loop:not(.hidden), #rd-ctrl.folded > #rd-ep:not(.hidden) { display: inline-block !important; }   /* 1文くり返し・字幕プレイヤーは、たたんでも出しておく */
   .rd-hrow { background: #fff; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(31,42,48,.1); cursor: pointer; overflow: hidden; }
   .rd-hrow b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .rd-hrow span { font-size: 12px; color: #6b7a83; }
@@ -712,9 +712,9 @@
             <button id="yt-safari-btn" class="primary" type="button" style="margin-top:8px">▶ YouTube で最初から見る</button></div></div>
         <button id="rd-play" class="primary" type="button">▶ 再生</button>
         <button id="yt-loop" class="hidden" type="button" title="今のセリフをくり返し再生">🔂 1文くり返し：オフ</button>
+        <button id="rd-ep" class="hidden" type="button" title="字幕プレイヤーで、画面いっぱいに大きな英日字幕で見る（今の場面から）">🎬 字幕プレイヤーで見る</button>
         <button id="rd-fold" type="button" title="ボタン類をたたんで、英文を広く見る（もう一度押すと出す）">▴ たたむ</button>
         <button id="rd-bmclr" class="hidden" type="button" title="この英文のしおり（文と動画の場面）を消す">🔖✕ しおり消</button>
-        <button id="rd-ep" class="hidden" type="button" title="字幕プレイヤーで、画面いっぱいに大きな英日字幕で見る（今の場面から）">🎬 字幕プレイヤーで見る</button>
         <button id="rd-ab" type="button" title="1回目に押した文（A）から2回目に押した文（B）までをくり返す">🅰🅱 A-B リピート</button>
         <button id="rd-hardonly" class="hidden" type="button" title="❓ の印を付けた文だけを、続けて再生・読み上げする">❓ 印の文だけ：オフ</button>
         <button id="rd-hardclr" class="hidden" type="button" title="この英文（本ならこの章）の ❓ の印をすべて外す">❓✕ 印を全部外す</button>
