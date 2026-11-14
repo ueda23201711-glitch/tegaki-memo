@@ -177,7 +177,13 @@
   @media (max-width: 600px) {   /* スマホ：ボタンは横に並べて、横に動かして選ぶ（上に出したままでも場所をとらない） */
     /* スマホ：ボタンは小さくして折り返す（全部見えるように）。絞り込みは「🔍 絞り込み」でたたむ／広げる */
     #rd-hist-h .rd-htitle { display: none; }
-    #rd-hist-h button { font-size: 13px; padding: 4px 8px; margin: 2px 1px; }
+    #rd-hist-h button { font-size: 13px; padding: 4px 7px; margin: 2px 1px; }
+    #rd-head #rd-hist-h .lg { display: none; }
+    #rd-head #rd-hist-h .sh { display: inline; }
+    /* 一覧の行：日付・❓・端末／ドライブ・フォルダは 1 行に（ボタンの横に押し込めて何行にもならないように）、ボタンはその下の右に */
+    #rd-hist .rd-hrow .rd-line { flex-wrap: wrap; row-gap: 4px; }
+    #rd-hist .rd-hrow .rd-info { flex: 1 1 100%; }
+    #rd-hist .rd-hrow .rd-acts { margin-left: auto; }
     #rf-tog { display: inline-block !important; }
     #rf-tog.on { background: #2f4858; color: #fff; }
     #rd-head.fold #rd-filter { display: none !important; }
@@ -213,7 +219,8 @@
   .rd-hrow b.rd-t2 { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; line-height: 1.35; word-break: break-word; }
   .rd-hrow .rd-line { display: flex; align-items: flex-end; gap: 6px; margin-top: 4px; }
   .rd-hrow .rd-info { flex: 1; min-width: 0; line-height: 1.5; }
-  .rd-hrow .rd-info .rd-badge { margin-left: 6px; display: inline-block; }   /* 「有端末・有ドライブ」を途中で切らない */
+  .rd-hrow .rd-info .rd-badge { margin-left: 6px; display: inline-block; }
+  #rd-hist-h .sh { display: none; }   /* 「有端末・有ドライブ」を途中で切らない */
   .rd-hrow .rd-acts { flex: none; display: flex; align-items: center; gap: 2px; white-space: nowrap; }
   .rd-hrow .rd-acts button { float: none; margin: 0; padding: 4px 7px; font-size: 12px; }
   .rd-hrow .rd-acts .rd-fav { font-size: 14px; padding: 4px 4px; letter-spacing: 0; }
@@ -675,7 +682,7 @@
       </div>
       <p class="note">保存した単語・熟語は <a href="/kiku-memo/" target="_blank">📚 メモ単語帳</a> で学習できます（iPad 2/3 は <a href="/kiku-memo/ipad.html" target="_blank">こちら</a>）。</p>
       <div id="rd-head">
-      <h3 id="rd-hist-h" class="rd-h"><span class="rd-htitle">これまでの英文</span> <button id="rf-tog" type="button" class="rd-selbtn" style="display:none;" title="題名さがし・フォルダ・種類・★・印・状態の絞り込みを出す／たたむ">🔍 絞り込み</button> <button id="rd-sync" type="button" class="rd-selbtn" title="ほかの端末で追加・変更した英文を読み込む">🔄 最新にする</button> <button id="rd-quota" type="button" class="rd-selbtn" title="Google ドライブと Firebase の使用量、動画の一覧（消して空ける）">☁ ドライブの容量</button> <button id="rd-sort" type="button" class="rd-selbtn" title="よく見る・読む英文を上に（もう一度押すと、追加した順に戻る）">👁 よく見る順</button> <button id="rd-fsort" type="button" class="rd-selbtn" title="★の多い英文を上に（もう一度押すと、追加した順に戻る）">⭐ 好み順</button> <button id="rd-sel" type="button" class="rd-selbtn" title="英文・動画・本を選んで、フォルダへ入れる・削除する・本をまとめる">☑ 選択</button> <button id="rd-pvall" type="button" class="rd-selbtn" title="見えている英文・動画の中身（画像・最初の文）をまとめて開く／閉じる">🖼 まとめて開く</button> <button id="rd-hidv" type="button" class="rd-selbtn hidden" title="一覧で非表示にした英文・動画・本の一覧">🙈 非表示の一覧</button></h3>
+      <h3 id="rd-hist-h" class="rd-h"><span class="rd-htitle">これまでの英文</span> <button id="rf-tog" type="button" class="rd-selbtn" style="display:none;" title="題名さがし・フォルダ・種類・★・印・状態の絞り込みを出す／たたむ">🔍 絞り込み</button> <button id="rd-sync" type="button" class="rd-selbtn" title="ほかの端末で追加・変更した英文を読み込む"><span class="lg">🔄 最新にする</span><span class="sh">🔄 最新</span></button> <button id="rd-quota" type="button" class="rd-selbtn" title="Google ドライブと Firebase の使用量、動画の一覧（消して空ける）"><span class="lg">☁ ドライブの容量</span><span class="sh">☁ 容量</span></button> <button id="rd-sort" type="button" class="rd-selbtn" title="よく見る・読む英文を上に（もう一度押すと、追加した順に戻る）"><span class="lg">👁 よく見る順</span><span class="sh">👁 よく見る</span></button> <button id="rd-fsort" type="button" class="rd-selbtn" title="★の多い英文を上に（もう一度押すと、追加した順に戻る）">⭐ 好み順</button> <button id="rd-sel" type="button" class="rd-selbtn" title="英文・動画・本を選んで、フォルダへ入れる・削除する・本をまとめる">☑ 選択</button> <button id="rd-pvall" type="button" class="rd-selbtn" title="見えている英文・動画の中身（画像・最初の文）をまとめて開く／閉じる"><span class="lg">🖼 まとめて開く</span><span class="sh">🖼 開く</span></button> <button id="rd-hidv" type="button" class="rd-selbtn hidden" title="一覧で非表示にした英文・動画・本の一覧"><span class="lg">🙈 非表示の一覧</span><span class="sh">🙈 非表示</span></button></h3>
       <p id="rd-hidnote" class="hidden">🙈 一覧で非表示にしたものです。「👁 表示に戻す」で、ふつうの一覧に戻ります。</p>
       <p class="note" id="rd-sync-msg"></p>
       <div id="rd-selbar" class="hidden"><span id="rd-selcount">0 件を選択</span>
@@ -7786,7 +7793,7 @@
     var b = $('rd-pvall'); if (!b) return;
     var rs = $('rd-hist').querySelectorAll('.rd-hrow[data-id]'), any = false, all = rs.length > 0;
     for (var i = 0; i < rs.length; i++) { if (pvOpen[rs[i].getAttribute('data-id')]) any = true; else all = false; }
-    b.textContent = all ? '🖼 まとめて閉じる' : '🖼 まとめて開く';
+    b.innerHTML = all ? '<span class="lg">🖼 まとめて閉じる</span><span class="sh">🖼 閉じる</span>' : '<span class="lg">🖼 まとめて開く</span><span class="sh">🖼 開く</span>';
   }
   on($('rd-hidv'), 'click', function () { rdHidView = !rdHidView; renderRdHistory(); });
   on($('rd-pvall'), 'click', function () {
@@ -7907,7 +7914,7 @@
     if (rdHidView && !hidN) rdHidView = false;
     ids = ids.filter(function (id) { return rdHidView ? isHid(id) : !isHid(id); });
     $('rd-hidv').className = hidN || rdHidView ? 'rd-selbtn' : 'rd-selbtn hidden';
-    $('rd-hidv').textContent = rdHidView ? '← ふつうの一覧に戻る' : '🙈 非表示の一覧（' + hidN + '）';
+    $('rd-hidv').innerHTML = rdHidView ? '<span class="lg">← ふつうの一覧に戻る</span><span class="sh">← 一覧に戻る</span>' : '<span class="lg">🙈 非表示の一覧（' + hidN + '）</span><span class="sh">🙈 非表示 ' + hidN + '</span>';
     $('rd-hidnote').className = rdHidView ? 'note' : 'hidden';
     // 絞り込み（本は、どれかの章が合えば本ごと出す。題名で探したときは、合った章を開いて見せる）
     var rf = rfGet();
@@ -7929,8 +7936,8 @@
     var atCmp = function (x, y) { return (rdDocs[y].at || 0) - (rdDocs[x].at || 0); };
     if (pop) ids.sort(function (x, y) { return useCmp(x, y) || atCmp(x, y); });
     if (mode === 'fav') ids.sort(function (x, y) { return (favOf(y) - favOf(x)) || useCmp(x, y) || atCmp(x, y); });
-    $('rd-sort').textContent = pop ? '🕒 追加した順に戻す' : '👁 よく見る順';
-    $('rd-fsort').textContent = mode === 'fav' ? '🕒 追加した順に戻す' : '⭐ 好み順';
+    $('rd-sort').innerHTML = pop ? '<span class="lg">🕒 追加した順に戻す</span><span class="sh">🕒 追加順</span>' : '<span class="lg">👁 よく見る順</span><span class="sh">👁 よく見る</span>';
+    $('rd-fsort').innerHTML = mode === 'fav' ? '<span class="lg">🕒 追加した順に戻す</span><span class="sh">🕒 追加順</span>' : '⭐ 好み順';
     $('rd-hist-h').style.display = rfTotal || (KEY && gasUrl) ? '' : 'none';   // 一覧が空でも「☁ ドライブの容量」（控えから戻す）は押せるように
     if (rfAct && !ids.length) { var em = document.createElement('p'); em.className = 'note'; em.textContent = rf.fd && rf.fd !== FD_NONE && !fdCount(rf.fd) ? '📁 「' + rf.fd + '」はまだ空です。「📁 フォルダ：すべて」に戻して「☑ 選ぶ」で英文を選び、「📁 選んだものをフォルダへ」で入れてください。' : '条件に合う英文はありません。'; box.appendChild(em); }
     if (rdSel && !ids.length) rdSel = null;
