@@ -189,7 +189,7 @@
     #rd-head.fold #rd-filter { display: none !important; }
     #rd-filter #rf-q { padding: 5px 10px !important; margin-bottom: 4px !important; }
     #rf-row { gap: 4px !important; }
-    #rf-row select { font-size: 13px !important; padding: 3px 2px !important; max-width: calc(50% - 4px) !important; }
+    #rf-row select { font-size: 13px !important; padding: 3px 2px !important; flex: 1 1 30%; min-width: 0; max-width: calc(34% - 4px) !important; }   /* 1 段に 3 つ（2 段で収まる） */
     #rd-selbar { white-space: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 6px 8px !important; }
     #rd-head .rd-h { margin: 4px 0 4px; }
   }
@@ -7165,7 +7165,7 @@
   }
   function fdOpts() {
     var sel = $('rf-fd'); if (!sel) return;
-    var f = rfGet(), a = fdAll(), h = [['', '📁 フォルダ：すべて']];
+    var f = rfGet(), a = fdAll(), h = [['', '📁 全フォルダ']];
     each(a, function (n) { h.push([n, '📁 ' + n + '（' + fdCount(n) + '）']); });
     if (a.length) h.push([FD_NONE, '📁 フォルダなし（' + fdCount('') + '）']);
     h.push(['__new', '＋ 新しいフォルダを作る…']);
