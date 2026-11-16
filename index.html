@@ -707,7 +707,7 @@
           <select id="rf-type" style="font-size:15px; padding:5px 6px;"><option value="">種類：すべて</option><option value="book">📚 本</option><option value="yt">🎬 YouTube</option><option value="lv">🎞 取り込んだ動画</option><option value="web">🌐 記事</option><option value="txt">✎ 貼り付けた英文</option></select>
           <select id="rf-fav" style="font-size:15px; padding:5px 6px;"><option value="0">★：すべて</option><option value="1">★ 以上</option><option value="2">★★ 以上</option><option value="3">★★★</option></select>
           <select id="rf-flag" style="font-size:15px; padding:5px 6px;"><option value="">印：すべて</option><option value="*">⚑ 印のあるもの</option><option value="r">⚑ 赤</option><option value="o">⚑ オレンジ</option><option value="y">⚑ 黄</option><option value="g">⚑ 緑</option><option value="b">⚑ 青</option><option value="p">⚑ 紫</option></select>
-          <select id="rf-st" style="font-size:15px; padding:5px 6px;"><option value="">状態：すべて</option><option value="reading">読みかけ（しおり・前回の続き）</option><option value="hard">❓ の印がある</option></select>
+          <select id="rf-st" style="font-size:15px; padding:5px 6px;"><option value="">状態：すべて</option><option value="reading">読みかけ（しおり・前回の続き）</option><option value="hard">❓ の印がある</option><option value="gone">📼 動画を消した記録</option><option value="vid">🎞 動画が残っているもの</option></select>
           <span id="rf-n" class="note" style="margin:0"></span>
           <button id="rf-clr" type="button" class="hidden" style="font-size:13px; padding:4px 10px;">✕ 絞り込みを解除</button>
         </div>
@@ -742,6 +742,7 @@
         <button id="rd-fdbtn" type="button" title="この英文（本なら本ごと）を入れるフォルダ">📁</button>
         <button id="rd-favbtn" type="button" class="rd-fav" title="好み（押すたびに ★1→★2→★3→なし）。本のときは本全体の ★">☆☆☆</button>
         <button id="rd-vdel" type="button" class="hidden" title="この端末に入れてある動画だけを消して、容量を空ける（ドライブの動画・字幕・訳はそのまま）">📱 この端末の動画を消す</button>
+        <button id="rd-vgone" type="button" class="hidden" title="動画のファイルだけを消して（ドライブ・この端末）容量を空ける。題名・元の URL・フォルダ・印・字幕・訳は記録として残す">📼 動画だけ消す（記録は残す）</button>
         <button id="rd-vrep" type="button" class="hidden" title="同じ動画の別のファイル（サイズを小さくしたものなど）に差し替える。字幕・訳・印・しおりはそのまま">🎞 動画を差し替える</button><input id="rd-vfile" type="file" accept="video/*,.webm,.mp4,.mkv,.mov" style="display:none">
         <button id="rd-subin" type="button" class="hidden" title="この動画に英語の字幕（.srt / .vtt / 時刻つきの文字起こし）を入れる・入れ直す">🔤 字幕を入れる</button><input id="rd-subfile" type="file" accept=".srt,.vtt,.txt,text/plain" style="display:none">
         <button id="rd-find" type="button" title="この英文（本ならこの章）の中で、単語や文字をさがす">🔍 検索</button>
@@ -4791,7 +4792,7 @@
     if (d.lv) {
       var here = lvHave[id] || lvMem[id];
       // 狭い画面でも切れないよう短く（有端末＝この端末に保存してある／無端末＝まだない）
-      out.push(lvUp[id] ? '🎞 有端末・ドライブへ送信中' : '🎞 ' + (here ? '有端末' : lvOld ? 'ドライブ再生' : '無端末') + (d.lv.drive ? '・有ドライブ' : '・無ドライブ'));
+      out.push(d.lv.gone && !here && !d.lv.drive ? '📼 動画は消した（記録）' : lvUp[id] ? '🎞 有端末・ドライブへ送信中' : '🎞 ' + (here ? '有端末' : lvOld ? 'ドライブ再生' : '無端末') + (d.lv.drive ? '・有ドライブ' : '・無ドライブ'));
     }
     if (t) out.push('☁ ' + t);
     if (/^gm:/.test(rdVoiceName)) {
@@ -5881,6 +5882,10 @@
     $('lv-dl').textContent = lvOld ? '⬇ 全部読み込んでから再生（この画面を開いている間だけ）' : '⬇ ドライブから取り込む（次からすぐ見られる）';
     $('lv-st').style.display = d.lv.drive && gasUrl ? '' : 'none';
     $('lv-get-m').textContent = d.lv.drive ? '' : 'ドライブにはまだ送られていません（動画を入れた端末で送っている途中か、送れなかったようです）。';
+    if (d.lv.gone && !d.lv.drive) {   // 動画だけ消して、記録（題名・元の URL・字幕・訳・印）を残したもの
+      $('lv-get-t').textContent = '📼 この動画は消してあります' + (d.lv.name ? '（' + d.lv.name + '）' : '') + '。題名・元の動画のページ・場面の画像・字幕・訳・印は残っています。';
+      $('lv-get-m').textContent = (d.src ? '元の動画のページから見られます。' : '') + 'もう一度この英文で見るときは、同じ動画を用意して「🎞 動画を差し替える」で入れ直してください。';
+    }
   }
   // 調べる：ドライブ API が何を返すか（状態・理由）と、動画の作り（moov が先頭か）。結果は cb(文)
   function diagDrive(fid, cb) {
@@ -7747,6 +7752,8 @@
     if (f.type && rfType(d) !== f.type) return false;
     if (Number(f.fav) && favOf(id) < Number(f.fav)) return false;
     if (f.flag) { if (f.flag === '*' ? !d.flag : d.flag !== f.flag) return false; }
+    if (f.st === 'gone' && !(d.lv && d.lv.gone && !d.lv.drive)) return false;
+    if (f.st === 'vid' && !(d.lv && !(d.lv.gone && !d.lv.drive))) return false;
     if (f.st === 'hard') {
       if (d.book) { var hh = false; each(bookChapters(d.book), function (c) { if (hardCount(rdDocs[c])) hh = true; }); if (!hh) return false; }
       else if (!hardCount(d)) return false;
@@ -7846,6 +7853,7 @@
         } else pvNote(slot, 'この端末に動画がありません。');
       };
       if (pvShots[id]) { each(pvShots[id], function (u) { pvImg(u, slot); }); }
+      else if (d.lv.shots && d.lv.shots.length && !lvHave[id]) { each(d.lv.shots, function (u) { pvImg(u, slot); }); }   // 動画を消したときに残した場面の画像
       else if (lvOld) rest();
       else lvGet1(id + '#pv', function (saved) {   // 前に作って保存した画像があれば、すぐ出す
         if (saved && saved.length) { pvShots[id] = saved; each(saved, function (u) { pvImg(u, slot); }); return; }
@@ -8508,7 +8516,7 @@
     if (typeof d.bm === 'number' && d.bm > 0 && d.bm < rdSents.length) setTimeout(function () { if (rdCur && rdCur.id === id) $('rd-status').textContent = '🔖 しおりがあります（' + pctOf(d.bm, rdSents.length) + '%）。下の「↩ しおりへ」で続きから読めます。'; }, 0);
     progSoon();
     if ((d.yt || d.lv) && d.cues) ytOpen(d); else ytClose();
-    if (d.lv && !d.lv.drive && !lvUp[id]) lvGet(id, function (blob) { if (blob && rdDocs[id] && !rdDocs[id].lv.drive && !lvUp[id]) lvUpload(id, blob); });   // 送れていなければ送り直す
+    if (d.lv && !d.lv.drive && !d.lv.gone && !lvUp[id]) lvGet(id, function (blob) { if (blob && rdDocs[id] && !rdDocs[id].lv.drive && !lvUp[id]) lvUpload(id, blob); });   // 送れていなければ送り直す
     loadPhrases(function () {
       if (!rdCur || rdCur.id !== id) return;
       each(rdSents, function (s) { s.idioms = findIdioms(s.toks); });
@@ -8591,10 +8599,43 @@
 
   // 読んでいる・見ている途中でも ★ をつけられるように（ボタンの中の ★。本のときは本全体の ★）
   // 🔤 動画に字幕を入れる・入れ直す（一覧に戻した動画や、字幕を差し替えたいとき）
-  function subInShow() { var vb = $('rd-vrep'); if (vb && rdCur) vb.className = rdCur.d.lv ? '' : 'hidden'; var vd = $('rd-vdel'); if (vd && rdCur) vd.className = rdCur.d.lv && rdCur.d.lv.drive && lvHave[rdCur.id] ? '' : 'hidden'; var b = $('rd-subin'); if (!b || !rdCur) return; b.className = rdCur.d.lv ? '' : 'hidden'; b.textContent = rdCur.d.cues && rdCur.d.cues.length ? '🔤 字幕を入れ直す' : '🔤 字幕を入れる'; }
+  function subInShow() { var vg = $('rd-vgone'); if (vg && rdCur) vg.className = rdCur.d.lv && (rdCur.d.lv.drive || lvHave[rdCur.id]) ? '' : 'hidden'; var vb = $('rd-vrep'); if (vb && rdCur) vb.className = rdCur.d.lv ? '' : 'hidden'; var vd = $('rd-vdel'); if (vd && rdCur) vd.className = rdCur.d.lv && rdCur.d.lv.drive && lvHave[rdCur.id] ? '' : 'hidden'; var b = $('rd-subin'); if (!b || !rdCur) return; b.className = rdCur.d.lv ? '' : 'hidden'; b.textContent = rdCur.d.cues && rdCur.d.cues.length ? '🔤 字幕を入れ直す' : '🔤 字幕を入れる'; }
   /* ---- 🎞 動画を差し替える（サイズを小さくした同じ動画など）。字幕・訳・❓・★・しおりはそのまま ----
      この端末の動画を入れ替え → ドライブに新しい動画を送る → 送り終えたら前の動画をドライブから消す（ゴミ箱へ） */
   function fmtMB(n) { return n >= 1073741824 ? (n / 1073741824).toFixed(2) + ' GB' : Math.round(n / 1048576) + ' MB'; }
+  /* 📼 動画だけ消す（記録は残す）：ドライブの動画（ゴミ箱へ）とこの端末の動画を消す。英文（題名・元の URL・フォルダ・印・★・字幕・訳）は一覧に残る。
+     あとで同じ動画を「🎞 動画を差し替える」で入れ直せば、また見られる */
+  on($('rd-vgone'), 'click', function () {
+    if (!rdCur || !rdCur.d.lv) return;
+    var id = rdCur.id, d = rdCur.d, old = d.lv;
+    if (lvUp[id]) { alert('いま動画をドライブに送っています。終わってからにしてください。'); return; }
+    if (!window.confirm('この動画のファイルだけを消して、容量を空けますか？\n（' + (old.name || '') + (old.size ? '・' + fmtMB(old.size) : '') + '）\n\n題名・元の動画のページ（URL）・フォルダ・印・★・字幕・訳は、一覧に記録として残ります。\nドライブの動画はゴミ箱へ移ります（ゴミ箱を空にすると容量が空きます）。')) return;
+    $('rd-status').textContent = '📼 場面の画像を残しています…';
+    // 場面の画像（サムネイル）を記録に残す：作ってあればそれ、なければこの端末の動画から作る
+    var go = function (shots) {
+    var v = $('lv-video'); if (v) { try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {} }
+    var fid = old.drive || '';
+    lvForget(id);
+    d.lv = { name: old.name || '', size: old.size || 0, type: old.type || '', gone: now() };
+    if (old.dur) d.lv.dur = old.dur;
+    if (shots && shots.length) d.lv.shots = shots.slice(0, 3);
+    rdSaveLocal();
+    if (KEY) { var b = {}; b['reader/' + id + '/lv'] = d.lv; api('PATCH', '', b, function () {}); }
+    if (fid) gasCall({ f: 'del', id: fid }, function (r) { if (!r || !r.ok) $('rd-status').textContent = 'ドライブの動画を消せませんでした（「☁ 容量」から消せます）。'; });
+    lvCur = ''; openRdDoc(id);
+    setTimeout(function () { $('rd-status').textContent = '📼 動画を消しました。この英文は記録として残っています' + (d.lv.shots ? '（場面の画像も「🖼」で見られます）' : '') + '。'; }, 800);
+    };
+    if (pvShots[id] && pvShots[id].length) { go(pvShots[id]); return; }
+    lvGet1(id + '#pv', function (saved) {
+      if (saved && saved.length) { go(saved); return; }
+      if (!lvHave[id] || lvOld) { go(null); return; }
+      // この端末の動画から作る（作り終えるか、20 秒で先へ）
+      var hold = document.createElement('div'); hold.style.cssText = 'position:absolute; left:-9999px; top:0; width:10px; height:10px; overflow:hidden;'; document.body.appendChild(hold);
+      pvLocal(id, hold);
+      var t0 = now(), wait = function () { if (pvShots[id] || now() - t0 > 20000) { if (hold.parentNode) hold.parentNode.removeChild(hold); go(pvShots[id] || null); return; } setTimeout(wait, 400); };
+      wait();
+    });
+  });
   on($('rd-vdel'), 'click', function () {
     if (!rdCur || !rdCur.d.lv) return;
     if (!rdCur.d.lv.drive) { alert('この動画はまだドライブに送れていないので、この端末から消すと見られなくなります。'); return; }
