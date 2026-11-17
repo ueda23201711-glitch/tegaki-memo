@@ -375,6 +375,9 @@
   .dq-f button { font-size: 13px; padding: 4px 10px; margin-top: 6px; background: #f3dede; color: #8a1f1f; }
   .dq-f button.dq-see { background: #e6effa; color: #1f4f8a; margin-right: 6px; }
   .dq-f .n.lk { color: #1f5fa8; text-decoration: underline; cursor: pointer; }
+  .dq-f.dq-last { background: #fff6dc; box-shadow: inset 4px 0 0 #e0a400; margin: 0 -8px; padding: 8px 8px 8px 12px; border-radius: 6px; }
+  .dq-f .tg { font-size: 13px; color: #33302c; margin-top: 3px; }
+  .dq-f .tg span { display: inline-block; margin-right: 10px; }
   .dq-done { background: #e8f5ee; color: #1d5a3a; border-radius: 8px; padding: 8px 10px; margin: 6px 0; font-size: 14px; }
   #gas-dlg { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(20,28,32,.45); z-index: 80; }
   #gas-dlg .dlg { position: absolute; left: 4%; right: 4%; top: 6%; max-width: 560px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 16px; box-sizing: border-box; max-height: 88%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
@@ -6229,11 +6232,12 @@
   function dqEsc(t) { return String(t || '').replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function dqDocsOf(fid) { var a = []; for (var k in rdDocs) { var d = rdDocs[k]; if (d && d.lv && d.lv.drive === fid) a.push(k); } return a; }
   var dqData = null, dqShared = {};   // dqShared[ドライブのID] = 📎 ファイル共有の一覧のキー
-  var dqFrom = false, dqY = 0, dqMsg = '', dqMsgS = -1;   // 容量の一覧から英文を開いたとき：戻る先と、一覧のどこまで見ていたか
+  var dqFrom = false, dqY = 0, dqMsg = '', dqMsgS = -1, dqLast = '';   // dqLast：容量の一覧から最後に開いた動画（ドライブの ID）   // 容量の一覧から英文を開いたとき：戻る先と、一覧のどこまで見ていたか
   function dqOpen() { $('dq-dlg').className = ''; dqLoad(); fbShow(); }
   // 容量の一覧から動画を開く（ふつうの英文リーダーで再生）。「← 容量の一覧に戻る」で一覧に戻る
   function dqSee(k) {
     if (!rdDocs[k]) return;
+    if (rdDocs[k].lv && rdDocs[k].lv.drive) dqLast = rdDocs[k].lv.drive;
     var dl = $('dq-dlg').querySelector('.dlg'); dqY = dl ? dl.scrollTop : 0;
     $('dq-dlg').className = 'hidden';
     if (rdCur) rdShowInput();
@@ -6259,7 +6263,7 @@
       dqShared = {};
       for (var s in shared || {}) { var f = shared[s]; if (f && f.id) { dqShared[f.id] = s; if (!seen[f.id]) { seen[f.id] = 1; ids.push(f.id); } } }
       gasPostJ({ act: 'quota', ids: ids }, function (r, e) {
-        if (r && r.ok && r.files && r.v === 2) { dqData = r; dqRender(); return; }
+        if (r && r.ok && r.files && r.v === 2) { dqData = r; dqRender(); var ls = $('dq-files').querySelector('.dq-last'), dl = $('dq-dlg').querySelector('.dlg'); if (ls && dl) dl.scrollTop = Math.max(0, ls.offsetTop - dl.offsetTop - 120); return; }   // さっき見た動画のところへ
         body.innerHTML = '<p class="note">' + (r && (r.ok || /notshared|act|Unexpected|not found/i.test(String(r.error)))
           ? 'Apps Script が古いコードのままです。「⚙ 翻訳の設定」のコードに貼り替えて、「新バージョン」でデプロイしてください。'
           : '調べられませんでした（' + dqEsc(String((r && r.error) || e).slice(0, 80)) + '）。') + '</p>';
@@ -6310,8 +6314,18 @@
       var ids = dqDocsOf(f.id), names = [];
       each(ids, function (k) { names.push('「' + docTitle(k) + '」'); });
       var dt = f.t ? new Date(f.t) : null;
-      h += '<div class="dq-f"><div class="n' + (ids.length ? ' lk" data-dqsee="' + dqEsc(ids[0]) + '" title="押すと、この動画を英文リーダーで再生します' : '') + '">' + dqEsc(String(f.n || '').replace(/^🎞\s*/, '')) + '</div>'
+      // フォルダ・印・★（英文の一覧と同じ）
+      var tg = '';
+      if (ids.length) {
+        var dd = rdDocs[ids[0]] || {}, fi = dd.flag ? flagInfo(dd.flag) : null, fv = dd.fav || 0;
+        tg += fi ? '<span style="color:' + fi[2] + '">\u2691\uFE0E ' + fi[1] + '</span>' : '<span style="color:#9a958e">\u2690\uFE0E 印なし</span>';
+        tg += '<span>📁 ' + dqEsc(dd.fd || 'フォルダなし') + '</span>';
+        if (fv) tg += '<span style="color:#e0a400">' + favStr(fv) + '</span>';
+        tg = '<div class="tg">' + tg + '</div>';
+      }
+      h += '<div class="dq-f' + (f.id === dqLast ? ' dq-last' : '') + '"><div class="n' + (ids.length ? ' lk" data-dqsee="' + dqEsc(ids[0]) + '" title="押すと、この動画を英文リーダーで再生します' : '') + '">' + dqEsc(String(f.n || '').replace(/^🎞\s*/, '')) + '</div>'
         + '<div class="m">' + dqSize(f.s) + (dt ? '・' + (dt.getMonth() + 1) + '/' + dt.getDate() + ' に追加' : '') + '・' + (names.length ? '英文 ' + dqEsc(names.join('、')) + ' の動画' : dqShared[f.id] ? '📎 ファイル共有で送ったファイル' : '') + '</div>'
+        + tg
         + '<i class="w" style="width:' + Math.max(2, Math.round((f.s || 0) * 100 / big)) + '%"></i>'
         + (ids.length ? '<button type="button" class="dq-see" data-dqsee="' + dqEsc(ids[0]) + '">▶ 見る</button>' : '')
         + '<button type="button" data-dqdel="' + dqEsc(f.id) + '">🗑 完全に消す</button></div>';
