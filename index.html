@@ -6393,21 +6393,28 @@
     var f = null; each(dqData.files || [], function (x) { if (x.id === fid) f = x; });
     if (!f) return;
     var ids = dqDocsOf(fid), names = []; each(ids, function (k) { names.push('「' + docTitle(k) + '」'); });
-    var msg = '「' + String(f.n || '').replace(/^🎞\s*/, '') + '」（' + dqSize(f.s) + '）をドライブから完全に消しますか？（元に戻せません）'
-      + (names.length ? '\n\n英文 ' + names.join('、') + ' は残ります。この動画は、取り込んである端末ではそのまま見られますが、ほかの端末ではドライブから見られなくなります。' : dqShared[fid] ? '\n\n📎 ファイル共有の一覧からも消えます。' : '');
+    var msg = '「' + String(f.n || '').replace(/^🎞\s*/, '') + '」（' + dqSize(f.s) + '）をドライブから完全に消しますか？（ゴミ箱に入れず、すぐ容量が空きます。元に戻せません）'
+      + (names.length ? '\n\n英文 ' + names.join('、') + ' は、記録として一覧に残ります（題名・元の URL・フォルダ・印・★・字幕・訳・場面の画像）。この端末に入れてある動画も消します。\n記録ごと消したいときは、英文の一覧の「🗑 削除」から消してください。' : dqShared[fid] ? '\n\n📎 ファイル共有の一覧からも消えます。' : '');
     if (!window.confirm(msg)) return;
-    btn.disabled = true; btn.textContent = '消しています…';
-    gasCall({ f: 'delp', id: fid }, function (r, e) {
-      if (!r || !r.ok) { btn.disabled = false; btn.textContent = '🗑 完全に消す'; alert('消せませんでした（' + String((r && r.error) || e).slice(0, 60) + '）。'); return; }
-      var b = {};
-      each(ids, function (k) { if (rdDocs[k] && rdDocs[k].lv) { delete rdDocs[k].lv.drive; delete rdDocs[k].lv.link; b['reader/' + k + '/lv/drive'] = null; } });
-      if (dqShared[fid]) b['files/' + dqShared[fid]] = null;
-      if (ids.length) rdSaveLocal();
-      if (KEY && (ids.length || dqShared[fid])) api('PATCH', '', b, function () {});
-      dqData.files = (dqData.files || []).filter(function (x) { return x.id !== fid; });
-      dqData.app = Math.max(0, (dqData.app || 0) - (f.s || 0)); dqData.used = Math.max(0, (dqData.used || 0) - (f.s || 0)); if (dqData.drive >= 0) dqData.drive = Math.max(0, dqData.drive - (f.s || 0));
-      dqRender();
-    });
+    btn.disabled = true; btn.textContent = names.length ? '場面の画像を残しています…' : '消しています…';
+    // 先に場面の画像を集めてから、ドライブの動画を消す（消せたら記録にする）
+    var shots = {}, k = 0;
+    var next = function () {
+      if (k < ids.length) { var id = ids[k++]; if (lvUp[id]) { next(); return; } lvShotsFor(id, function (sh) { shots[id] = sh; next(); }); return; }
+      btn.textContent = '消しています…';
+      gasCall({ f: 'delp', id: fid }, function (r, e) {
+        if (!r || !r.ok) { btn.disabled = false; btn.textContent = '🗑 完全に消す'; alert('消せませんでした（' + String((r && r.error) || e).slice(0, 60) + '）。'); return; }
+        each(ids, function (id) { lvGoneMark(id, shots[id]); });
+        if (dqShared[fid] && KEY) { var b = {}; b['files/' + dqShared[fid]] = null; api('PATCH', '', b, function () {}); }
+        dqData.files = (dqData.files || []).filter(function (x) { return x.id !== fid; });
+        dqData.app = Math.max(0, (dqData.app || 0) - (f.s || 0)); dqData.used = Math.max(0, (dqData.used || 0) - (f.s || 0)); if (dqData.drive >= 0) dqData.drive = Math.max(0, dqData.drive - (f.s || 0));
+        if (ids.length) { dqMsg = '🗑 ' + names.join('、') + ' の動画を完全に消しました（' + dqSize(f.s) + ' 空きました）。記録は一覧に残っています。'; dqMsgS = f.s || 0; }
+        var dl = $('dq-dlg').querySelector('.dlg'), y = dl ? dl.scrollTop : 0;
+        dqRender(); if (dl) dl.scrollTop = y;
+        renderRdHistory();
+      });
+    };
+    next();
   }
   on($('rd-quota'), 'click', dqOpen);
 
@@ -8632,22 +8639,43 @@
   function fmtMB(n) { return n >= 1073741824 ? (n / 1073741824).toFixed(2) + ' GB' : Math.round(n / 1048576) + ' MB'; }
   /* 📼 動画だけ消す（記録は残す）：ドライブの動画（ゴミ箱へ）とこの端末の動画を消す。英文（題名・元の URL・フォルダ・印・★・字幕・訳）は一覧に残る。
      あとで同じ動画を「🎞 動画を差し替える」で入れ直せば、また見られる */
+  // 動画を消すときに、場面の画像（サムネイル）を記録に残す：作ってあればそれ、なければこの端末の動画から作る（20 秒まで）
+  function lvShotsFor(id, cb) {
+    if (pvShots[id] && pvShots[id].length) { cb(pvShots[id]); return; }
+    lvGet1(id + '#pv', function (saved) {
+      if (saved && saved.length) { cb(saved); return; }
+      var make = function () {
+        if (!lvHave[id] || lvOld) { cb(null); return; }
+        var hold = document.createElement('div'); hold.style.cssText = 'position:absolute; left:-9999px; top:0; width:10px; height:10px; overflow:hidden;'; document.body.appendChild(hold);
+        pvLocal(id, hold);
+        var t0 = now(), wait = function () { if (pvShots[id] || now() - t0 > 20000) { if (hold.parentNode) hold.parentNode.removeChild(hold); cb(pvShots[id] || null); return; } setTimeout(wait, 400); };
+        wait();
+      };
+      if (lvHave[id] || lvOld) make(); else lvGet1(id, function (v) { if (v) lvHave[id] = 1; make(); });   // この端末にあるかを確かめてから
+    });
+  }
+  // 動画を消した記録にする（題名・元の URL・フォルダ・印・★・字幕・訳・場面の画像は残す）。この端末の動画も消す。ドライブの動画は呼ぶ側で消す
+  function lvGoneMark(id, shots) {
+    var d = rdDocs[id]; if (!d || !d.lv) return;
+    var old = d.lv;
+    if (lvCur === id || (rdCur && rdCur.id === id)) { var v = $('lv-video'); if (v) { try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {} } }
+    lvForget(id);
+    d.lv = { name: old.name || '', size: old.size || 0, type: old.type || '', gone: now() };
+    if (old.dur) d.lv.dur = old.dur;
+    if (shots && shots.length) d.lv.shots = shots.slice(0, 3);
+    else if (old.shots && old.shots.length) d.lv.shots = old.shots;
+    rdSaveLocal();
+    if (KEY) { var b = {}; b['reader/' + id + '/lv'] = d.lv; api('PATCH', '', b, function () {}); }
+  }
   on($('rd-vgone'), 'click', function () {
     if (!rdCur || !rdCur.d.lv) return;
     var id = rdCur.id, d = rdCur.d, old = d.lv;
     if (lvUp[id]) { alert('いま動画をドライブに送っています。終わってからにしてください。'); return; }
     if (!window.confirm('この動画のファイルだけを消して、容量を空けますか？\n（' + (old.name || '') + (old.size ? '・' + fmtMB(old.size) : '') + '）\n\n題名・元の動画のページ（URL）・フォルダ・印・★・字幕・訳は、一覧に記録として残ります。\nドライブの動画はゴミ箱へ移ります（ゴミ箱を空にすると容量が空きます）。')) return;
     $('rd-status').textContent = '📼 場面の画像を残しています…';
-    // 場面の画像（サムネイル）を記録に残す：作ってあればそれ、なければこの端末の動画から作る
-    var go = function (shots) {
-    var v = $('lv-video'); if (v) { try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {} }
+    lvShotsFor(id, function (shots) {
     var fid = old.drive || '';
-    lvForget(id);
-    d.lv = { name: old.name || '', size: old.size || 0, type: old.type || '', gone: now() };
-    if (old.dur) d.lv.dur = old.dur;
-    if (shots && shots.length) d.lv.shots = shots.slice(0, 3);
-    rdSaveLocal();
-    if (KEY) { var b = {}; b['reader/' + id + '/lv'] = d.lv; api('PATCH', '', b, function () {}); }
+    lvGoneMark(id, shots);
     if (dqFrom && dqData) {   // 容量の一覧から開いていたら、消し終えて一覧に戻る
       var ttl = docTitle(id);
       dqData.files = (dqData.files || []).filter(function (x) { if (x.id === fid) { var sz = x.s || 0; dqMsgS = sz; dqData.app = Math.max(0, (dqData.app || 0) - sz); dqData.trash = Math.max(0, dqData.trash || 0) + sz; dqData.appTrash = (dqData.appTrash || 0) + sz; dqData.appTrashN = (dqData.appTrashN || 0) + 1; return false; } return true; });
@@ -8658,16 +8686,6 @@
     if (fid) gasCall({ f: 'del', id: fid }, function (r) { if (!r || !r.ok) $('rd-status').textContent = 'ドライブの動画を消せませんでした（「☁ 容量」から消せます）。'; });
     lvCur = ''; openRdDoc(id);
     setTimeout(function () { $('rd-status').textContent = '📼 動画を消しました。この英文は記録として残っています' + (d.lv.shots ? '（場面の画像も「🖼」で見られます）' : '') + '。'; }, 800);
-    };
-    if (pvShots[id] && pvShots[id].length) { go(pvShots[id]); return; }
-    lvGet1(id + '#pv', function (saved) {
-      if (saved && saved.length) { go(saved); return; }
-      if (!lvHave[id] || lvOld) { go(null); return; }
-      // この端末の動画から作る（作り終えるか、20 秒で先へ）
-      var hold = document.createElement('div'); hold.style.cssText = 'position:absolute; left:-9999px; top:0; width:10px; height:10px; overflow:hidden;'; document.body.appendChild(hold);
-      pvLocal(id, hold);
-      var t0 = now(), wait = function () { if (pvShots[id] || now() - t0 > 20000) { if (hold.parentNode) hold.parentNode.removeChild(hold); go(pvShots[id] || null); return; } setTimeout(wait, 400); };
-      wait();
     });
   });
   on($('rd-vdel'), 'click', function () {
