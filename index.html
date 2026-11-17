@@ -373,6 +373,9 @@
   .dq-f .m { color: #52514e; font-size: 13px; margin-top: 2px; }
   .dq-f .w { display: block; height: 4px; border-radius: 2px; background: #2a78d6; margin-top: 5px; }
   .dq-f button { font-size: 13px; padding: 4px 10px; margin-top: 6px; background: #f3dede; color: #8a1f1f; }
+  .dq-f button.dq-see { background: #e6effa; color: #1f4f8a; margin-right: 6px; }
+  .dq-f .n.lk { color: #1f5fa8; text-decoration: underline; cursor: pointer; }
+  .dq-done { background: #e8f5ee; color: #1d5a3a; border-radius: 8px; padding: 8px 10px; margin: 6px 0; font-size: 14px; }
   #gas-dlg { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(20,28,32,.45); z-index: 80; }
   #gas-dlg .dlg { position: absolute; left: 4%; right: 4%; top: 6%; max-width: 560px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 16px; box-sizing: border-box; max-height: 88%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   #gas-dlg h3 { margin: 0 0 8px; font-size: 17px; }
@@ -6226,7 +6229,25 @@
   function dqEsc(t) { return String(t || '').replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function dqDocsOf(fid) { var a = []; for (var k in rdDocs) { var d = rdDocs[k]; if (d && d.lv && d.lv.drive === fid) a.push(k); } return a; }
   var dqData = null, dqShared = {};   // dqShared[ドライブのID] = 📎 ファイル共有の一覧のキー
+  var dqFrom = false, dqY = 0, dqMsg = '', dqMsgS = -1;   // 容量の一覧から英文を開いたとき：戻る先と、一覧のどこまで見ていたか
   function dqOpen() { $('dq-dlg').className = ''; dqLoad(); fbShow(); }
+  // 容量の一覧から動画を開く（ふつうの英文リーダーで再生）。「← 容量の一覧に戻る」で一覧に戻る
+  function dqSee(k) {
+    if (!rdDocs[k]) return;
+    var dl = $('dq-dlg').querySelector('.dlg'); dqY = dl ? dl.scrollTop : 0;
+    $('dq-dlg').className = 'hidden';
+    if (rdCur) rdShowInput();
+    openRdDoc(k); dqFrom = true;
+    $('btn-rd-back').textContent = '← 容量の一覧に戻る';
+  }
+  // 英文から容量の一覧に戻る（調べ直さず、前の結果のまま。見ていたところに戻る）
+  function dqBack(msg) {
+    dqFrom = false; $('btn-rd-back').textContent = '← 戻る';
+    if (rdCur) rdShowInput();
+    if (!dqData) { dqOpen(); return; }
+    dqMsg = msg || ''; if (!dqMsg) dqMsgS = -1; $('dq-dlg').className = ''; dqRender();
+    var dl = $('dq-dlg').querySelector('.dlg'); if (dl) { dl.scrollTop = dqY; setTimeout(function () { dl.scrollTop = dqY; }, 60); }
+  }
   function dqLoad() {
     var body = $('dq-body'); $('dq-files').innerHTML = '';
     if (!gasUrl) { body.innerHTML = '<p class="note">容量を調べるには「⚙ 翻訳の設定」（Apps Script）が必要です。</p>'; return; }
@@ -6280,17 +6301,22 @@
     if (r.appTrashN) h += '<div class="dq-warn" style="background:#eef4fb;color:#1f3a5a">アプリ（このアプリ・ほかのアプリ）で消して、ゴミ箱に残っているファイルが ' + dqSize(r.appTrash) + ' あります。 <button id="dq-purge" type="button" style="font-size:13px;padding:4px 10px;margin-top:4px">完全に消して空ける</button></div>';
     var fs = (r.files || []).slice().sort(function (a, b) { return (b.s || 0) - (a.s || 0); }), big = fs.length ? fs[0].s || 1 : 1;
     body.innerHTML = h; h = '';
+    var dm = dqMsg ? '<div class="dq-done">' + dqEsc(dqMsg) + '</div>' : '', dmS = dqMsgS; dqMsg = ''; dqMsgS = -1;
+    if (dm && dmS < 0) { h += dm; dm = ''; }
     h += '<div class="dq-sec" style="margin-top:14px">このアプリのファイル（大きい順・' + fs.length + ' 件）</div>';
     if (!fs.length) h += '<p class="note">ありません。</p>';
     each(fs, function (f) {
+      if (dm && (f.s || 0) <= dmS) { h += dm; dm = ''; }   // 消した動画があったところに、消したことを出す
       var ids = dqDocsOf(f.id), names = [];
       each(ids, function (k) { names.push('「' + docTitle(k) + '」'); });
       var dt = f.t ? new Date(f.t) : null;
-      h += '<div class="dq-f"><div class="n">' + dqEsc(String(f.n || '').replace(/^🎞\s*/, '')) + '</div>'
+      h += '<div class="dq-f"><div class="n' + (ids.length ? ' lk" data-dqsee="' + dqEsc(ids[0]) + '" title="押すと、この動画を英文リーダーで再生します' : '') + '">' + dqEsc(String(f.n || '').replace(/^🎞\s*/, '')) + '</div>'
         + '<div class="m">' + dqSize(f.s) + (dt ? '・' + (dt.getMonth() + 1) + '/' + dt.getDate() + ' に追加' : '') + '・' + (names.length ? '英文 ' + dqEsc(names.join('、')) + ' の動画' : dqShared[f.id] ? '📎 ファイル共有で送ったファイル' : '') + '</div>'
         + '<i class="w" style="width:' + Math.max(2, Math.round((f.s || 0) * 100 / big)) + '%"></i>'
+        + (ids.length ? '<button type="button" class="dq-see" data-dqsee="' + dqEsc(ids[0]) + '">▶ 見る</button>' : '')
         + '<button type="button" data-dqdel="' + dqEsc(f.id) + '">🗑 完全に消す</button></div>';
     });
+    if (dm) h += dm;
     // 📦 一覧ぜんぶの控え（1 日 1 回・20 日分）から、いまの一覧にない英文を戻す
     h += '<div class="dq-sec" style="margin-top:14px">📦 控えから戻す</div>'
       + '<p class="note">英文（題名・字幕・訳・元の URL・★ など）は、変わったものだけ、1 つずつドライブに控えを取っています（縮めて保存）。いまの一覧にない英文を、控えから選んで戻せます。</p>'
@@ -6302,6 +6328,7 @@
       + '<div class="row"><button type="button" id="dq-rgo">↩ 一覧に戻す</button> <span class="note" id="dq-rmsg"></span></div>';
     $('dq-files').innerHTML = h;
     each($('dq-files').querySelectorAll('[data-dqdel]'), function (b) { on(b, 'click', function () { dqDel(b.getAttribute('data-dqdel'), b); }); });
+    each($('dq-files').querySelectorAll('[data-dqsee]'), function (b) { on(b, 'click', function () { dqSee(b.getAttribute('data-dqsee')); }); });
     if ($('dq-snap')) on($('dq-snap'), 'click', function () {
       var box = $('dq-snaps'); box.innerHTML = '<p class="note">読んでいます…</p>';
       gasPostJ({ act: 'doclist', app: bkApp() }, function (r4) {
@@ -8244,7 +8271,7 @@
   on(window, 'pagehide', lastSave);
   function rdShowInput() {
     if (rdCur) lastSave();
-    stopSpeak(); ytClose(); rdCur = null;
+    stopSpeak(); ytClose(); rdCur = null; dqFrom = false; $('btn-rd-back').textContent = '← 戻る';
     $('rd-input').className = ''; $('rd-view').className = 'hidden';
     $('rd-paste').className = (navigator.clipboard && navigator.clipboard.readText) ? '' : 'hidden';
     renderRdHistory(); syncMsg(''); rdSyncNew(true); resumeShow();
@@ -8621,6 +8648,13 @@
     if (shots && shots.length) d.lv.shots = shots.slice(0, 3);
     rdSaveLocal();
     if (KEY) { var b = {}; b['reader/' + id + '/lv'] = d.lv; api('PATCH', '', b, function () {}); }
+    if (dqFrom && dqData) {   // 容量の一覧から開いていたら、消し終えて一覧に戻る
+      var ttl = docTitle(id);
+      dqData.files = (dqData.files || []).filter(function (x) { if (x.id === fid) { var sz = x.s || 0; dqMsgS = sz; dqData.app = Math.max(0, (dqData.app || 0) - sz); dqData.trash = Math.max(0, dqData.trash || 0) + sz; dqData.appTrash = (dqData.appTrash || 0) + sz; dqData.appTrashN = (dqData.appTrashN || 0) + 1; return false; } return true; });
+      if (fid) gasCall({ f: 'del', id: fid }, function (r) { if (!r || !r.ok) alert('ドライブの動画を消せませんでした。「↻ もう一度調べる」で確かめてください。'); });
+      lvCur = ''; dqBack('📼 「' + ttl + '」の動画を消しました（ゴミ箱へ）。記録は一覧に残っています。');
+      return;
+    }
     if (fid) gasCall({ f: 'del', id: fid }, function (r) { if (!r || !r.ok) $('rd-status').textContent = 'ドライブの動画を消せませんでした（「☁ 容量」から消せます）。'; });
     lvCur = ''; openRdDoc(id);
     setTimeout(function () { $('rd-status').textContent = '📼 動画を消しました。この英文は記録として残っています' + (d.lv.shots ? '（場面の画像も「🖼」で見られます）' : '') + '。'; }, 800);
@@ -9058,6 +9092,7 @@
   /* ---- 操作 ---- */
   on($('btn-reader'), 'click', function () { openReader(''); });
   on($('btn-rd-back'), 'click', function () {
+    if (dqFrom) { dqBack(); return; }
     if (rdCur) { rdShowInput(); return; }
     stopSpeak(); show('scr-list'); renderList();
   });
