@@ -1781,11 +1781,13 @@
         else if (selectedId) selectItem(null);
         return;
       }
+      if (drawing && e.isPrimary && drawing.pty === e.pointerType && drawing.id !== e.pointerId) endStroke();   // 離したことが届かなかった線は、そこで終える
       if (drawing) return;
       e.preventDefault();
       try { cvLive.setPointerCapture(e.pointerId); } catch (er) {}
       if (selectedId) selectItem(null);
       startStroke(e.clientX, e.clientY, e.pointerId, e.pointerType === 'pen' ? e.pressure : undefined);
+      if (drawing) drawing.pty = e.pointerType;
     });
     on(cvLive, 'pointermove', function (e) {
       if (!drawing || e.pointerId !== drawing.id) return;
@@ -2110,6 +2112,9 @@
   if (window.PointerEvent) {
     on($('stage'), 'pointerdown', function (e) {
       if (e.pointerType !== 'touch' || inBar(e.target)) return;
+      // 最初の指（isPrimary）なのに、前の指が残っていたら：離したことが届かなかった指なので忘れる
+      // （残ったままだと 1 本指でも「2 本指の拡大」と思って、文字や画像を選んでも動かせなくなる）
+      if (e.isPrimary) { touchPts = {}; if (gest) gestureEnd(); }
       touchPts[e.pointerId] = [e.clientX, e.clientY];
       var pts = ptsList();
       if (pts.length >= 2) { e.stopPropagation(); e.preventDefault(); gestureStart(pts, false); }
@@ -2149,6 +2154,11 @@
     }, true);
     on(document, 'touchcancel', function () { gestureEnd(); lockAfterGesture = false; }, true);
   }
+  // アプリが裏に回ったり、ほかの画面（キーボード・確認の画面など）に指を取られたとき：触っている途中の状態を片付ける
+  function touchReset() { touchPts = {}; if (gest) gestureEnd(); if (dragging) dragEnd(); }
+  on(window, 'blur', touchReset);
+  on(document, 'visibilitychange', function () { if (document.hidden) touchReset(); });
+  on(window, 'pagehide', touchReset);
   // パソコン：Ctrl＋ホイール（トラックパッドのピンチ）で拡大、ホイールで移動
   on($('stage'), 'wheel', function (e) {
     if (!cur) return;
@@ -2868,6 +2878,7 @@
   function selShapeMove(x, y, ptr) { if (drawing && drawing.sel && drawing.id === ptr) { lsoMove(x, y); return true; } return false; }
   function selShapeUp(ptr) { if (drawing && drawing.sel && (ptr === undefined || drawing.id === ptr)) { lsoUp(); lsoRepaint(); return true; } return false; }
   function itemsDown(x, y, target, ptr, e) {
+    if (e && e.isPrimary && drawing && drawing.sel && drawing.id !== ptr) selShapeUp();   // 離したことが届かなかった選択の動かし
     var it = itemFromTarget(target);
     if (!it) { if (selectedId) selectItem(null); selShapeDown(x, y, ptr, e); return; }
     if (lso && tool === 'select') lsoClear();
