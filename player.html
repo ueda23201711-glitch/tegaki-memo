@@ -77,6 +77,7 @@
   #cap { position:absolute; text-align:center; pointer-events:none; display:flex; flex-direction:column; align-items:center; }
   #cap.sep { justify-content:flex-start; }
   #cap.over { justify-content:flex-end; transition:bottom .2s; }
+  #cap.over.top { justify-content:flex-start; transition:top .2s; }   /* 字幕を動画の上に（設定で） */
   #capin { max-width:100%; }
   #cap .en, #cap .ja { display:block; margin:0 auto; line-height:1.32; word-wrap:break-word; overflow-wrap:break-word; }
   #cap .en { color:#fff; font-weight:600; }
@@ -187,7 +188,7 @@
         <button id="b-bg" class="ib" type="button" title="字幕を大きく">A＋</button>
         <button id="b-sw" class="ib hidden" type="button" title="動画の読み込み元（この端末／ドライブ）を切り替える">📱 端末</button>
         <button id="b-dl" class="ib hidden" type="button" title="見ながら、この端末に取り込む（終わったら、同じ場面からこの端末の動画に切り替わる）">⬇ 取り込む</button>
-        <button id="b-cbg" class="ib" type="button" title="字幕の後ろ：透ける（ふつう）／黒くぬる（動画の文字と重なって読みにくいとき）">◐ 透ける</button><button id="b-pos" class="ib" type="button" title="字幕の位置（自動＝縦画面では動画の下に分ける）">⇕ 自動</button>
+        <button id="b-cbg" class="ib" type="button" title="字幕の後ろ：透ける（ふつう）／黒くぬる（動画の文字と重なって読みにくいとき）">◐ 透ける</button><button id="b-pos" class="ib" type="button" title="字幕の位置（自動＝縦画面では動画の下に分ける）">⇕ 自動</button><button id="b-ctop" class="ib" type="button" title="字幕を出す場所：下（ふつう）／上（動画の下のほうの文字と重なって読みにくいとき）。英文リーダーと同じ設定">⇩ 下</button>
       </div>
     </div>
   </div>
@@ -1156,7 +1157,8 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     var ar = P.ar();
     var aw = W - safe.l - safe.r, ah = H - safe.t - safe.b, cap = $('cap'), x, y, w, h;
     var full = aw / ar, free = ah - full;
-    var sep = pref.pos !== 'over' && free >= Math.max(ah * 0.24, 130);
+    var capTop = lsGet(C.cache + '_captop') === '1';   // 字幕を上に出す（設定）：動画に重ねて上に
+    var sep = !capTop && pref.pos !== 'over' && free >= Math.max(ah * 0.24, 130);
     if (sep) {
       // 動画は上に寄せる（字幕がたっぷり入るよう、空きが多すぎるときは少し下げてまん中寄りに）
       w = aw; h = full; x = safe.l;
@@ -1172,7 +1174,8 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
       if (aw / ah > ar) { h = ah; w = ah * ar; } else { w = aw; h = aw / ar; }
       x = safe.l + (aw - w) / 2; y = safe.t + (ah - h) / 2;
       capMode = 'over';
-      cap.className = 'over' + (lsGet(C.cache + '_capbg') === '1' ? ' solid' : '');
+      cap.className = 'over' + (capTop ? ' top' : '') + (lsGet(C.cache + '_capbg') === '1' ? ' solid' : '');
+      capVY = y;
       cap.style.left = px(safe.l + 12); cap.style.right = px(safe.r + 12); cap.style.top = ''; cap.style.height = '';
       capMax = ah * 0.42;
       capBase = Math.min(Math.max(Math.min(W, H) * 0.06, 17), 50);
@@ -1183,8 +1186,11 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     var um = $('um'); um.style.left = px(x + w / 2); um.style.top = px(y + h / 2);   // 再生ボタンは動画のまん中に（字幕にかぶせない）
     fit();
   }
+  var capVY = 0;
   function posOverCap() {
     if (capMode !== 'over') return;
+    if (lsGet(C.cache + '_captop') === '1') { $('cap').style.bottom = ''; $('cap').style.top = px(Math.max(capVY + 8, safe.t + (uiOn ? 62 : 12))); return; }
+    $('cap').style.top = '';
     var lift = uiOn ? 118 : 14;
     $('cap').style.bottom = px(safe.b + lift);
   }
@@ -1217,6 +1223,7 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
     $('b-mode').textContent = MODE_T[pref.mode];
     $('b-spd').textContent = (P.rate() || pref.rate).toFixed(2).replace(/0$/, '') + '×';
     $('b-pos').textContent = pref.pos === 'over' ? '⇕ 重ねる' : '⇕ 自動';
+    $('b-ctop').textContent = lsGet(C.cache + '_captop') === '1' ? '⇧ 上' : '⇩ 下';
     var sw = $('b-sw'), canSw = !OLD && cur && cur.lv && P.kind === 'v' && srcMode && (srcMode === 'drive' || (cur.lv.drive && (driveKey || gasUrl)));
     sw.className = canSw ? 'ib' : 'ib hidden';
     if (canSw) sw.textContent = srcMode === 'local' ? '📱 端末' : '☁ ドライブ';
@@ -1272,6 +1279,7 @@ var EP_CFG = { dkey: 'memo_dkey', key: 'memo_key', gas: 'memo_gas', cache: 'memo
   function capBgUi() { var on1 = lsGet(CAPBG_KEY) === '1'; var c = $('cap'); if (c && c.classList) { if (on1) c.classList.add('solid'); else c.classList.remove('solid'); } $('b-cbg').textContent = on1 ? '■ 黒' : '◐ 透ける'; }
   on($('b-cbg'), 'click', function (e) { stop(e); lsSet(CAPBG_KEY, lsGet(CAPBG_KEY) === '1' ? '0' : '1'); capBgUi(); hideSoon(); });
   capBgUi();
+  on($('b-ctop'), 'click', function (e) { stop(e); lsSet(C.cache + '_captop', lsGet(C.cache + '_captop') === '1' ? '0' : '1'); updBtns(); layout(); hideSoon(); });
   on($('b-pos'), 'click', function (e) { stop(e); pref.pos = pref.pos === 'over' ? 'auto' : 'over'; savePref(); updBtns(); layout(); hideSoon(); });
   each(['b-back', 'b-fs', 'seek'], function (x) { on($(x), 'click', stop); });
   var seeking = false;
