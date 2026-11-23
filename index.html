@@ -754,6 +754,7 @@
         <button id="rd-subin" type="button" class="hidden" title="この動画に英語の字幕（.srt / .vtt / 時刻つきの文字起こし）を入れる・入れ直す">🔤 字幕を入れる</button><input id="rd-subfile" type="file" accept=".srt,.vtt,.txt,.mkv,text/plain" style="display:none">
         <button id="rd-find" type="button" title="この英文（本ならこの章）の中で、単語や文字をさがす">🔍 検索</button>
         <button id="rd-delsel" type="button" title="いらない文（広告・メニューなど）を選んで、まとめて消す">🗑 文を消す</button>
+        <button id="rd-caps" type="button" class="hidden" title="全部大文字の英文（HELLO THERE.）を、ふつうの英文（Hello there.）に直す。訳・❓・しおりはそのまま">Aa 大文字を直す</button>
         <button id="rd-repl" type="button" title="英文の中の文字を、まとめて置き換える（聞き取りのまちがいを直すときなど）">🔁 置き換え</button>
         <button id="lv-save" class="hidden" type="button" title="ドライブの動画をこの端末に取り込んで、次からすぐ見られるようにする">⬇ この端末に取り込む</button>
         <button id="rd-cont" type="button" title="🔊 で読んだあと、次の文も続けて読む">🔁 続けて：オフ</button>
@@ -5352,9 +5353,58 @@
     return out;
   }
   // 英語の字幕を文にまとめる（YouTube と同じ）。SRT / VTT のほか、YouTube の文字起こし（0:07 ↵ 文）も
+  // ── 全部大文字の字幕（HELLO THERE.）を、ふつうの英文（Hello there.）に直す ──
+  // 文の始め・I・Mr. など・曜日・月・よく使う略語（TV・FBI など）だけを大文字にする。人や場所の名前は分からないので小文字になる（🔁 置き換えで直せる）
+  function capsLike(list) {
+    var up = 0, lo = 0;
+    each(list, function (t) { t = String(t || ''); up += (t.match(/[A-Z]/g) || []).length; lo += (t.match(/[a-z]/g) || []).length; });
+    return up >= 40 && lo <= up * 0.08;
+  }
+  var CAPS_UP = { tv: 'TV', ok: 'OK', fbi: 'FBI', cia: 'CIA', usa: 'USA', uk: 'UK', nyc: 'NYC', dna: 'DNA', ceo: 'CEO', gps: 'GPS', atm: 'ATM', er: 'ER', icu: 'ICU', cpr: 'CPR', ufo: 'UFO', dvd: 'DVD', pc: 'PC', ai: 'AI', nba: 'NBA', nfl: 'NFL', nypd: 'NYPD', lapd: 'LAPD', bbc: 'BBC', cnn: 'CNN', nasa: 'NASA', ii: 'II', iii: 'III', iv: 'IV',
+    monday: 'Monday', tuesday: 'Tuesday', wednesday: 'Wednesday', thursday: 'Thursday', friday: 'Friday', saturday: 'Saturday', sunday: 'Sunday',
+    january: 'January', february: 'February', april: 'April', june: 'June', july: 'July', september: 'September', october: 'October', november: 'November', december: 'December',
+    christmas: 'Christmas', english: 'English', american: 'American', america: 'America', god: 'God', mr: 'Mr', mrs: 'Mrs', ms: 'Ms', dr: 'Dr' };
+  function capsFix(list) {
+    var start = true, out = [];
+    each(list, function (t0) {
+      var t = String(t0 || '').toLowerCase();
+      // 単語ごと：I（I'm・I'll など）・決まった大文字の語
+      t = t.replace(/[a-z]+(?:'[a-z]+)?/g, function (w, at, all) {
+        if (/[<\/]/.test(all.charAt(at - 1))) return w;   // <i> などの飾り
+        if (w === 'i' || /^i'(m|ll|ve|d)$/.test(w)) return 'I' + w.slice(1);
+        var k = w.replace(/'.*$/, ''); if (CAPS_UP[k]) return CAPS_UP[k] + w.slice(k.length);
+        return w;
+      });
+      // 文の始め（字幕の始めで前の字幕が文の終わり、. ? ! のあと、会話の「- 」のあと）
+      var st = start, r = '';
+      for (var i = 0; i < t.length; i++) {
+        var ch = t.charAt(i);
+        if (ch === '<') { var j = t.indexOf('>', i); if (j > i) { r += t.slice(i, j + 1); i = j; continue; } }   // <i> などの飾りはそのまま
+        if (/[a-z]/.test(ch)) { r += st ? ch.toUpperCase() : ch; st = false; continue; }
+        if (/[A-Z0-9]/.test(ch)) st = false;
+        else if (/[.?!]/.test(ch)) st = !(ch === '.' && (t.charAt(i + 1) === '.' || t.charAt(i - 1) === '.'));   // 「...」の途中は文の終わりにしない（Mr. のあとは名前なので大文字のまま）
+        else if (ch === '♪') st = true;
+        else if (ch === '-' && /^\s*$/.test(t.slice(0, i))) st = true;
+        r += ch;
+      }
+      out.push(r);
+      var e = r.replace(/["'”’)\]♪\s]+$/, '');
+      start = !e || /♪/.test(r) || (/[.?!]$/.test(e) && !/\.\.$/.test(e) && !/(^|\s)(Mr|Mrs|Ms|Dr|St)\.$/.test(e));
+    });
+    return out;
+  }
+  var lvCapsFixed = false;   // 取り込んだ字幕が全部大文字だったので直した
   function lvEnCues(raw) {
-    if (String(raw || '').indexOf('-->') < 0) return parseCues(raw);
-    var lines = []; each(parseSrt(raw), function (c) { lines.push(fmtSec(c.a) + '.' + Math.round((c.a % 1) * 10) + '\n' + c.t); });
+    lvCapsFixed = false;
+    if (String(raw || '').indexOf('-->') < 0) {
+      var cs = parseCues(raw), tx = [];
+      each(cs, function (c) { tx.push(c[1]); });
+      if (capsLike(tx)) { var fx = capsFix(tx); each(cs, function (c, i) { c[1] = fx[i]; }); lvCapsFixed = true; }
+      return cs;
+    }
+    var srt = parseSrt(raw), st = []; each(srt, function (c) { st.push(c.t); });
+    if (capsLike(st)) { var f2 = capsFix(st); each(srt, function (c, i) { c.t = f2[i]; }); lvCapsFixed = true; }
+    var lines = []; each(srt, function (c) { lines.push(fmtSec(c.a) + '.' + Math.round((c.a % 1) * 10) + '\n' + c.t); });
     return parseCues(lines.join('\n'));
   }
   // 日本語：SRT / VTT か、時刻つきの文字起こし（0:07 ↵ 文）→ [{a, b, t}]
@@ -5531,10 +5581,11 @@
       if (!ef) en = et;
       if (isMkv(ef) && !/\S/.test(en)) { $('lv-msg').textContent = enInfo + (ef === vf ? ' 英語の字幕（.srt）を選ぶか、文字起こしを貼り付けてください。' : ''); return; }
       if (enInfo) subNote = '🔤 ' + enInfo + 'を使いました。';
+      var capsNote = function () { if (lvCapsFixed) subNote += ' 全部大文字の字幕だったので、ふつうの英文に直しました（人や場所の名前は小文字のままです。「🔁 置き換え」で直せます）。'; };
       if (!jf && isMkv(ef)) jf = ef;   // 同じ MKV に日本語の字幕があれば、訳に使う
       readSub(jf, 'ja', function (ja, jaInfo) {
         if (ja && jaInfo) subNote += ' 訳は' + jaInfo + 'を使いました。';
-        var cues = lvEnCues(en);
+        var cues = lvEnCues(en); capsNote();
         if (!cues.length) { $('lv-msg').textContent = '英語の字幕を読めませんでした（.srt / .vtt か、時刻つきの文字起こしを入れてください）。'; return; }
         if (cues.length > 3000) cues = cues.slice(0, 3000);
         var title = $('lv-title').value.replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '') || vf.name.replace(/\.[A-Za-z0-9]+$/, '').replace(/[_.]+/g, ' ');
@@ -8952,7 +9003,8 @@
       d.cues = cues; d.text = cueTexts(cues).join('\n'); delete d.tr; delete d.trPart; d.ns = cues.length;
       rdSaveLocal(); if (KEY) { var b = {}; b['reader/' + id] = d; api('PATCH', '', b, function () {}); }
       openRdDoc(id);
-      setTimeout(function () { $('rd-status').textContent = '🔤 ' + (info ? info + 'を使って、' : '') + '字幕を入れました（' + cues.length + ' 文）。訳は「↻ 訳」で作れます。'; }, 600);
+      var cf = lvCapsFixed;
+      setTimeout(function () { $('rd-status').textContent = '🔤 ' + (info ? info + 'を使って、' : '') + '字幕を入れました（' + cues.length + ' 文）。' + (cf ? '全部大文字だったので、ふつうの英文に直しました。' : '') + '訳は「↻ 訳」で作れます。'; }, 600);
     }, function (pc) { $('rd-status').textContent = '🔍 動画の中の字幕を探しています… ' + pc + '%'; });
   });
   function favBtnShow() {
@@ -8989,7 +9041,7 @@
   });
   function renderRd() {
     if (!rdCur) return;
-    favBtnShow(); fdBtnShow(); flagBtnShow(); subInShow();
+    favBtnShow(); fdBtnShow(); flagBtnShow(); subInShow(); capsBtnShow();
     if (fnd.id && rdCur.id !== fnd.id) { fnd.hits = []; fnd.map = {}; fnd.at = -1; fnd.id = rdCur.id; if (fnd.q) setTimeout(function () { findRun(false); }, 0); }
     setTimeout(bmMarkUpdate, 0);   // しおりの 🔖（描き終わってから）
     var d = rdCur.d, box = $('rd-text'); box.innerHTML = '';
@@ -9522,6 +9574,28 @@
     for (var i = 0; i < bl.length; i++) { var si = Number(bl[i].getAttribute('data-si')), c = bl[i].className.replace(/ delsel\b/g, ''); bl[i].className = c + (delSel && delSel[si] ? ' delsel' : ''); }
     $('rd-text').className = on1 ? 'delmode' : '';
   }
+  // 全部大文字の英文を、ふつうの英文に直す（文の数は変わらないので、訳・❓・しおりはそのまま）
+  function capsBtnShow() { var b = $('rd-caps'); if (b) b.className = rdCur && capsLike(docSents(rdCur.d)) ? '' : 'hidden'; }
+  on($('rd-caps'), 'click', function () {
+    if (!rdCur) return;
+    var id = rdCur.id, d = rdCur.d, n0 = docSents(d).length;
+    if (!window.confirm('全部大文字の英文を、ふつうの英文（文の始めだけ大文字）に直しますか？\n人や場所の名前も小文字になります（あとで「🔁 置き換え」で直せます）。「↶ 戻す」で元に戻せます。')) return;
+    undoPush([id], '大文字を直す');
+    var nd = JSON.parse(JSON.stringify(d));
+    if (nd.cues) { var tx = []; each(nd.cues, function (c) { tx.push(c[1]); }); var fx = capsFix(tx); each(nd.cues, function (c, i) { c[1] = fx[i]; }); nd.text = cueTexts(nd.cues).join('\n'); }
+    else nd.text = capsFix(String(nd.text || '').split('\n')).join('\n');
+    if (docSents(nd).length !== n0) {   // 文の区切りが変わった（まれ）：訳は文で合わせ直す
+      rdTextChanged(id, function (dd) { if (nd.cues) dd.cues = nd.cues; dd.text = nd.text; }, true);
+    } else {
+      if (nd.cues) d.cues = nd.cues; d.text = nd.text;
+      rdSaveLocal();
+      if (KEY) { var b = {}; if (d.cues) b['reader/' + id + '/cues'] = d.cues; b['reader/' + id + '/text'] = d.text; api('PATCH', '', b, function () {}); }
+      var top = -1; try { top = topSent(); } catch (e) {}
+      openRdDoc(id);
+      if (top >= 0) setTimeout(function () { if (rdCur && rdCur.id === id) rdScrollTo(Math.min(top, rdSents.length - 1)); }, 120);
+    }
+    setTimeout(function () { $('rd-status').textContent = 'Aa ふつうの英文に直しました。名前などは「🔁 置き換え」で直せます。'; }, 300);
+  });
   on($('rd-delsel'), 'click', function () { if (!rdCur) return; delSel = delSel ? null : {}; delLast = -1; delUi(); if (delSel) $('rd-status').textContent = '🗑 消す文をタップして選んでください。もう一度タップで外します。'; });
   on($('rd-delno'), 'click', function () { delSel = null; delUi(); $('rd-status').textContent = ''; });
   on($('rd-delall'), 'click', function () {
