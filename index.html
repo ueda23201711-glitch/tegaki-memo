@@ -316,6 +316,7 @@
   @media (max-width: 480px) { #lv-src button, #lv-src select { padding: 3px 6px !important; margin-right: 3px !important; } }
   #lv-src button, #lv-src select { font-size: 13px; padding: 3px 8px; margin: 2px 6px 2px 0; }
   #lv-video { width: 100%; height: 100%; background: #000; display: block; }
+  #rd-top { position: fixed; right: 12px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); z-index: 66; width: 46px; height: 46px; border-radius: 50%; padding: 0; font-size: 20px; line-height: 46px; background: rgba(36,54,63,.88); color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
   #rd-prog { position: fixed; left: 0; right: 0; bottom: 0; z-index: 65; background: rgba(36,54,63,.94); color: #fff; padding: 0 10px 6px; padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px)); font-size: 13px; }
   #rd-prog button { padding: 4px 10px; font-size: 13px; margin: 6px 6px 0 0; background: #e6eef2; color: #1f2a30; }
   #rd-prog #pg-go { background: #f4c46a; }
@@ -1110,6 +1111,7 @@
 </div>
 
 <script src="vendor/qrcode.js"></script>
+        <button id="rd-top" type="button" class="hidden" title="英文のいちばん上（最初の文）へ">⤒</button>
         <div id="rd-prog" class="hidden"><div id="pg-bar"><div id="pg-fill"></div><div id="pg-mark"></div></div>
           <span id="pg-text"></span>
           <button id="pg-prev" type="button" class="hidden">◀ 前の章</button>
@@ -4281,6 +4283,21 @@
     if (k >= 0) centerSent($('rd-text').childNodes[k]);
   }
   // 読んでいる文（英文と訳）を、上のボタンと下のバーの間の真ん中に
+  var rdUserT = 0;   // 自分でスクロールした（さわった）とき
+  each(['touchstart', 'wheel', 'mousedown', 'keydown'], function (ev) { on($('rd-body'), ev, function () { rdUserT = now(); }); });
+  // ⤒ 英文のいちばん上へ：下のほうまで読み進めたときだけ、右下に出す
+  function topBtnUi() {
+    var b = $('rd-top'), bd = $('rd-body'); if (!b || !bd) return;
+    var show = !!rdCur && !flOpen && bd.scrollTop > Math.max(600, bd.clientHeight * 1.2);
+    b.className = show ? '' : 'hidden';
+    if (show) { var pg = $('rd-prog'), h = pg && pg.className !== 'hidden' ? pg.offsetHeight : 0; b.style.bottom = 'calc(' + (h + 14) + 'px + ' + (h ? '0px' : 'env(safe-area-inset-bottom, 0px)') + ')'; }
+  }
+  on($('rd-body'), 'scroll', function () { topBtnUi(); });
+  on($('rd-top'), 'click', function () {
+    var bd = $('rd-body'); rdUserT = now();
+    bd.scrollTop = 0;   // いちばん上（題名・ボタン・最初の文）
+    topBtnUi();
+  });
   function centerSent(el) {
     if (!el) return;
     try {
@@ -8541,7 +8558,7 @@
   on(window, 'pagehide', lastSave);
   function rdShowInput() {
     if (rdCur) lastSave();
-    stopSpeak(); ytClose(); rdCur = null; dqFrom = false; $('btn-rd-back').textContent = '← 戻る';
+    stopSpeak(); ytClose(); rdCur = null; try { $('rd-top').className = 'hidden'; } catch (e) {} dqFrom = false; $('btn-rd-back').textContent = '← 戻る';
     $('rd-input').className = ''; $('rd-view').className = 'hidden';
     $('rd-paste').className = (navigator.clipboard && navigator.clipboard.readText) ? '' : 'hidden';
     renderRdHistory(); syncMsg(''); rdSyncNew(true); resumeShow();
@@ -10710,7 +10727,9 @@
     if (t >= 0 && rdDocs[id] && rdDocs[id].cues) rdSeekWhenReady(id, t, p);
     if (n >= 0 && n < rdSents.length) {
       markSentence(n);
-      setTimeout(function () { var el = $('rd-text').childNodes[n]; if (el && el.scrollIntoView) { try { el.scrollIntoView(true); $('rd-body').scrollTop -= 120; } catch (e) {} } }, 200);
+      // その文の頭が、上のボタン・動画のすぐ下に見えるように（動画の大きさが決まるまで、何回か合わせ直す。自分でスクロールしたらやめる）
+      var t0 = now();
+      each([200, 700, 1500, 2600], function (ms) { setTimeout(function () { if (!rdCur || rdCur.id !== id || rdUserT > t0) return; centerSent($('rd-text').childNodes[n]); }, ms); });
     }
   }
   function rdJump(j, retried) {
