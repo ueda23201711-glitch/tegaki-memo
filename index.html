@@ -661,11 +661,11 @@
         <p class="note" id="yt-msg"></p>
         <div id="lv-in" class="hidden">
           <h3 class="rd-h">🎞 手元の動画と字幕で読む（.webm / .mp4 ＋ .srt・文字起こし）</h3>
-          <p class="note">ダウンロードした動画と、英語の字幕（.srt / .vtt）を選んでください。字幕ファイルの代わりに、YouTube の「文字起こし」を時刻つきでコピーして、下の欄に貼り付けても読み込めます。日本語の字幕（.srt）も選ぶと、それを訳として使います（翻訳の回数を使いません）。動画はこの端末に保存し、Google ドライブにも送るので、ほかの端末でも見られます。</p>
+          <p class="note">ダウンロードした動画と、英語の字幕（.srt / .vtt）を選んでください。字幕の入った MKV の動画なら、字幕を選ばなくても中の英語の字幕を使います（英語・日本語の字幕のところで MKV を選ぶこともできます）。字幕ファイルの代わりに、YouTube の「文字起こし」を時刻つきでコピーして、下の欄に貼り付けても読み込めます。日本語の字幕（.srt）も選ぶと、それを訳として使います（翻訳の回数を使いません）。動画はこの端末に保存し、Google ドライブにも送るので、ほかの端末でも見られます。</p>
           <div class="row"><label class="bk-file">🎞 動画<input id="lv-file" type="file" accept="video/*,.webm,.mp4,.mkv,.mov"></label> <span class="note" id="lv-file-n"></span></div>
-          <div class="row"><label class="bk-file">🇺🇸 英語の字幕<input id="lv-en" type="file" accept=".srt,.vtt,.txt,text/plain"></label> <span class="note" id="lv-en-n"></span></div>
+          <div class="row"><label class="bk-file">🇺🇸 英語の字幕<input id="lv-en" type="file" accept=".srt,.vtt,.txt,.mkv,text/plain"></label> <span class="note" id="lv-en-n"></span></div>
           <textarea id="lv-en-txt" placeholder="（字幕ファイルがないとき）英語の文字起こしを時刻つきで貼り付け：0:07 ↵ thank you it's like…" style="width:100%; box-sizing:border-box; min-height:90px; font-size:15px; padding:8px 10px; border:1px solid #c9d2d8; border-radius:8px; margin:0 0 8px;"></textarea>
-          <div class="row"><label class="bk-file">🇯🇵 日本語の字幕（なくても可）<input id="lv-ja" type="file" accept=".srt,.vtt,.txt,text/plain"></label> <span class="note" id="lv-ja-n"></span></div>
+          <div class="row"><label class="bk-file">🇯🇵 日本語の字幕（なくても可）<input id="lv-ja" type="file" accept=".srt,.vtt,.txt,.mkv,text/plain"></label> <span class="note" id="lv-ja-n"></span></div>
           <input id="lv-title" type="text" placeholder="題名（空なら動画のファイル名）" style="width:100%; box-sizing:border-box; font-size:16px; padding:9px 10px; border:1px solid #c9d2d8; border-radius:8px; margin:4px 0 8px;">
           <input id="lv-srcurl" type="url" placeholder="元の動画のページの URL（なくても可・あとからでも入れられます）" style="width:100%; box-sizing:border-box; font-size:16px; padding:9px 10px; border:1px solid #c9d2d8; border-radius:8px; margin:0 0 8px;">
           <div class="row"><button id="lv-go" class="primary" type="button">動画と字幕で読み込む</button></div>
@@ -751,7 +751,7 @@
         <button id="rd-vdel" type="button" class="hidden" title="この端末に入れてある動画だけを消して、容量を空ける（ドライブの動画・字幕・訳はそのまま）">📱 この端末の動画を消す</button>
         <button id="rd-vgone" type="button" class="hidden" title="動画のファイルだけを消して（ドライブ・この端末）容量を空ける。題名・元の URL・フォルダ・印・字幕・訳は記録として残す">📼 動画だけ消す（記録は残す）</button>
         <button id="rd-vrep" type="button" class="hidden" title="同じ動画の別のファイル（サイズを小さくしたものなど）に差し替える。字幕・訳・印・しおりはそのまま">🎞 動画を差し替える</button><input id="rd-vfile" type="file" accept="video/*,.webm,.mp4,.mkv,.mov" style="display:none">
-        <button id="rd-subin" type="button" class="hidden" title="この動画に英語の字幕（.srt / .vtt / 時刻つきの文字起こし）を入れる・入れ直す">🔤 字幕を入れる</button><input id="rd-subfile" type="file" accept=".srt,.vtt,.txt,text/plain" style="display:none">
+        <button id="rd-subin" type="button" class="hidden" title="この動画に英語の字幕（.srt / .vtt / 時刻つきの文字起こし）を入れる・入れ直す">🔤 字幕を入れる</button><input id="rd-subfile" type="file" accept=".srt,.vtt,.txt,.mkv,text/plain" style="display:none">
         <button id="rd-find" type="button" title="この英文（本ならこの章）の中で、単語や文字をさがす">🔍 検索</button>
         <button id="rd-delsel" type="button" title="いらない文（広告・メニューなど）を選んで、まとめて消す">🗑 文を消す</button>
         <button id="rd-repl" type="button" title="英文の中の文字を、まとめて置き換える（聞き取りのまちがいを直すときなど）">🔁 置き換え</button>
@@ -5342,18 +5342,157 @@
     });
     return tr;
   }
+  // ── MKV（字幕つきの動画）の中の文字の字幕を取り出す ──
+  // 動画ファイルを少しずつ（4MB ずつ）読んで、字幕のトラック（SRT・ASS/SSA・WebVTT）の文と時刻だけを拾う。映像と音は読み飛ばす
+  // 画像の字幕（PGS・VobSub）は文字ではないので使えない。cb(tracks) … tracks = [{no, codec, lang, name, img, cues:[{a,b,t}]}]、読めなければ cb(null, わけ)
+  function isMkv(f) { return !!f && (/\.(mkv|mka|mks)$/i.test(f.name || '') || /matroska/i.test(f.type || '')); }
+  function mkvSubs(file, prog, cb) {
+    var CH = window.MKV_CH || 4194304, buf = null, bs = 0, pos = 0, size = file.size, stack = [];
+    var scale = 1000000, trk = {}, te = null, clT = 0, bg = null, done = false, seenCl = false, lastP = -1;
+    var MST = { 0x18538067: 1, 0x1549A966: 1, 0x1654AE6B: 1, 0xAE: 1, 0x1F43B675: 1, 0xA0: 1 };
+    var LEAF = { 0x2AD7B1: 1, 0xD7: 1, 0x83: 1, 0x86: 1, 0x22B59C: 1, 0x22B59D: 1, 0x536E: 1, 0xE7: 1, 0x9B: 1 };
+    var u8 = function (p) { return buf[p - bs]; };
+    var have = function (p, n) { return !!buf && p >= bs && p + n <= bs + buf.length; };
+    var uint = function (p, n) { var v = 0; for (var i = 0; i < n; i++) v = v * 256 + u8(p + i); return v; };
+    var str = function (p, n) { var a = []; for (var i = 0; i < n; i++) a.push(u8(p + i)); try { return decodeURIComponent(escape(String.fromCharCode.apply(null, a))); } catch (e) { return String.fromCharCode.apply(null, a); } };
+    var vlen = function (b) { for (var i = 0; i < 8; i++) if (b & (0x80 >> i)) return i + 1; return 0; };
+    var fin = function (err) {
+      if (done) return; done = true;
+      var out = [];
+      for (var k in trk) if (trk.hasOwnProperty(k) && trk[k].type === 0x11) { var t = trk[k];
+        if (t.cues) t.cues.sort(function (x, y) { return x.a - y.a; }); out.push({ no: t.no, codec: t.codec || '', lang: t.lang || '', name: t.name || '', img: !/^S_TEXT\//.test(t.codec || ''), cues: t.cues || [] }); }
+      if (err && !out.length) { cb(null, err); return; }
+      cb(out);
+    };
+    var load = function (p, need, k) {
+      var fr = new FileReader();
+      fr.onload = function () { buf = new Uint8Array(fr.result); bs = p; k(); };
+      fr.onerror = function () { fin('read'); };
+      fr.readAsArrayBuffer(file.slice(p, Math.min(size, p + Math.max(need, CH))));
+    };
+    // 字幕の文：SRT はそのまま、ASS/SSA は 9 番目の項目から（{\…} の飾りと \N を取る）
+    var subText = function (codec, raw) {
+      var t = raw;
+      if (/^S_TEXT\/(ASS|SSA)/.test(codec)) { var c = 0, i = 0; for (; i < t.length && c < 8; i++) if (t.charAt(i) === ',') c++; t = t.slice(i).replace(/\{[^}]*\}/g, '').replace(/\\[Nn]/g, ' ').replace(/\\h/g, ' '); }
+      return t.replace(/<[^>]+>/g, '').replace(/\r/g, '').replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '');
+    };
+    var block = function (p, n) {   // Block / SimpleBlock の中身 → {t: トラック, a: 時刻, x: 文}
+      var l = vlen(u8(p)); if (!l || l > 4) return;
+      var no = u8(p) & (0xFF >> l); for (var i = 1; i < l; i++) no = no * 256 + u8(p + i);
+      var t = trk[no]; if (!t || t.type !== 0x11 || !/^S_TEXT\//.test(t.codec || '')) return;
+      var rel = (u8(p + l) << 8) | u8(p + l + 1); if (rel & 0x8000) rel -= 0x10000;
+      if (u8(p + l + 2) & 0x06) return;   // 字幕で「まとめ（レーシング）」は使われないので読まない
+      var hl = l + 3, txt = subText(t.codec, str(p + hl, n - hl));
+      if (!txt) return;
+      return { t: t, a: Math.max(0, (clT + rel) * scale / 1e9), x: txt };
+    };
+    var put = function (r, dur) { if (!r) return; (r.t.cues = r.t.cues || []).push({ a: r.a, b: r.a + (dur != null ? dur * scale / 1e9 : 3), t: r.x }); };
+    var step = function () {
+      var guard = 0;
+      while (!done) {
+        while (stack.length && pos >= stack[stack.length - 1].end) {
+          var e = stack.pop();
+          if (e.id === 0xAE && te) { if (te.no) trk[te.no] = te; te = null; }
+          if (e.id === 0xA0 && bg) { put(bg.r, bg.dur); bg = null; }
+          if (e.id === 0x1654AE6B) {   // トラックの一覧を読み終えた：文字の字幕がなければ、ここでやめる（最後まで読まない）
+            var any = false; for (var k in trk) if (trk.hasOwnProperty(k) && trk[k].type === 0x11 && /^S_TEXT\//.test(trk[k].codec || '')) any = true;
+            if (!any) { fin(); return; }
+          }
+        }
+        if (pos >= size) { fin(); return; }
+        var avail = Math.min(12, size - pos);
+        if (!have(pos, avail)) { load(pos, 12, step); return; }
+        var il = vlen(u8(pos)); if (!il || il > 4 || !have(pos, il + 1)) { fin(seenCl ? null : 'bad'); return; }
+        var id = uint(pos, il), sl = vlen(u8(pos + il)); if (!sl || !have(pos, il + sl)) { fin(seenCl ? null : 'bad'); return; }
+        var sz = u8(pos + il) & (0xFF >> sl), allOnes = sz === (0xFF >> sl);
+        for (var j = 1; j < sl; j++) { var bb = u8(pos + il + j); sz = sz * 256 + bb; if (bb !== 0xFF) allOnes = false; }
+        var dp = pos + il + sl, top = stack.length ? stack[stack.length - 1].end : size;
+        if (allOnes) sz = top - dp;   // 大きさが書いてない（ライブ書き出しの MKV）
+        if (id === 0x1F43B675) {   // 次の Cluster：大きさの書いてない前の Cluster を閉じる
+          while (stack.length && stack[stack.length - 1].id === 0x1F43B675) stack.pop();
+          seenCl = true; clT = 0;
+          if (prog && Math.floor(pos * 100 / size) !== lastP) { lastP = Math.floor(pos * 100 / size); prog(lastP); }
+        }
+        if (MST[id]) {
+          stack.push({ id: id, end: Math.min(dp + sz, size) });
+          if (id === 0xAE) te = { cues: [] };
+          if (id === 0xA0) bg = { r: null, dur: null };
+          pos = dp;
+        } else {
+          if (LEAF[id] || ((id === 0xA3 || id === 0xA1) && sz < 65536)) {
+            if (!have(pos, il + sl + sz)) { load(pos, il + sl + sz, step); return; }
+            if (id === 0x2AD7B1) scale = uint(dp, sz) || 1000000;
+            else if (id === 0xE7) clT = uint(dp, sz);
+            else if (id === 0xA3) put(block(dp, sz), null);
+            else if (id === 0xA1 && bg) bg.r = block(dp, sz);
+            else if (id === 0x9B && bg) bg.dur = uint(dp, sz);
+            else if (te) {
+              if (id === 0xD7) te.no = uint(dp, sz); else if (id === 0x83) te.type = uint(dp, sz);
+              else if (id === 0x86) te.codec = str(dp, sz).replace(/\0+$/, ''); else if (id === 0x22B59C && !te.lang) te.lang = str(dp, sz).replace(/\0+$/, '');
+              else if (id === 0x22B59D) te.lang = str(dp, sz).replace(/\0+$/, ''); else if (id === 0x536E) te.name = str(dp, sz).replace(/\0+$/, '');
+            }
+          }
+          pos = dp + sz;
+        }
+        if (++guard > 200000) { setTimeout(step, 0); return; }   // 画面が固まらないよう、ときどき休む
+      }
+    };
+    if (!size) { cb(null, 'empty'); return; }
+    step();
+  }
+  // 取り出した字幕の中から、英語（または日本語）のものを選ぶ（いちばん文の多いもの）
+  // （MKV の決まりでは、言語が書いてない字幕は英語）
+  function mkvPick(tracks, want) {
+    var best = null;
+    each(tracks || [], function (t) {
+      if (t.img || !t.cues.length) return;
+      var ja = /^(ja|jpn)\b/i.test(t.lang) || /japanese|日本/i.test(t.name), en = /^(en|eng)\b/i.test(t.lang) || ((!t.lang || /^(und|mul|zxx)$/i.test(t.lang)) && !ja) || /english|英語/i.test(t.name);
+      if (want === 'ja' ? !ja : !en) return;
+      if (!best || t.cues.length > best.cues.length) best = t;
+    });
+    return best;
+  }
+  function mkvSrt(cues) {
+    var tc = function (s) { var ms = Math.round(s * 1000), h = Math.floor(ms / 3600000), m = Math.floor(ms / 60000) % 60, x = Math.floor(ms / 1000) % 60, r = ms % 1000; var p2 = function (n, w) { n = String(n); while (n.length < w) n = '0' + n; return n; }; return p2(h, 2) + ':' + p2(m, 2) + ':' + p2(x, 2) + ',' + p2(r, 3); };
+    var out = [];
+    cues = cues.slice().sort(function (a, b) { return a.a - b.a; });
+    each(cues, function (c, i) { out.push((i + 1) + '\n' + tc(c.a) + ' --> ' + tc(c.b) + '\n' + c.t + '\n'); });
+    return out.join('\n');
+  }
+  function mkvTrackName(t) { return (t.name || (/^(ja|jpn)/i.test(t.lang) ? '日本語' : /^(en|eng)/i.test(t.lang) ? '英語' : t.lang && !/^(und|mul|zxx)$/i.test(t.lang) ? t.lang : '言語不明')) + '・' + t.cues.length + ' 個'; }
+  // 字幕ファイルを読む：.srt などはそのまま。MKV なら、中の英語（want）の字幕を SRT にして返す。cb(テキスト, 説明)
+  var mkvLast = { f: null, tr: null };   // 同じ MKV から英語と日本語を取るとき、2 回読まないように
+  function readSub(file, want, cb, prog) {
+    if (!isMkv(file)) { readText(file, function (t) { cb(t, ''); }); return; }
+    var got = function (tr, err) {
+      if (tr) mkvLast = { f: file, tr: tr };
+      if (!tr) { cb('', err === 'read' ? 'MKV を読めませんでした。' : 'MKV の形を読めませんでした。'); return; }
+      var t = mkvPick(tr, want);
+      if (t) { cb(mkvSrt(t.cues), '動画の中の' + (want === 'ja' ? '日本語' : '英語') + 'の字幕（' + mkvTrackName(t) + '）'); return; }
+      var img = 0, names = []; each(tr, function (x) { if (x.img) img++; else if (x.cues.length) names.push(mkvTrackName(x)); });
+      cb('', !tr.length ? 'この MKV には文字の字幕が入っていません。' : img && !names.length ? 'この MKV の字幕は画像の字幕（PGS など）なので、文字として使えません。' : (want === 'ja' ? '日本語' : '英語') + 'の字幕が見つかりませんでした' + (names.length ? '（入っている字幕：' + names.join('、') + '）' : '') + '。');
+    };
+    if (mkvLast.f === file && mkvLast.tr) got(mkvLast.tr); else mkvSubs(file, prog, got);
+  }
   function readText(file, cb) { if (!file) { cb(''); return; } var fr = new FileReader(); fr.onload = function () { cb(String(fr.result || '')); }; fr.onerror = function () { cb(''); }; fr.readAsText(file, 'utf-8'); }
   each([['lv-file', 'lv-file-n'], ['lv-en', 'lv-en-n'], ['lv-ja', 'lv-ja-n']], function (p) {
     if (!$(p[0])) return;
-    on($(p[0]), 'change', function () { var f = $(p[0]).files[0]; $(p[1]).textContent = f ? f.name + (f.size > 1048576 ? '（' + Math.round(f.size / 1048576) + 'MB）' : '') : ''; });
+    on($(p[0]), 'change', function () { var f = $(p[0]).files[0]; $(p[1]).textContent = f ? f.name + (f.size > 1048576 ? '（' + Math.round(f.size / 1048576) + 'MB）' : '') + (p[0] === 'lv-file' && isMkv(f) ? ' ― MKV：中の字幕を使えます。iPhone・iPad では MKV の動画は再生できないことがあります（パソコンで MP4 に変えて入れ、字幕のところでこの MKV を選ぶ方法もあります）' : '') : ''; });
   });
   if ($('lv-go')) on($('lv-go'), 'click', function () {
     var vf = $('lv-file').files[0], ef = $('lv-en').files[0], jf = $('lv-ja').files[0], et = String($('lv-en-txt').value || '');
+    if (!ef && !/\S/.test(et) && isMkv(vf)) ef = vf;   // 字幕の入った MKV：中の英語の字幕を使う
     if (!vf || (!ef && !/\S/.test(et))) { $('lv-msg').textContent = '動画と、英語の字幕（ファイルか、貼り付けた文字起こし）を選んでください。'; return; }
     $('lv-msg').textContent = '字幕を読んでいます…';
-    readText(ef, function (en) {
+    var mpr = function (pc) { $('lv-msg').textContent = '🔍 動画の中の字幕を探しています… ' + pc + '%'; };
+    var subNote = '';
+    readSub(ef, 'en', function (en, enInfo) {
       if (!ef) en = et;
-      readText(jf, function (ja) {
+      if (isMkv(ef) && !/\S/.test(en)) { $('lv-msg').textContent = enInfo + (ef === vf ? ' 英語の字幕（.srt）を選ぶか、文字起こしを貼り付けてください。' : ''); return; }
+      if (enInfo) subNote = '🔤 ' + enInfo + 'を使いました。';
+      if (!jf && isMkv(ef)) jf = ef;   // 同じ MKV に日本語の字幕があれば、訳に使う
+      readSub(jf, 'ja', function (ja, jaInfo) {
+        if (ja && jaInfo) subNote += ' 訳は' + jaInfo + 'を使いました。';
         var cues = lvEnCues(en);
         if (!cues.length) { $('lv-msg').textContent = '英語の字幕を読めませんでした（.srt / .vtt か、時刻つきの文字起こしを入れてください）。'; return; }
         if (cues.length > 3000) cues = cues.slice(0, 3000);
@@ -5366,12 +5505,13 @@
         $('lv-msg').textContent = '動画をこの端末に保存しています…';
         lvPut(id, vf, function (okp) {
           $('lv-msg').textContent = okp ? '' : 'この端末に動画を保存できませんでした（空き容量を確かめてください）。ドライブには送ります。';
+          if (subNote) setTimeout(function () { if (rdCur && rdCur.id === id) $('rd-status').textContent = subNote; }, 800);
           each(['lv-file', 'lv-en', 'lv-ja'], function (x) { $(x).value = ''; }); each(['lv-file-n', 'lv-en-n', 'lv-ja-n'], function (x) { $(x).textContent = ''; }); $('lv-title').value = ''; $('lv-srcurl').value = ''; $('lv-en-txt').value = '';
           openRdDoc(id, true);
           lvUpload(id, vf);
         });
-      });
-    });
+      }, mpr);
+    }, mpr);
   });
   // ドライブに送る（8MB ずつ。途中で失敗したらやり直しボタン）
   var lvUp = {};
@@ -8763,16 +8903,16 @@
   on($('rd-subfile'), 'change', function () {
     var f = $('rd-subfile').files[0]; if (!f || !rdCur) return;
     var id = rdCur.id;
-    readText(f, function (raw) {
+    readSub(f, 'en', function (raw, info) {
       var cues = lvEnCues(raw), d = rdDocs[id];
       if (!d) return;
-      if (!cues.length) { alert('英語の字幕を読めませんでした（.srt / .vtt か、時刻つきの文字起こしを選んでください）。'); return; }
+      if (!cues.length) { $('rd-status').textContent = ''; alert(isMkv(f) && info ? info : '英語の字幕を読めませんでした（.srt / .vtt か、時刻つきの文字起こしを選んでください）。'); return; }
       if (cues.length > 3000) cues = cues.slice(0, 3000);
       d.cues = cues; d.text = cueTexts(cues).join('\n'); delete d.tr; delete d.trPart; d.ns = cues.length;
       rdSaveLocal(); if (KEY) { var b = {}; b['reader/' + id] = d; api('PATCH', '', b, function () {}); }
       openRdDoc(id);
-      setTimeout(function () { $('rd-status').textContent = '🔤 字幕を入れました（' + cues.length + ' 文）。訳は「↻ 訳」で作れます。'; }, 600);
-    });
+      setTimeout(function () { $('rd-status').textContent = '🔤 ' + (info ? info + 'を使って、' : '') + '字幕を入れました（' + cues.length + ' 文）。訳は「↻ 訳」で作れます。'; }, 600);
+    }, function (pc) { $('rd-status').textContent = '🔍 動画の中の字幕を探しています… ' + pc + '%'; });
   });
   function favBtnShow() {
     var b = $('rd-favbtn'); if (!b || !rdCur) return;
