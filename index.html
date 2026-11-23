@@ -2061,12 +2061,14 @@
     abortInputs();
     var a = stageXY(pts[0][0], pts[0][1]), b = pts[1] ? stageXY(pts[1][0], pts[1][1]) : a;
     gest = { d0: Math.max(1, Math.sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]))),
-      m0: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], z0: zoom, x0: pageX, y0: pageY, one: !!one, z: zoom, x: pageX, y: pageY };
+      m0: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], z0: zoom, x0: pageX, y0: pageY, one: !!one, z: zoom, x: pageX, y: pageY,
+      t0: Date.now(), cx0: (pts[0][0] + (pts[1] || pts[0])[0]) / 2, m: null };
   }
   function gestureMove(pts) {
     if (!gest) return;
     var a = stageXY(pts[0][0], pts[0][1]), b = (pts[1] && !gest.one) ? stageXY(pts[1][0], pts[1][1]) : a;
     var m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], z = gest.z0;
+    gest.m = m;
     if (!gest.one) {
       var d = Math.sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]));
       z = Math.max(1, Math.min(ZOOM_MAX, gest.z0 * d / gest.d0));
@@ -2089,7 +2091,24 @@
     zoom = g.z < 1.05 ? 1 : g.z; pageX = g.x; pageY = g.y;
     layout();
     hideZoomTipSoon();
+    // 2 本指で横にさっと払った（拡大していないとき）：ページをめくる
+    if (!g.one && g.m && g.z0 <= 1.01 && g.z < 1.05) flickPage(g.m[0] - g.m0[0], g.m[1] - g.m0[1], Date.now() - g.t0, g.cx0);
   }
+  // 横にさっと払ったら、前・次のページへ（左へ払う＝次、右へ払う＝前）。
+  // 画面のいちばん左の端から始めたもの（スマホの「戻る」の動き）は、めくらない
+  function flickPage(dx, dy, ms, sx) {
+    if (!cur || pageCount() < 2 || ms > 700 || Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.6) return false;
+    if (sx < 30) return false;
+    var r = $('page').getBoundingClientRect(); if (sx < r.left + 8 || sx > r.right - 8) return false;
+    return pageStep(dx < 0 ? 1 : -1);
+  }
+  function pageStep(d) {
+    var k = pageIdx + d;
+    if (!cur || k < 0 || k >= pageCount()) { pageTip(d > 0 ? '最後のページです' : '最初のページです'); return false; }
+    goPage(k); pageTip((d > 0 ? '▶ ' : '◀ ') + (k + 1) + ' / ' + pageCount());
+    return true;
+  }
+  function pageTip(t) { showZoomTip(1); $('zoom-tip').textContent = t; hideZoomTipSoon(); }
   var tipTimer = null;
   function showZoomTip(z) {
     var t = $('zoom-tip');
@@ -2118,6 +2137,8 @@
       if (e.isPrimary) { touchPts = {}; if (gest) gestureEnd(); }
       touchPts[e.pointerId] = [e.clientX, e.clientY];
       var pts = ptsList();
+      // 「Pencilのみ」で指が何もないところに触れた（拡大していない）：1 本指で払えばページをめくる
+      fl1 = pts.length === 1 && penOnly && zoom <= 1.01 && !hitItem(e.clientX, e.clientY) ? { id: e.pointerId, x: e.clientX, y: e.clientY, t: Date.now() } : null;
       if (pts.length >= 2) { e.stopPropagation(); e.preventDefault(); gestureStart(pts, false); }
       else if (canPanOne(e.clientX, e.clientY)) { e.stopPropagation(); e.preventDefault(); gestureStart(pts, true); }
     }, true);
@@ -2126,9 +2147,11 @@
       touchPts[e.pointerId] = [e.clientX, e.clientY];
       if (gest) { e.preventDefault(); gestureMove(ptsList()); }
     }, true);
+    var fl1 = null;
     var ptrUp = function (e) {
       if (!touchPts[e.pointerId]) return;
       delete touchPts[e.pointerId];
+      if (fl1 && fl1.id === e.pointerId && e.type === 'pointerup' && !gest) { var f = fl1; fl1 = null; flickPage(e.clientX - f.x, e.clientY - f.y, Date.now() - f.t, f.x); }
       if (gest) {
         var left = ptsList();
         if (left.length === 0) gestureEnd();
@@ -2322,6 +2345,11 @@
     var k = String(e.key || '').toLowerCase(), mod = e.ctrlKey || e.metaKey;
     if (!mod && (k === 'delete' || k === 'backspace' || e.keyCode === 46 || e.keyCode === 8)) { if (clipDelete()) e.preventDefault(); return; }
     if (k === 'escape' || e.keyCode === 27) { if (lso) lsoClear(); if (selectedId) selectItem(null); return; }
+    // ← → （PageUp・PageDown）で前・次のページ
+    if (!mod && !e.altKey && pageCount() > 1 && (k === 'arrowleft' || k === 'arrowright' || k === 'pageup' || k === 'pagedown' || e.keyCode === 37 || e.keyCode === 39)) {
+      if (drawing || dragging || gest) return;
+      e.preventDefault(); pageStep(k === 'arrowright' || k === 'pagedown' || e.keyCode === 39 ? 1 : -1); return;
+    }
     if (!mod) return;
     if (k === 'z' && !e.shiftKey) { e.preventDefault(); $('btn-undo').click(); return; }   // 戻す
     if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); $('btn-redo').click(); return; }   // やり直す
