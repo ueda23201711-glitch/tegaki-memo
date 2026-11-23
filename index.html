@@ -2071,6 +2071,19 @@
     gest.m = m;
     if (!gest.one) {
       var d = Math.sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]));
+      // 拡大していないとき：はじめの動きで「横に払う（ページをめくる）」か「広げる（拡大）」かを決める
+      // （払うときも指の間は少し変わるので、横に動いた量のほうが大きければ払う動きとして、拡大しない）
+      if (!gest.lock && gest.z0 <= 1.01) {
+        var mdx = Math.abs(m[0] - gest.m0[0]), mdy = Math.abs(m[1] - gest.m0[1]), dd = Math.abs(d - gest.d0);
+        if (Math.max(mdx, mdy, dd) > 14) gest.lock = mdx > dd * 1.1 && mdx > mdy ? 'swipe' : 'zoom';
+      }
+      if (gest.lock === 'swipe') {
+        var sx = m[0] - gest.m0[0], tf0 = 'translate(' + Math.round(sx * 0.4) + 'px,0)';
+        var pe = $('page'); pe.style.webkitTransform = tf0; pe.style.transform = tf0;   // 払っている向きに少しずらして見せる
+        gest.z = gest.z0; gest.x = gest.x0; gest.y = gest.y0;
+        return;
+      }
+      if (gest.z0 <= 1.01 && !gest.lock) return;   // まだ決まっていない
       z = Math.max(1, Math.min(ZOOM_MAX, gest.z0 * d / gest.d0));
     }
     // 指の真ん中の点がずれないように
@@ -2092,12 +2105,12 @@
     layout();
     hideZoomTipSoon();
     // 2 本指で横にさっと払った（拡大していないとき）：ページをめくる
-    if (!g.one && g.m && g.z0 <= 1.01 && g.z < 1.05) flickPage(g.m[0] - g.m0[0], g.m[1] - g.m0[1], Date.now() - g.t0, g.cx0);
+    if (!g.one && g.m && g.z0 <= 1.01 && (g.lock === 'swipe' || g.z < 1.05)) flickPage(g.m[0] - g.m0[0], g.m[1] - g.m0[1], g.lock === 'swipe' ? 0 : Date.now() - g.t0, g.cx0);
   }
   // 横にさっと払ったら、前・次のページへ（左へ払う＝次、右へ払う＝前）。
   // 画面のいちばん左の端から始めたもの（スマホの「戻る」の動き）は、めくらない
   function flickPage(dx, dy, ms, sx) {
-    if (!cur || pageCount() < 2 || ms > 700 || Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.6) return false;
+    if (!cur || pageCount() < 2 || ms > 700 || Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.3) return false;
     if (sx < 30) return false;
     var r = $('page').getBoundingClientRect(); if (sx < r.left + 8 || sx > r.right - 8) return false;
     return pageStep(dx < 0 ? 1 : -1);
