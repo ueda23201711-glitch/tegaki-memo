@@ -316,6 +316,7 @@
   @media (max-width: 480px) { #lv-src button, #lv-src select { padding: 3px 6px !important; margin-right: 3px !important; } }
   #lv-src button, #lv-src select { font-size: 13px; padding: 3px 8px; margin: 2px 6px 2px 0; }
   #lv-video { width: 100%; height: 100%; background: #000; display: block; }
+  #rd-bot { position: fixed; right: 12px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); z-index: 66; width: 46px; height: 46px; border-radius: 50%; padding: 0; font-size: 20px; line-height: 46px; background: rgba(36,54,63,.88); color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
   #rd-top { position: fixed; right: 12px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); z-index: 66; width: 46px; height: 46px; border-radius: 50%; padding: 0; font-size: 20px; line-height: 46px; background: rgba(36,54,63,.88); color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
   #rd-prog { position: fixed; left: 0; right: 0; bottom: 0; z-index: 65; background: rgba(36,54,63,.94); color: #fff; padding: 0 10px 6px; padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px)); font-size: 13px; }
   #rd-prog button { padding: 4px 10px; font-size: 13px; margin: 6px 6px 0 0; background: #e6eef2; color: #1f2a30; }
@@ -1111,7 +1112,7 @@
 </div>
 
 <script src="vendor/qrcode.js"></script>
-        <button id="rd-top" type="button" class="hidden" title="英文のいちばん上（最初の文）へ">⤒</button>
+        <button id="rd-top" type="button" class="hidden" title="英文のいちばん上（最初の文）へ">⤒</button><button id="rd-bot" type="button" class="hidden" title="英文のいちばん下（最後の文）へ">⤓</button>
         <div id="rd-prog" class="hidden"><div id="pg-bar"><div id="pg-fill"></div><div id="pg-mark"></div></div>
           <span id="pg-text"></span>
           <button id="pg-prev" type="button" class="hidden">◀ 前の章</button>
@@ -4285,13 +4286,26 @@
   // 読んでいる文（英文と訳）を、上のボタンと下のバーの間の真ん中に
   var rdUserT = 0;   // 自分でスクロールした（さわった）とき
   each(['touchstart', 'wheel', 'mousedown', 'keydown'], function (ev) { on($('rd-body'), ev, function () { rdUserT = now(); }); });
-  // ⤒ 英文のいちばん上へ：下のほうまで読み進めたときだけ、右下に出す
+  // ⤒ 英文のいちばん上へ・⤓ いちばん下へ：右下に出す（上の近くでは ⤒ を、下の近くでは ⤓ を出さない）
+  function rdLastEl() { var k = $('rd-text').childNodes; for (var i = k.length - 1; i >= 0; i--) if (k[i].id !== 'rd-flow') return k[i]; return null; }
   function topBtnUi() {
-    var b = $('rd-top'), bd = $('rd-body'); if (!b || !bd) return;
-    var show = !!rdCur && !flOpen && bd.scrollTop > Math.max(600, bd.clientHeight * 1.2);
-    b.className = show ? '' : 'hidden';
-    if (show) { var pg = $('rd-prog'), h = pg && pg.className !== 'hidden' ? pg.offsetHeight : 0; b.style.bottom = 'calc(' + (h + 14) + 'px + ' + (h ? '0px' : 'env(safe-area-inset-bottom, 0px)') + ')'; }
+    var b = $('rd-top'), b2 = $('rd-bot'), bd = $('rd-body'); if (!b || !bd) return;
+    var on1 = !!rdCur && !flOpen, far = Math.max(600, bd.clientHeight * 1.2);
+    var showT = on1 && bd.scrollTop > far, showB = false;
+    if (on1) { var le = rdLastEl(); if (le) { try { showB = le.getBoundingClientRect().bottom - bd.getBoundingClientRect().bottom > far; } catch (e) {} } }
+    var pg = $('rd-prog'), h = pg && pg.className !== 'hidden' ? pg.offsetHeight : 0;
+    var pos = function (el, up) { el.style.bottom = 'calc(' + (h + 14 + up) + 'px + ' + (h ? '0px' : 'env(safe-area-inset-bottom, 0px)') + ')'; };
+    b2.className = showB ? '' : 'hidden'; if (showB) pos(b2, 0);
+    b.className = showT ? '' : 'hidden'; if (showT) pos(b, showB ? 56 : 0);
   }
+  on($('rd-bot'), 'click', function () {
+    var bd = $('rd-body'), le = rdLastEl(); rdUserT = now(); if (!le) return;
+    // 最後の文の終わりが、画面の下（進み具合のバーの上）に来るように
+    var pg = $('rd-prog'), bottom = bd.getBoundingClientRect().bottom;
+    if (pg && pg.className !== 'hidden') bottom = Math.min(bottom, pg.getBoundingClientRect().top);
+    try { bd.scrollTop += le.getBoundingClientRect().bottom - (bottom - 16); } catch (e) {}
+    topBtnUi();
+  });
   on($('rd-body'), 'scroll', function () { topBtnUi(); });
   on($('rd-top'), 'click', function () {
     var bd = $('rd-body'); rdUserT = now();
@@ -8558,7 +8572,7 @@
   on(window, 'pagehide', lastSave);
   function rdShowInput() {
     if (rdCur) lastSave();
-    stopSpeak(); ytClose(); rdCur = null; try { $('rd-top').className = 'hidden'; } catch (e) {} dqFrom = false; $('btn-rd-back').textContent = '← 戻る';
+    stopSpeak(); ytClose(); rdCur = null; try { $('rd-top').className = 'hidden'; $('rd-bot').className = 'hidden'; } catch (e) {} dqFrom = false; $('btn-rd-back').textContent = '← 戻る';
     $('rd-input').className = ''; $('rd-view').className = 'hidden';
     $('rd-paste').className = (navigator.clipboard && navigator.clipboard.readText) ? '' : 'hidden';
     renderRdHistory(); syncMsg(''); rdSyncNew(true); resumeShow();
@@ -9058,7 +9072,7 @@
   });
   function renderRd() {
     if (!rdCur) return;
-    favBtnShow(); fdBtnShow(); flagBtnShow(); subInShow(); capsBtnShow();
+    favBtnShow(); fdBtnShow(); flagBtnShow(); subInShow(); capsBtnShow(); setTimeout(topBtnUi, 300);
     if (fnd.id && rdCur.id !== fnd.id) { fnd.hits = []; fnd.map = {}; fnd.at = -1; fnd.id = rdCur.id; if (fnd.q) setTimeout(function () { findRun(false); }, 0); }
     setTimeout(bmMarkUpdate, 0);   // しおりの 🔖（描き終わってから）
     var d = rdCur.d, box = $('rd-text'); box.innerHTML = '';
